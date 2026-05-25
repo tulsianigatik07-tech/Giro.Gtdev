@@ -1,659 +1,996 @@
-# Giro.gtdev — AI Engineering Intelligence Platform
+# Giro.gtdev — Engineering Intelligence Platform
 
-## 1. Overview
+## 1. Problem Statement
 
-Giro.gtdev = AI-powered engineering co-pilot for understanding codebases. Developer connects a GitHub repo. Giro indexes it, builds semantic understanding, and answers questions about architecture, code structure, and behavior. V1 is read-only — Giro explains, retrieves, and reasons about code, but does not modify it.
+Modern codebases are difficult to understand.
 
-Built for a single developer or small team that wants to onboard faster onto a codebase, debug across files, or get architectural answers without hunting through 50 source files manually.
+Developers spend significant time reconstructing architecture mentally:
 
----
+* tracing imports across dozens of files
+* understanding hidden dependencies
+* searching for business logic manually
+* rebuilding context after every interruption
+* onboarding into unfamiliar repositories
 
-## 2. Tech Stack
+Most existing AI coding tools focus heavily on:
 
-* Node.js + TypeScript (Backend API + workers)
-* Next.js 15 (Frontend + API routes for auth)
-* PostgreSQL with pgvector (Database + vector search via Supabase/Neon)
-* Prisma (ORM)
-* Redis (Cache + BullMQ background queue)
-* Anthropic Claude (LLM for Q&A + reasoning)
-* OpenAI text-embedding-3-small (Embeddings — cheap, 1536-dim)
-* tree-sitter (AST parsing for code chunking)
-* Octokit (GitHub API client)
-* GitHub OAuth (Authentication)
-* Tailwind + shadcn/ui (Frontend styling)
-* Sentry (Error monitoring)
-* SSE / EventSource (Streaming Q&A responses)
+* autocomplete
+* code generation
+* inline suggestions
 
----
+But they struggle with:
 
-## 3. Architecture / Organization
+* repository-level reasoning
+* architectural understanding
+* cross-file retrieval
+* durable engineering context
+* structured repository intelligence
 
-* Single-tenant solo dev product. One user, multiple repos.
-* Three deployable components:
-  * `web` — Next.js frontend + auth + thin API
-  * `api` — Node.js backend (REST + SSE)
-  * `worker` — BullMQ background jobs (indexing, embedding)
-* All three share the same Postgres + Redis.
-* No Kubernetes. Deploy on Railway / Fly.io / Render.
-* Docker Compose for local dev.
-* Single role in V1: Developer.
-* GitHub is the source of truth for code. Giro indexes a snapshot per branch.
+Giro.gtdev is designed to solve this problem.
 
----
+The platform focuses on:
 
-## 4. User Roles
+* repository understanding
+* semantic indexing
+* architecture-aware retrieval
+* contextual engineering reasoning
+* developer memory systems
 
-### Developer (only role in V1)
-* Connect GitHub account via OAuth
-* Connect one or more repos
-* Trigger indexing
-* Ask questions about repo
-* Run semantic + keyword search
-* Browse architecture overview
-* View session history
-* Execute read-only tools (read file, grep, list dir)
-* Manage repo settings (re-index, disconnect)
-
-### Admin (V2+)
-* Not in V1. Single-user product.
+Rather than acting as a fully autonomous coding agent, Giro is designed as an engineering intelligence layer that helps developers understand systems faster.
 
 ---
 
-## 5. V1 Scope
+# 2. Product Vision
 
-### INCLUDED
+Giro.gtdev is an AI-powered engineering intelligence platform.
 
-#### Auth & Account
-* GitHub OAuth signup / login
-* JWT session
-* Account dashboard
-* Disconnect GitHub
+A developer connects a GitHub repository.
+Giro indexes the repository, builds structural understanding, generates semantic embeddings, tracks relationships between files/symbols, and enables architecture-aware engineering queries.
 
-#### Repository Management
-* Connect a GitHub repo (private or public)
-* List connected repos
-* Trigger re-index
-* View index status (PENDING / RUNNING / COMPLETED / FAILED)
-* Disconnect repo (purges chunks, embeddings, sessions)
-* Default branch indexing only in V1
+The platform is optimized for:
 
-#### Indexing Pipeline
-* Clone repo (shallow, default branch)
-* Walk filesystem, filter by include/exclude rules
-* Parse files with tree-sitter (JS/TS/Python/Go in V1)
-* AST-aware chunking by function, class, module
-* Generate embeddings (OpenAI batch API)
-* Build symbol table (functions, classes, exports, imports)
-* Compute import graph
-* Write chunks + symbols + embeddings to Postgres
-* Webhook receiver for push events → incremental re-index
+* understanding large codebases
+* onboarding faster
+* debugging across files
+* tracing architecture decisions
+* semantic repository search
+* contextual engineering conversations
 
-#### Semantic Search
-* Hybrid search (vector + keyword via pg_trgm + tsvector)
-* Top-K with re-ranking
-* Filter by file path, language, entity type
-* Returns ranked chunks with snippets
+V1 is intentionally read-only.
 
-#### AI Q&A
-* Ask question scoped to a repo
-* Backend runs retrieval pipeline
-* Assembles context within token budget
-* Streams Claude response via SSE
-* Cites source files + line numbers
-* Stores question + answer in session
-
-#### Architecture Understanding
-* Auto-generated repo summary on first index
-* Module / folder overview
-* Detected entry points (server.js, main.py, index.ts)
-* Key dependencies (from package.json / requirements.txt / go.mod)
-* Top symbols by import count
-* Tech stack inference
-
-#### Session Persistence
-* Sessions scoped to (user, repo) pair
-* Each session has a list of turns (user / agent / tool_call / tool_result)
-* Sessions persist across browser reloads
-* List all past sessions per repo
-* Resume a session from the dashboard
-* Auto-title sessions from first user question
-
-#### Read-Only Tool Execution
-* `read_file(path, start_line?, end_line?)` — read content from indexed snapshot
-* `grep_search(query, path_pattern?)` — regex search
-* `list_directory(path)` — list files in a folder
-* `find_symbol(name)` — locate a function/class by name
-* `get_file_tree()` — return repo structure
-* All tools logged to ToolCall audit table
-* Tool calls executed by the backend, not in a sandbox (no shell access in V1)
-
-#### Dashboard
-* List of connected repos with index status
-* Last activity per repo
-* Click repo → repo workspace (chat + search + browse)
-* Account / settings page
-
-### NOT INCLUDED (V2+)
-* Code modification (writes, commits, PRs)
-* Multi-agent swarms / sub-agent spawning
-* Bash / shell execution
-* Multi-branch indexing
-* Multi-tenant / team support
-* Kubernetes / multi-region infra
-* Distributed graph store (Neo4j)
-* Vector DB beyond pgvector
-* Enterprise policy engine
-* Cross-repo retrieval
-* IDE plugin / VS Code extension
-* Custom embedding models / self-hosted LLMs
-* Knowledge graph visualization
-* Approval workflows
-* Replay / time-travel debugging
-* Branching sessions
-* Public sharing of sessions
-* Slack / Discord bot
+The first milestone is NOT autonomous coding.
+The first milestone is building a reliable repository intelligence engine.
 
 ---
 
-## 6. Core Product Rules
+# 3. V1 Product Focus
 
-* One developer account = one GitHub identity
-* User must connect GitHub before doing anything else
-* A repo must finish indexing before Q&A or search work
-* Q&A always scoped to a single repo (no cross-repo in V1)
-* Every Q&A answer must cite at least one source chunk OR explicitly say "not found in repo"
-* Read-only: Giro never writes to user's GitHub
-* Every tool call recorded in ToolCall table
-* Indexing failures must surface to UI with clear error
-* Re-indexing replaces old chunks, never appends duplicates
-* Sessions never auto-delete in V1 (user must explicitly delete)
-* Max repo size for V1: 500 MB / 100k files (reject larger ones with clear message)
-* Max indexed file size: 1 MB (skip larger files, log skip reason)
-* Files in `.gitignore` are never indexed
-* Lockfiles, minified JS, vendor dirs auto-excluded
-* No code execution of indexed code
+The V1 goal of Giro.gtdev is to build a repository intelligence system that can:
 
----
+* index repositories reliably
+* understand code structure
+* retrieve relevant engineering context
+* answer architectural questions accurately
+* maintain conversational engineering memory
+* explain relationships between files and symbols
 
-## 7. Main Features
+The platform intentionally prioritizes:
 
-### Repo Connection
-* GitHub OAuth grants Giro `repo` scope (read-only)
-* User picks a repo from their accessible repos
-* Giro registers webhook for push events
-* Initial index triggered automatically
+* retrieval quality
+* repository understanding
+* engineering clarity
 
-### Indexing
-* Clone repo into ephemeral worker filesystem
-* Walk + parse + chunk + embed
-* Progress stream to UI: files parsed, chunks created, embeddings generated
-* On completion: clean up cloned repo, mark status COMPLETED
-* On failure: keep error log, mark FAILED, allow retry
+over:
 
-### Architecture Overview
-* Generated once on first successful index
-* Includes:
-  * Tech stack (languages + frameworks detected)
-  * Entry points
-  * Module summary (per top-level folder)
-  * Key files (most-imported)
-  * Dependency summary
-* Stored as `RepositorySummary`
-* Re-generated on full re-index
-
-### Semantic Search
-* Search bar in repo workspace
-* Returns ranked chunks
-* Each result shows: file path, snippet, entity name, relevance score
-* Click result → opens file viewer at that location
-
-### AI Q&A
-* Chat-style interface
-* User types question
-* Backend runs retrieval, assembles context, streams Claude response
-* Source citations rendered as clickable file references
-* Follow-up questions reuse session context
-* User can pin a file to always include it in context
-* User can rerun a question with different files pinned
-
-### File Viewer
-* Read-only code viewer with syntax highlighting
-* Opens at specific line range when clicked from a citation or search result
-* Shows file structure (functions/classes) in a side panel
-* No editing in V1
-
-### Session Management
-* Auto-create session on first message in a repo
-* Auto-title from first question (LLM-generated)
-* Sidebar lists all sessions per repo, sorted by last activity
-* Click session to resume
-* Delete session button (soft delete, keeps audit trail)
+* autonomous code generation
+* shell execution
+* multi-agent orchestration
+* enterprise workflows
 
 ---
 
-## 8. Retrieval / Memory Rules
+# 4. Non-Goals (V1)
 
-### Chunking Rules
-* Use tree-sitter AST per supported language
-* One chunk per function, class, or top-level export
-* Module-level chunk = file summary + signature list
-* Markdown / config files chunked by section / top-level keys
-* Each chunk has: file_path, start_line, end_line, entity_name, entity_type, language, content, embedding, token_count
+Giro.gtdev is NOT attempting to:
 
-### Embedding Rules
-* Model: `text-embedding-3-small` (1536-dim)
-* Embed: signature + docstring + body, capped at 8000 tokens per chunk
-* Batch API: max 100 chunks per call
-* Embeddings stored in pgvector column with HNSW index
-* Re-embed only on chunk content change (signature hash)
+* replace IDEs
+* autonomously modify repositories
+* execute arbitrary shell commands
+* become a generalized AGI coding agent
+* support enterprise governance workflows
+* optimize for massive organizations
+* support multi-agent swarms
+* provide production deployment automation
 
-### Retrieval Pipeline (per Q&A turn)
-1. Parse user query → extract entities (file names, function names)
-2. Run hybrid search:
-   * Vector: top 30 by cosine similarity
-   * Keyword: pg_trgm fuzzy + tsvector full-text
-   * Symbol exact-match: if query mentions a known symbol name
-3. Fuse + re-rank with weighted score:
-   * `0.5 × vector_score + 0.2 × keyword_score + 0.2 × recency_decay + 0.1 × import_centrality`
-4. Apply diversity: max 3 chunks per file
-5. Apply token budget: greedy fit to context window
-6. Always include pinned files in full
-7. Always include architecture overview (compressed)
-8. Final assembly: pinned files → architecture overview → ranked chunks → conversation history
+The focus is:
 
-### Context Budget
-| Section | Token Budget |
-|---|---|
-| System prompt + tools | 4,000 |
-| Architecture overview (compressed) | 2,000 |
-| Pinned files (full) | up to 30,000 |
-| Retrieved chunks | up to 40,000 |
-| Conversation history (last 5 turns full) | 10,000 |
-| Older turns (summarized) | 2,000 |
-| Reserved for response | 8,000 |
-| **Total target** | **~96,000** (Claude Sonnet 200k window, leaves headroom) |
+* repository intelligence
+* engineering understanding
+* architectural reasoning
+* contextual retrieval
 
-### Conversation Compression
-* Last 5 turns kept verbatim
-* Turns 6-15 compressed to 1-2 sentence summaries (Haiku model, async)
-* Turns beyond 15 dropped from context but retained in DB
-* Summaries are computed after a turn completes, not blocking next turn
-
-### Re-Indexing Rules
-* Webhook on push → diff-based incremental re-index
-* For each changed file: re-parse, diff chunks by content hash, re-embed only changed chunks
-* Full re-index only on user request or schema migration
-* During re-index, search/Q&A continue working against last successful index
+for individual developers and small teams.
 
 ---
 
-## 9. Safety Rules
+# 5. Engineering Principles
 
-### Read-Only Boundary
-* No file writes
-* No bash / shell execution
-* No git operations after initial clone
-* No HTTP requests to user-defined URLs
-* No code execution of indexed code
+## Retrieval Quality Over Infrastructure Complexity
 
-### Secret Handling
-* Files matching `.env*`, `*.pem`, `id_rsa`, `credentials*` skipped during indexing
-* If a chunk contains a high-entropy string matching a secret pattern (AWS key, JWT, generic API key regex), redact before storing
-* OAuth tokens encrypted at rest using application-level AES-256
-* GitHub tokens never logged
-* Chat outputs scanned for secret patterns before persisting
+Strong retrieval and context assembly matter more than distributed infrastructure.
 
-### PII / Privacy
-* User code stays in user's database row (RLS or application-enforced filter)
-* Logs redact paths containing `secrets/`, `private/`
-* Indexed content never sent to third parties except OpenAI (embeddings) and Anthropic (Q&A)
-* User can delete a repo to purge all chunks, sessions, embeddings within 5 minutes
+## Minimize Operational Overhead
 
-### Rate Limiting
-| Endpoint | Limit |
-|---|---|
-| `POST /qa/ask` | 30/hour per user |
-| `POST /search` | 100/hour per user |
-| `POST /repos/:id/reindex` | 5/day per repo |
-| `GET /tools/*` (per session) | 200/session |
-| Generic API | 1000/hour per user |
+Prefer simple systems in V1.
+Avoid unnecessary infrastructure.
 
-### Tool Execution Safety
-* All tool calls validated against JSON schema before execution
-* Path inputs normalized; reject any path containing `..` or absolute paths
-* Tool results truncated at 50 KB
-* Tool calls logged to ToolCall table with status, duration, params hash
-* Tool results scanned for secrets before returning to LLM
+## Postgres First
 
-### Failure Handling
-* Indexing failures retried with exponential backoff (3 attempts)
-* LLM failures (rate limit, timeout) retried once, then surfaced to user
-* Embedding failures fall back to keyword-only search for affected chunks
-* Webhook delivery failures: GitHub retries 3x, we queue manual re-index option
+Prefer PostgreSQL extensions before introducing specialized databases.
+
+## Read-Only By Default
+
+The system should explain and retrieve before it modifies anything.
+
+## Async Everything Expensive
+
+Indexing, embeddings, summarization, and compression should run in background jobs.
+
+## Fast Iteration Matters
+
+Optimize for local development speed and developer velocity.
+
+## Strong Observability From Day One
+
+Every critical operation should be traceable and measurable.
+
+## Build the Smallest Intelligent System First
+
+Do not overbuild autonomous behavior early.
 
 ---
 
-## 10. Database Models
+# 6. Tech Stack
 
-### User
-* id
-* email
-* name
-* avatarUrl
-* githubId
-* githubUsername
-* githubAccessToken (encrypted)
-* createdAt
-* updatedAt
+## Frontend
 
-### Repository
-* id
-* userId
-* githubRepoId
-* owner
-* name (e.g. `vercel/next.js`)
-* defaultBranch
-* visibility (PUBLIC / PRIVATE)
-* status (CONNECTED / INDEXING / READY / FAILED / DISCONNECTED)
-* lastIndexedSha
-* lastIndexedAt
-* webhookId (nullable)
-* webhookSecret (encrypted)
-* createdAt
-* updatedAt
+* Next.js 15
+* React
+* TypeScript
+* TailwindCSS
+* shadcn/ui
 
-### IndexJob
-* id
-* repositoryId
-* type (FULL / INCREMENTAL)
-* status (PENDING / RUNNING / COMPLETED / FAILED)
-* triggeredBy (USER / WEBHOOK / SYSTEM)
-* commitSha (nullable)
-* filesProcessed
-* chunksCreated
-* embeddingsGenerated
-* errorMessage (nullable)
-* startedAt
-* completedAt (nullable)
-* createdAt
+## Backend
 
-### CodeChunk
-* id
-* repositoryId
-* filePath
-* language
-* entityType (FUNCTION / CLASS / METHOD / MODULE / SECTION / OTHER)
-* entityName (nullable)
-* startLine
-* endLine
-* content (text)
-* contentHash (sha256, for dedup)
-* tokenCount
-* embedding (vector(1536))
-* embeddingModel (e.g. `text-embedding-3-small`)
-* lastIndexedSha
-* createdAt
-* updatedAt
+* Hono (high-performance TypeScript API framework)
+* TypeScript
+* SSE streaming
 
-### CodeSymbol
-* id
-* repositoryId
-* name (e.g. `createBooking`)
-* kind (FUNCTION / CLASS / METHOD / VARIABLE / EXPORT / IMPORT)
-* filePath
-* startLine
-* endLine
-* signature (nullable)
-* docstring (nullable)
-* importedFrom (nullable, for imports)
-* createdAt
+## Database
 
-### RepositorySummary
-* id
-* repositoryId (unique)
-* techStack (json)
-* entryPoints (json)
-* moduleOverview (json)
-* keyFiles (json)
-* dependencies (json)
-* generatedAt
-* generatedFromSha
+* PostgreSQL
+* pgvector
+* Prisma ORM
 
-### Session
-* id
-* userId
-* repositoryId
-* title
-* status (ACTIVE / ARCHIVED / DELETED)
-* lastActiveAt
-* turnCount
-* createdAt
-* updatedAt
+## Queueing / Background Jobs
 
-### Message
-* id
-* sessionId
-* role (USER / ASSISTANT / TOOL_CALL / TOOL_RESULT / SYSTEM)
-* content (text)
-* tokenCount
-* toolName (nullable)
-* toolParams (json, nullable)
-* toolStatus (SUCCESS / ERROR, nullable)
-* sequenceNumber
-* citations (json, list of {filePath, startLine, endLine})
-* createdAt
+* Redis
+* BullMQ
 
-### ToolCall
-* id
-* sessionId
-* messageId
-* toolName
-* params (json)
-* result (text, truncated)
-* status (SUCCESS / ERROR / DENIED)
-* errorMessage (nullable)
-* durationMs
-* createdAt
+## AI Layer
 
-### PinnedFile
-* id
-* sessionId
-* filePath
-* createdAt
+* Anthropic Claude (reasoning + Q&A)
+* OpenAI text-embedding-3-small
 
-### Enums
+## Parsing / Repository Intelligence
 
-Role:
-- DEVELOPER
+* tree-sitter
+* Octokit
 
-RepoStatus:
-- CONNECTED
-- INDEXING
-- READY
-- FAILED
-- DISCONNECTED
+## Authentication
 
-IndexJobType:
-- FULL
-- INCREMENTAL
+* GitHub OAuth
+* JWT sessions
 
-IndexJobStatus:
-- PENDING
-- RUNNING
-- COMPLETED
-- FAILED
+## Observability
 
-EntityType:
-- FUNCTION
-- CLASS
-- METHOD
-- MODULE
-- SECTION
-- OTHER
+* Sentry
+* OpenTelemetry
+* Structured JSON logs
 
-SymbolKind:
-- FUNCTION
-- CLASS
-- METHOD
-- VARIABLE
-- EXPORT
-- IMPORT
+## Deployment
 
-MessageRole:
-- USER
-- ASSISTANT
-- TOOL_CALL
-- TOOL_RESULT
-- SYSTEM
-
-ToolStatus:
-- SUCCESS
-- ERROR
-- DENIED
-
-SessionStatus:
-- ACTIVE
-- ARCHIVED
-- DELETED
+* Docker Compose (local)
+* Railway / Fly.io / Render
+* Vercel (frontend)
 
 ---
 
-## 11. API Contract
+# 7. System Architecture
 
-### Auth
-* GET /auth/github (OAuth start)
+## Deployable Components
+
+### Web
+
+Frontend application.
+Responsible for:
+
+* UI
+* authentication
+* dashboard
+* repository workspace
+* streaming chat interface
+
+### API
+
+Main backend service.
+Responsible for:
+
+* retrieval orchestration
+* semantic search
+* session management
+* tool execution
+* context assembly
+* SSE streaming
+
+### Worker
+
+Background job processor.
+Responsible for:
+
+* repository indexing
+* embeddings
+* incremental sync
+* summarization
+* compression jobs
+
+---
+
+# 8. Architecture Diagrams
+
+## High-Level Architecture
+
+```mermaid
+graph TD
+    User --> Web
+    Web --> API
+    API --> Postgres
+    API --> Redis
+    API --> Claude
+    Worker --> Postgres
+    Worker --> OpenAI
+    Worker --> GitHub
+```
+
+---
+
+## Repository Indexing Flow
+
+```mermaid
+graph TD
+    GitHubRepo --> Clone
+    Clone --> FileWalk
+    FileWalk --> TreeSitter
+    TreeSitter --> Chunking
+    Chunking --> Embeddings
+    Embeddings --> pgvector
+    Chunking --> SymbolTable
+    SymbolTable --> Postgres
+```
+
+---
+
+## Retrieval Pipeline
+
+```mermaid
+graph TD
+    Query --> EntityExtraction
+    EntityExtraction --> HybridSearch
+    HybridSearch --> Reranking
+    Reranking --> ContextAssembly
+    ContextAssembly --> Claude
+    Claude --> StreamedResponse
+```
+
+---
+
+# 9. Core Features
+
+## Repository Connection
+
+* GitHub OAuth integration
+* connect private/public repositories
+* repository sync management
+* webhook registration
+
+## Repository Indexing
+
+* shallow clone repository
+* AST-aware chunking
+* embedding generation
+* symbol extraction
+* import graph generation
+* incremental re-indexing
+
+## Repository Intelligence
+
+* architecture overview
+* dependency detection
+* entry point detection
+* module summaries
+* symbol navigation
+* semantic understanding
+
+## Semantic Search
+
+* vector search
+* keyword search
+* hybrid retrieval
+* file/entity filtering
+* ranked chunk retrieval
+
+## Contextual Code Reasoning
+
+* repository-scoped engineering Q&A
+* architecture-aware answers
+* contextual retrieval
+* source citations
+* session memory
+
+## Session Memory
+
+* persistent sessions
+* engineering conversation history
+* context compression
+* pinned files
+* session restoration
+
+## Read-Only Tooling
+
+* read_file
+* grep_search
+* list_directory
+* find_symbol
+* file_tree
+
+---
+
+# 10. V1 Scope
+
+## Included
+
+### Authentication
+
+* GitHub OAuth
+* JWT sessions
+* account dashboard
+
+### Repository Management
+
+* connect repositories
+* trigger indexing
+* re-index repositories
+* disconnect repositories
+* repository status tracking
+
+### Indexing Pipeline
+
+* tree-sitter parsing
+* semantic chunking
+* embedding generation
+* symbol extraction
+* incremental indexing
+
+### Search & Retrieval
+
+* hybrid retrieval
+* semantic search
+* reranking
+* token budget management
+
+### Engineering Intelligence
+
+* contextual Q&A
+* architecture summaries
+* source citations
+* repository understanding
+
+### Session Persistence
+
+* session history
+* conversational memory
+* context compression
+
+### Frontend Dashboard
+
+* repository workspace
+* search interface
+* architecture overview
+* session management
+
+---
+
+## Not Included (V2+)
+
+* code modification
+* shell execution
+* autonomous agents
+* multi-agent orchestration
+* multi-region infrastructure
+* IDE plugins
+* distributed graph systems
+* enterprise governance
+* cross-repository retrieval
+* self-hosted LLMs
+* Kubernetes orchestration
+
+---
+
+# 11. Repository Intelligence
+
+## Architecture Overview
+
+Generated after indexing.
+
+Includes:
+
+* detected frameworks
+* languages
+* dependencies
+* entry points
+* folder structure
+* module relationships
+* key files
+* heavily imported modules
+
+---
+
+## Symbol Extraction
+
+Extract:
+
+* functions
+* classes
+* methods
+* exports
+* imports
+* modules
+
+Used for:
+
+* exact symbol retrieval
+* navigation
+* graph relationships
+* contextual reasoning
+
+---
+
+## Import Graph
+
+Track:
+
+* imports
+* symbol relationships
+* module dependencies
+* architectural centrality
+
+Stored relationally in PostgreSQL.
+
+---
+
+# 12. Indexing Pipeline
+
+## Repository Ingestion
+
+1. GitHub webhook or user trigger
+2. shallow clone repository
+3. walk filesystem
+4. apply include/exclude rules
+
+---
+
+## Parsing
+
+Supported V1 languages:
+
+* JavaScript
+* TypeScript
+* Python
+* Go
+
+Use tree-sitter for AST parsing.
+
+---
+
+## Chunking Rules
+
+* one chunk per function/class/module
+* markdown chunked by section
+* config files chunked by top-level keys
+
+Each chunk contains:
+
+* file path
+* entity type
+* entity name
+* line ranges
+* token count
+* embedding
+
+---
+
+## Embeddings
+
+Model:
+
+* text-embedding-3-small
+
+Rules:
+
+* batch embedding requests
+* re-embed only changed chunks
+* content-hash deduplication
+* HNSW vector indexing
+
+---
+
+## Incremental Re-Indexing
+
+On GitHub push:
+
+* diff changed files
+* re-parse changed files only
+* re-embed changed chunks only
+* preserve old index during rebuild
+
+---
+
+# 13. Retrieval System
+
+## Retrieval Pipeline
+
+Per engineering query:
+
+1. extract entities from question
+2. run hybrid retrieval
+3. rerank candidates
+4. apply diversity limits
+5. enforce token budget
+6. assemble context
+7. stream response from Claude
+
+---
+
+## Hybrid Retrieval
+
+### Vector Search
+
+Top semantic matches using pgvector cosine similarity.
+
+### Keyword Search
+
+Use:
+
+* pg_trgm
+* PostgreSQL full-text search
+
+### Symbol Retrieval
+
+Exact symbol-name matching.
+
+---
+
+## Reranking Formula
+
+Weighted scoring:
+
+* vector relevance
+* keyword relevance
+* recency
+* import centrality
+
+---
+
+## Context Assembly
+
+Order:
+
+1. pinned files
+2. architecture overview
+3. ranked chunks
+4. conversation history
+
+---
+
+## Token Budgeting
+
+| Section                 | Tokens |
+| ----------------------- | ------ |
+| System prompt           | 4k     |
+| Architecture overview   | 2k     |
+| Retrieved chunks        | 40k    |
+| Conversation history    | 10k    |
+| Reserved response space | 8k     |
+
+---
+
+## Conversation Compression
+
+* recent turns stored verbatim
+* older turns summarized asynchronously
+* summaries generated using smaller models
+
+---
+
+# 14. Session & Memory System
+
+## Sessions
+
+Sessions are scoped to:
+
+* user
+* repository
+
+Each session stores:
+
+* messages
+* tool calls
+* citations
+* summaries
+
+---
+
+## Pinned Files
+
+Users can pin files into context.
+Pinned files receive retrieval priority.
+
+---
+
+## Long-Term Memory
+
+Future direction:
+
+* engineering preferences
+* architectural decisions
+* repository evolution tracking
+
+---
+
+# 15. Read-Only Tooling
+
+## Tools
+
+### read_file
+
+Read indexed file content.
+
+### grep_search
+
+Regex search across indexed files.
+
+### list_directory
+
+Return directory structure.
+
+### find_symbol
+
+Locate functions/classes.
+
+### get_file_tree
+
+Return repository structure.
+
+---
+
+## Tool Safety
+
+* no shell execution
+* no filesystem writes
+* no arbitrary HTTP requests
+* no git write operations
+
+All tool calls are logged.
+
+---
+
+# 16. API Design
+
+## Authentication
+
+* GET /auth/github
 * GET /auth/github/callback
 * POST /auth/logout
 * GET /auth/me
 
-### Repositories
-* GET /repos (list connected repos)
-* GET /repos/available (GitHub repos user can connect)
-* POST /repos/connect (body: githubRepoId)
-* DELETE /repos/:id (disconnect + purge)
-* GET /repos/:id
+---
+
+## Repository APIs
+
+* GET /repos
+* POST /repos/connect
+* DELETE /repos/:id
+* POST /repos/:id/reindex
 * GET /repos/:id/summary
-* POST /repos/:id/reindex (triggers full re-index)
-* GET /repos/:id/index-jobs (list past index jobs)
-* GET /repos/:id/index-jobs/:jobId
 
-### Webhooks
-* POST /webhooks/github (push events)
+---
 
-### Search
-* POST /repos/:id/search (body: query, filters)
+## Search APIs
 
-### Q&A / Chat
-* POST /sessions (body: repositoryId)
-* GET /sessions (query: repositoryId)
+* POST /repos/:id/search
+
+---
+
+## Session APIs
+
+* POST /sessions
+* GET /sessions
 * GET /sessions/:id
+* POST /sessions/:id/ask
 * DELETE /sessions/:id
-* GET /sessions/:id/messages
-* POST /sessions/:id/ask (body: question, returns SSE stream)
-* POST /sessions/:id/pin (body: filePath)
-* DELETE /sessions/:id/pin/:filePath
 
-### Tools (called by backend during Q&A; also exposed for direct use)
+---
+
+## Tool APIs
+
 * POST /repos/:id/tools/read-file
 * POST /repos/:id/tools/grep
 * POST /repos/:id/tools/list-directory
 * POST /repos/:id/tools/find-symbol
-* GET /repos/:id/tools/file-tree
-
-### Files (read-only viewer)
-* GET /repos/:id/files/:path (returns file content from indexed snapshot)
-* GET /repos/:id/files/:path/symbols (returns symbols in this file)
-
-### Account
-* GET /account
-* DELETE /account (purges everything)
 
 ---
 
-## 12. User Flows
+# 17. Core Database Models
 
-### Connect Repo
-1. User clicks "Connect GitHub"
-2. Redirected to GitHub OAuth
-3. Returns to Giro with token
-4. User sees list of accessible repos
-5. User picks a repo
-6. Backend creates Repository row (status CONNECTED)
-7. Backend registers GitHub webhook
-8. Backend enqueues full IndexJob
-9. UI navigates to repo page showing indexing progress
+## User
 
-### Indexing
-1. Worker picks up IndexJob
-2. Status → RUNNING
-3. Shallow clone repo
-4. Walk files, apply include/exclude filters
-5. For each file:
-   * Skip if size > 1 MB or matches secret pattern
-   * Parse with tree-sitter
-   * Generate chunks
-6. Batch chunks to OpenAI embeddings API
-7. Batch insert chunks + embeddings into Postgres
-8. Build symbol table
-9. Generate RepositorySummary using Claude
-10. Status → COMPLETED, repo status → READY
-11. Cleanup cloned repo
+Stores:
 
-### Ask a Question
-1. User opens repo workspace, types question
-2. If no active session, create one
-3. POST /sessions/:id/ask streams SSE
-4. Backend:
-   * Saves user message
-   * Runs retrieval pipeline
-   * Assembles context
-   * Calls Claude with streaming
-5. As tokens stream in:
-   * Stream forwarded to client via SSE
-   * Client renders typing effect
-6. If LLM emits tool calls:
-   * Backend executes tools, streams results back as SSE events
-   * LLM receives results, continues
-7. On stream end:
-   * Save assistant message with citations
-   * Return final message ID
-
-### Semantic Search
-1. User types in search bar
-2. Frontend POSTs to /repos/:id/search
-3. Backend runs hybrid search
-4. Returns ranked results
-5. User clicks a result → opens file viewer at line range
-
-### Re-index After Push
-1. GitHub sends push webhook
-2. Backend verifies HMAC signature
-3. Backend creates INCREMENTAL IndexJob
-4. Worker:
-   * Fetches diff between last indexed SHA and new SHA
-   * For each changed file: re-parse, re-chunk, re-embed
-   * Updates lastIndexedSha
-5. UI shows fresh data on next query
-
-### Disconnect Repo
-1. User clicks "Disconnect"
-2. Confirmation modal
-3. Backend:
-   * Deletes GitHub webhook
-   * Soft-deletes Repository (status DISCONNECTED)
-   * Background job purges chunks, embeddings, sessions, summary within 5 min
-   * GitHub access for that repo retained at GitHub side until user revokes app
-
-### Delete Account
-1. User clicks "Delete account" in settings
-2. Re-confirmation
-3. Backend:
-   * Revokes GitHub OAuth
-   * Deletes all repos, chunks, sessions, messages, embeddings
-   * Deletes user row
-   * Returns to landing page
+* GitHub identity
+* OAuth credentials
+* account metadata
 
 ---
 
-## 13. Backend Architecture
+## Repository
+
+Stores:
+
+* repository metadata
+* indexing status
+* GitHub linkage
+
+---
+
+## CodeChunk
+
+Stores:
+
+* semantic chunks
+* embeddings
+* token counts
+* line ranges
+
+---
+
+## Session
+
+Stores:
+
+* engineering conversations
+* session metadata
+
+---
+
+## Message
+
+Stores:
+
+* user messages
+* assistant responses
+* citations
+* tool interactions
+
+---
+
+## IndexJob
+
+Stores:
+
+* indexing lifecycle
+* processing metrics
+* failures
+
+---
+
+# 18. Supporting Database Models
+
+## RepositorySummary
+
+Generated architecture understanding.
+
+## CodeSymbol
+
+Extracted symbols and relationships.
+
+## ToolCall
+
+Audit log for tool execution.
+
+## PinnedFile
+
+Files pinned into context.
+
+---
+
+# 19. Observability
+
+## Monitoring
+
+* Sentry error tracking
+* OpenTelemetry tracing
+* request correlation IDs
+* structured JSON logs
+
+---
+
+## Metrics
+
+Track:
+
+* retrieval latency
+* embedding generation latency
+* indexing duration
+* token usage
+* queue depth
+* failed jobs
+* cache hit rate
+* API latency
+
+---
+
+## Alerts
+
+Alert on:
+
+* indexing failures
+* queue backlogs
+* failed embeddings
+* retrieval timeouts
+* API instability
+
+---
+
+# 20. Cost Controls
+
+## Embedding Controls
+
+* content-hash deduplication
+* incremental re-indexing
+* batch embedding requests
+
+---
+
+## Retrieval Controls
+
+* strict token budgeting
+* context compression
+* retrieval caching
+
+---
+
+## Repository Limits
+
+* maximum repository size
+* maximum indexed file size
+* chunk count limits
+
+---
+
+## Async Operations
+
+Expensive operations run asynchronously:
+
+* summarization
+* indexing
+* embeddings
+* compression
+
+---
+
+# 21. Security
+
+## Read-Only Boundary
+
+* no file writes
+* no shell execution
+* no arbitrary code execution
+
+---
+
+## Secret Protection
+
+Skip indexing:
+
+* .env files
+* private keys
+* credentials
+
+Redact detected secrets before persistence.
+
+---
+
+## OAuth Security
+
+* encrypted token storage
+* GitHub tokens never logged
+* scoped permissions only
+
+---
+
+# 22. Retrieval Evaluation
+
+## Metrics
+
+### Precision@K
+
+How relevant retrieved chunks are.
+
+### Citation Accuracy
+
+Whether citations support generated answers.
+
+### Retrieval Latency
+
+Time required to retrieve context.
+
+### Context Assembly Latency
+
+Time required to build final context window.
+
+### Hallucination Rate
+
+Frequency of unsupported answers.
+
+### Embedding Freshness
+
+Whether retrieval reflects latest indexed repository state.
+
+---
+
+# 23. Future Scope
+
+## Future Retrieval Work
+
+* graph-aware retrieval
+* reranking optimization
+* long-context orchestration
+* cross-repository memory
+
+---
+
+## Future Agent Work
+
+* controlled code modification
+* approval workflows
+* autonomous planning
+* multi-agent orchestration
+
+---
+
+## Future Developer Experience
+
+* VS Code extension
+* IDE integrations
+* repository timeline replay
+* architecture visualizations
+
+---
+
+## Future Infrastructure
+
+* multi-tenant architecture
+* distributed indexing
+* advanced observability
+* enterprise deployment options
 
