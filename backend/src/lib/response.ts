@@ -1,0 +1,30 @@
+// Helpers for building the typed ApiResponse envelope from inside route handlers.
+
+import type { Context } from "hono";
+import type { ApiError, ApiResponse } from "@/types/response.js";
+
+function getRequestId(c: Context): string {
+  return c.get("requestId") ?? "unknown";
+}
+
+export function ok<T>(c: Context, data: T, status = 200) {
+  const body: ApiResponse<T> = {
+    success: true,
+    data,
+    requestId: getRequestId(c),
+  };
+  return c.json(body, status as 200);
+}
+
+export function fail(
+  c: Context,
+  error: ApiError,
+  status: 400 | 401 | 403 | 404 | 409 | 422 | 500 = 500,
+) {
+  const body: ApiResponse<never> = {
+    success: false,
+    error,
+    requestId: getRequestId(c),
+  };
+  return c.json(body, status);
+}
