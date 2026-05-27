@@ -15,11 +15,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "declaration": false,
-    "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "sourceMap": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

@@ -1,9 +1,9 @@
 // Process entrypoint. Boots the HTTP server using @hono/node-server.
 
 import { serve } from "@hono/node-server";
-import { env } from "@/config/env.js";
-import { logger } from "@/lib/logger.js";
-import { createApp } from "@/app.js";
+import { env } from "./config/env.js";
+import { logger } from "./lib/logger.js";
+import { createApp } from "./app.js";
 
 const app = createApp();
 

@@ -1,7 +1,7 @@
 // Minimal structured JSON logger.
 // Keeps zero runtime dependencies; we can swap to pino later without changing call sites.
 
-import { env } from "@/config/env.js";
+import { env } from "../config/env.js";
 
 type Level = "debug" | "info" | "warn" | "error";
 

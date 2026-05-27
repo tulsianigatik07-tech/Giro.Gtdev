@@ -4,9 +4,9 @@
 import type { ErrorHandler, NotFoundHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
-import { env } from "@/config/env.js";
-import { logger } from "@/lib/logger.js";
-import { fail } from "@/lib/response.js";
+import { env } from "../config/env.js";
+import { logger } from "../lib/logger.js";
+import { fail } from "../lib/response.js";
 
 export const onError: ErrorHandler = (err, c) => {
   const requestId = c.get("requestId");

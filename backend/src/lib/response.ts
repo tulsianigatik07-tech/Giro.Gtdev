@@ -1,7 +1,7 @@
 // Helpers for building the typed ApiResponse envelope from inside route handlers.
 
 import type { Context } from "hono";
-import type { ApiError, ApiResponse } from "@/types/response.js";
+import type { ApiError, ApiResponse } from "../types/response.js";
 
 function getRequestId(c: Context): string {
   return c.get("requestId") ?? "unknown";

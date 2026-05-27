@@ -3,11 +3,11 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { env } from "@/config/env.js";
-import { requestId } from "@/middleware/requestId.js";
-import { requestLogger } from "@/middleware/logger.js";
-import { onError, onNotFound } from "@/middleware/errorHandler.js";
-import { routes } from "@/routes/index.js";
+import { env } from "./config/env.js";
+import { requestId } from "./middleware/requestId.js";
+import { requestLogger } from "./middleware/logger.js";
+import { onError, onNotFound } from "./middleware/errorHandler.js";
+import { routes } from "./routes/index.js";
 
 type Variables = {
   requestId: string;

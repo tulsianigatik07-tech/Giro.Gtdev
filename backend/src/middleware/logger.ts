@@ -1,7 +1,7 @@
 // Per-request structured logger. Logs method, path, status, latency_ms, request_id.
 
 import type { MiddlewareHandler } from "hono";
-import { logger } from "@/lib/logger.js";
+import { logger } from "../lib/logger.js";
 
 export const requestLogger = (): MiddlewareHandler => {
   return async (c, next) => {

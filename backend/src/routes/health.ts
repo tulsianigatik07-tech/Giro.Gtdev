@@ -2,7 +2,7 @@
 // Add downstream checks (db, redis) here once those services exist.
 
 import { Hono } from "hono";
-import { ok } from "@/lib/response.js";
+import { ok } from "../lib/response.js";
 
 export const healthRoute = new Hono();
 
