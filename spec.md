@@ -1,6 +1,6 @@
-# Giro.gtdev — Engineering Intelligence Platform
+Giro.gtdev — Engineering Intelligence Platform
 
-## 1. Problem Statement
+1. Problem Statement
 
 Modern codebases are difficult to understand.
 
@@ -9,43 +9,56 @@ Developers spend significant time reconstructing architecture mentally:
 * tracing imports across dozens of files
 * understanding hidden dependencies
 * searching for business logic manually
-* rebuilding context after every interruption
+* rebuilding context after interruptions
 * onboarding into unfamiliar repositories
+* navigating fragmented engineering knowledge
 
 Most existing AI coding tools focus heavily on:
 
 * autocomplete
-* code generation
-* inline suggestions
+* inline generation
+* code suggestions
+* local file edits
 
 But they struggle with:
 
 * repository-level reasoning
-* architectural understanding
-* cross-file retrieval
-* durable engineering context
-* structured repository intelligence
+* semantic architecture understanding
+* durable engineering memory
+* contextual retrieval quality
+* scalable context orchestration
 
 Giro.gtdev is designed to solve this problem.
 
 The platform focuses on:
 
-* repository understanding
+* repository intelligence
 * semantic indexing
 * architecture-aware retrieval
 * contextual engineering reasoning
-* developer memory systems
+* conversational engineering memory
+* grounded repository-aware AI responses
 
 Rather than acting as a fully autonomous coding agent, Giro is designed as an engineering intelligence layer that helps developers understand systems faster.
 
----
+⸻
 
-# 2. Product Vision
+2. Product Vision
 
 Giro.gtdev is an AI-powered engineering intelligence platform.
 
 A developer connects a GitHub repository.
-Giro indexes the repository, builds structural understanding, generates semantic embeddings, tracks relationships between files/symbols, and enables architecture-aware engineering queries.
+
+Giro:
+
+1. clones the repository
+2. scans the filesystem
+3. extracts repository intelligence
+4. chunks and embeds semantic code context
+5. stores vector memory
+6. retrieves relevant engineering context
+7. assembles optimized prompts
+8. enables repository-aware AI conversations
 
 The platform is optimized for:
 
@@ -55,41 +68,75 @@ The platform is optimized for:
 * tracing architecture decisions
 * semantic repository search
 * contextual engineering conversations
+* architectural reasoning
 
-V1 is intentionally read-only.
+V1 intentionally prioritizes:
 
-The first milestone is NOT autonomous coding.
-The first milestone is building a reliable repository intelligence engine.
+* retrieval quality
+* repository understanding
+* semantic memory
+* grounded AI reasoning
 
----
+before:
 
-# 3. V1 Product Focus
+* autonomous code execution
+* multi-agent orchestration
+* code modification workflows
+
+⸻
+
+3. Current V1 Status
+
+The current implementation already supports:
+
+* repository ingestion
+* repository scanning
+* repository analysis
+* semantic chunking
+* vector embeddings
+* pgvector storage
+* semantic retrieval
+* context orchestration
+* AI-ready context assembly
+* repository-aware AI chat
+* streaming AI responses
+* session memory infrastructure
+
+Current backend architecture is functional and evolving iteratively.
+
+⸻
+
+4. V1 Product Focus
 
 The V1 goal of Giro.gtdev is to build a repository intelligence system that can:
 
 * index repositories reliably
-* understand code structure
+* understand repository structure
+* generate semantic repository memory
 * retrieve relevant engineering context
 * answer architectural questions accurately
 * maintain conversational engineering memory
 * explain relationships between files and symbols
+* provide grounded repository-aware AI responses
 
 The platform intentionally prioritizes:
 
 * retrieval quality
 * repository understanding
 * engineering clarity
+* semantic relevance
+* context assembly quality
 
-over:
+Over:
 
-* autonomous code generation
+* autonomous repository modification
 * shell execution
-* multi-agent orchestration
-* enterprise workflows
+* enterprise orchestration
+* generalized coding autonomy
 
----
+⸻
 
-# 4. Non-Goals (V1)
+5. Non-Goals (V1)
 
 Giro.gtdev is NOT attempting to:
 
@@ -101,58 +148,64 @@ Giro.gtdev is NOT attempting to:
 * optimize for massive organizations
 * support multi-agent swarms
 * provide production deployment automation
+* perform autonomous pull request generation
+* run arbitrary external tools
 
-The focus is:
+The focus remains:
 
 * repository intelligence
+* semantic retrieval
 * engineering understanding
-* architectural reasoning
-* contextual retrieval
+* architecture-aware reasoning
+* contextual AI conversations
 
-for individual developers and small teams.
+for individual developers and small engineering teams.
 
----
+⸻
 
-# 5. Engineering Principles
+6. Engineering Principles
 
-## Retrieval Quality Over Infrastructure Complexity
+Retrieval Quality Over Infrastructure Complexity
 
 Strong retrieval and context assembly matter more than distributed infrastructure.
 
-## Minimize Operational Overhead
+Build Context Before Autonomy
 
-Prefer simple systems in V1.
-Avoid unnecessary infrastructure.
+Reliable repository understanding must exist before autonomous workflows.
 
-## Postgres First
+Postgres First
 
 Prefer PostgreSQL extensions before introducing specialized databases.
 
-## Read-Only By Default
+Read-Only By Default
 
 The system should explain and retrieve before it modifies anything.
 
-## Async Everything Expensive
+Async Everything Expensive
 
-Indexing, embeddings, summarization, and compression should run in background jobs.
+Indexing, embeddings, summarization, and compression should run asynchronously.
 
-## Fast Iteration Matters
+Fast Iteration Matters
 
-Optimize for local development speed and developer velocity.
+Optimize for local development speed and engineering iteration.
 
-## Strong Observability From Day One
+Strong Observability From Day One
 
-Every critical operation should be traceable and measurable.
+Every critical operation should be measurable and traceable.
 
-## Build the Smallest Intelligent System First
+Build the Smallest Intelligent System First
 
 Do not overbuild autonomous behavior early.
 
----
+Thin APIs, Smart Services
 
-# 6. Tech Stack
+Routes should remain lightweight while business logic lives in modular services.
 
-## Frontend
+⸻
+
+7. Tech Stack
+
+Frontend
 
 * Next.js 15
 * React
@@ -160,366 +213,229 @@ Do not overbuild autonomous behavior early.
 * TailwindCSS
 * shadcn/ui
 
-## Backend
+Backend
 
-* Hono (high-performance TypeScript API framework)
+* Hono
 * TypeScript
 * SSE streaming
+* Zod validation
 
-## Database
+Database
 
 * PostgreSQL
 * pgvector
 * Prisma ORM
 
-## Queueing / Background Jobs
+Queueing / Background Jobs
 
 * Redis
 * BullMQ
 
-## AI Layer
+AI Layer
 
-* Anthropic Claude (reasoning + Q&A)
+* Anthropic Claude (reasoning)
 * OpenAI text-embedding-3-small
+* GPT-4.1-mini (repository-aware chat)
 
-## Parsing / Repository Intelligence
+Parsing / Repository Intelligence
 
 * tree-sitter
 * Octokit
+* semantic chunking pipeline
 
-## Authentication
+Authentication
 
 * GitHub OAuth
 * JWT sessions
 
-## Observability
+Observability
 
 * Sentry
 * OpenTelemetry
-* Structured JSON logs
+* structured JSON logs
 
-## Deployment
+Deployment
 
-* Docker Compose (local)
+* Docker Compose
 * Railway / Fly.io / Render
 * Vercel (frontend)
 
----
+⸻
 
-# 7. System Architecture
+8. High-Level System Architecture
 
-## Deployable Components
+Deployable Components
 
-### Web
+Web
 
-Frontend application.
 Responsible for:
 
-* UI
 * authentication
-* dashboard
 * repository workspace
-* streaming chat interface
+* streaming AI interface
+* search UI
+* architecture visualizations
 
-### API
+API
 
-Main backend service.
 Responsible for:
 
+* repository ingestion
 * retrieval orchestration
 * semantic search
-* session management
-* tool execution
 * context assembly
-* SSE streaming
+* AI streaming responses
+* session management
+* repository intelligence APIs
 
-### Worker
+Worker
 
-Background job processor.
 Responsible for:
 
-* repository indexing
+* indexing
 * embeddings
-* incremental sync
+* incremental re-indexing
 * summarization
-* compression jobs
+* compression
+* async retrieval optimization
 
----
+⸻
 
-# 8. Architecture Diagrams
+9. Core Architecture Pipelines
 
-## High-Level Architecture
+Repository Intelligence Pipeline
 
-```mermaid
-graph TD
-    User --> Web
-    Web --> API
-    API --> Postgres
-    API --> Redis
-    API --> Claude
-    Worker --> Postgres
-    Worker --> OpenAI
-    Worker --> GitHub
-```
-
----
-
-## Repository Indexing Flow
-
-```mermaid
 graph TD
     GitHubRepo --> Clone
     Clone --> FileWalk
-    FileWalk --> TreeSitter
-    TreeSitter --> Chunking
+    FileWalk --> Analyzer
+    Analyzer --> Chunking
     Chunking --> Embeddings
     Embeddings --> pgvector
-    Chunking --> SymbolTable
-    SymbolTable --> Postgres
-```
+    Chunking --> ContextAssembly
 
----
+⸻
 
-## Retrieval Pipeline
+Semantic Retrieval Pipeline
 
-```mermaid
 graph TD
-    Query --> EntityExtraction
-    EntityExtraction --> HybridSearch
-    HybridSearch --> Reranking
-    Reranking --> ContextAssembly
-    ContextAssembly --> Claude
-    Claude --> StreamedResponse
-```
+    Query --> SemanticSearch
+    SemanticSearch --> Ranking
+    Ranking --> Deduplication
+    Deduplication --> Compression
+    Compression --> ContextAssembly
+    ContextAssembly --> AIModel
 
----
+⸻
 
-# 9. Core Features
+AI Chat Pipeline
 
-## Repository Connection
+graph TD
+    UserQuery --> SessionMemory
+    SessionMemory --> SemanticRetrieval
+    SemanticRetrieval --> ContextAssembly
+    ContextAssembly --> PromptBuilder
+    PromptBuilder --> LLM
+    LLM --> StreamedResponse
 
-* GitHub OAuth integration
-* connect private/public repositories
+⸻
+
+10. Core Features
+
+Repository Connection
+
+* GitHub repository connection
 * repository sync management
-* webhook registration
+* shallow cloning
+* indexing triggers
 
-## Repository Indexing
+Repository Intelligence
 
-* shallow clone repository
-* AST-aware chunking
-* embedding generation
-* symbol extraction
-* import graph generation
-* incremental re-indexing
+* framework detection
+* language detection
+* package manager detection
+* monorepo detection
+* entrypoint detection
+* architecture overview generation
 
-## Repository Intelligence
+Semantic Chunking
 
-* architecture overview
-* dependency detection
-* entry point detection
-* module summaries
-* symbol navigation
-* semantic understanding
-
-## Semantic Search
-
-* vector search
-* keyword search
-* hybrid retrieval
-* file/entity filtering
-* ranked chunk retrieval
-
-## Contextual Code Reasoning
-
-* repository-scoped engineering Q&A
-* architecture-aware answers
-* contextual retrieval
-* source citations
-* session memory
-
-## Session Memory
-
-* persistent sessions
-* engineering conversation history
+* semantic file chunking
+* line-aware chunk metadata
+* token estimation
+* chunk deduplication
 * context compression
-* pinned files
-* session restoration
 
-## Read-Only Tooling
+Vector Memory System
+
+* OpenAI embeddings
+* pgvector similarity search
+* semantic retrieval
+* ranked chunk retrieval
+* contextual repository memory
+
+AI Repository Chat
+
+* repository-aware Q&A
+* streaming responses
+* contextual retrieval
+* grounded engineering reasoning
+* source citations
+
+Session Memory
+
+* persistent conversations
+* repository-scoped sessions
+* context windows
+* conversational continuity
+
+Read-Only Repository Tools
 
 * read_file
 * grep_search
 * list_directory
 * find_symbol
-* file_tree
+* get_file_tree
 
----
+⸻
 
-# 10. V1 Scope
+11. Repository Intelligence System
 
-## Included
+Repository Analysis
 
-### Authentication
-
-* GitHub OAuth
-* JWT sessions
-* account dashboard
-
-### Repository Management
-
-* connect repositories
-* trigger indexing
-* re-index repositories
-* disconnect repositories
-* repository status tracking
-
-### Indexing Pipeline
-
-* tree-sitter parsing
-* semantic chunking
-* embedding generation
-* symbol extraction
-* incremental indexing
-
-### Search & Retrieval
-
-* hybrid retrieval
-* semantic search
-* reranking
-* token budget management
-
-### Engineering Intelligence
-
-* contextual Q&A
-* architecture summaries
-* source citations
-* repository understanding
-
-### Session Persistence
-
-* session history
-* conversational memory
-* context compression
-
-### Frontend Dashboard
-
-* repository workspace
-* search interface
-* architecture overview
-* session management
-
----
-
-## Not Included (V2+)
-
-* code modification
-* shell execution
-* autonomous agents
-* multi-agent orchestration
-* multi-region infrastructure
-* IDE plugins
-* distributed graph systems
-* enterprise governance
-* cross-repository retrieval
-* self-hosted LLMs
-* Kubernetes orchestration
-
----
-
-# 11. Repository Intelligence
-
-## Architecture Overview
-
-Generated after indexing.
+Generated after ingestion.
 
 Includes:
 
-* detected frameworks
+* frameworks
 * languages
 * dependencies
-* entry points
+* entrypoints
 * folder structure
-* module relationships
-* key files
-* heavily imported modules
+* module boundaries
+* backend/frontend detection
+* monorepo detection
 
----
+Semantic Chunking
 
-## Symbol Extraction
+Chunking rules:
 
-Extract:
-
-* functions
-* classes
-* methods
-* exports
-* imports
-* modules
-
-Used for:
-
-* exact symbol retrieval
-* navigation
-* graph relationships
-* contextual reasoning
-
----
-
-## Import Graph
-
-Track:
-
-* imports
-* symbol relationships
-* module dependencies
-* architectural centrality
-
-Stored relationally in PostgreSQL.
-
----
-
-# 12. Indexing Pipeline
-
-## Repository Ingestion
-
-1. GitHub webhook or user trigger
-2. shallow clone repository
-3. walk filesystem
-4. apply include/exclude rules
-
----
-
-## Parsing
-
-Supported V1 languages:
-
-* JavaScript
-* TypeScript
-* Python
-* Go
-
-Use tree-sitter for AST parsing.
-
----
-
-## Chunking Rules
-
-* one chunk per function/class/module
-* markdown chunked by section
-* config files chunked by top-level keys
+* code chunked by logical sections
+* markdown chunked by headings
+* config files chunked by top-level structures
+* preserve line ranges
+* preserve file metadata
 
 Each chunk contains:
 
 * file path
-* entity type
-* entity name
 * line ranges
-* token count
-* embedding
+* language
+* token estimate
+* semantic content
+* embedding vector
 
----
-
-## Embeddings
+Semantic Embeddings
 
 Model:
 
@@ -527,104 +443,118 @@ Model:
 
 Rules:
 
-* batch embedding requests
-* re-embed only changed chunks
-* content-hash deduplication
-* HNSW vector indexing
+* batch processing
+* incremental re-embedding
+* chunk deduplication
+* vector persistence
 
----
+⸻
 
-## Incremental Re-Indexing
+12. Retrieval System
 
-On GitHub push:
-
-* diff changed files
-* re-parse changed files only
-* re-embed changed chunks only
-* preserve old index during rebuild
-
----
-
-# 13. Retrieval System
-
-## Retrieval Pipeline
+Retrieval Pipeline
 
 Per engineering query:
 
-1. extract entities from question
-2. run hybrid retrieval
-3. rerank candidates
-4. apply diversity limits
-5. enforce token budget
-6. assemble context
-7. stream response from Claude
+1. semantic search
+2. reranking
+3. deduplication
+4. context compression
+5. token budgeting
+6. context assembly
+7. AI prompt generation
+8. streaming AI response
 
----
+⸻
 
-## Hybrid Retrieval
+Retrieval Ranking
 
-### Vector Search
+Weighted signals:
 
-Top semantic matches using pgvector cosine similarity.
+* vector similarity
+* entrypoint importance
+* architecture centrality
+* config relevance
+* conversational relevance
 
-### Keyword Search
+Penalized:
 
-Use:
+* generated files
+* lockfiles
+* minified assets
+* duplicate chunks
 
-* pg_trgm
-* PostgreSQL full-text search
+⸻
 
-### Symbol Retrieval
+Context Compression
 
-Exact symbol-name matching.
+Compression preserves:
 
----
+* imports
+* exported APIs
+* function signatures
+* class declarations
+* architectural structure
 
-## Reranking Formula
+Oversized context is trimmed intelligently.
 
-Weighted scoring:
+⸻
 
-* vector relevance
-* keyword relevance
-* recency
-* import centrality
+Context Assembly
 
----
+Assembly order:
 
-## Context Assembly
-
-Order:
-
-1. pinned files
+1. pinned context
 2. architecture overview
-3. ranked chunks
-4. conversation history
+3. ranked semantic chunks
+4. recent conversation history
 
----
+⸻
 
-## Token Budgeting
+13. AI Reasoning Layer
 
-| Section                 | Tokens |
-| ----------------------- | ------ |
-| System prompt           | 4k     |
-| Architecture overview   | 2k     |
-| Retrieved chunks        | 40k    |
-| Conversation history    | 10k    |
-| Reserved response space | 8k     |
+Prompt Assembly
 
----
+Prompts are repository-aware.
 
-## Conversation Compression
+The AI:
 
-* recent turns stored verbatim
-* older turns summarized asynchronously
-* summaries generated using smaller models
+* answers ONLY from repository context
+* avoids hallucinations
+* cites files when possible
+* behaves like a senior engineer
+* refuses unsupported claims
 
----
+⸻
 
-# 14. Session & Memory System
+Streaming Responses
 
-## Sessions
+Responses stream incrementally using SSE.
+
+Includes:
+
+* incremental text streaming
+* metadata headers
+* citation tracking
+* token estimates
+
+⸻
+
+Repository-Aware Chat
+
+Supports:
+
+* architecture questions
+* debugging discussions
+* repository exploration
+* implementation tracing
+* dependency reasoning
+
+⸻
+
+14. Session & Memory System
+
+Sessions
 
 Sessions are scoped to:
 
@@ -634,166 +564,137 @@ Sessions are scoped to:
 Each session stores:
 
 * messages
-* tool calls
 * citations
 * summaries
+* context windows
 
----
+⸻
 
-## Pinned Files
+Conversation Memory
 
-Users can pin files into context.
-Pinned files receive retrieval priority.
+Conversation memory supports:
 
----
+* multi-turn reasoning
+* conversational continuity
+* context persistence
+* engineering discussion history
 
-## Long-Term Memory
+Older messages may be summarized asynchronously.
 
-Future direction:
+⸻
+
+Future Long-Term Memory
+
+Future directions:
 
 * engineering preferences
-* architectural decisions
 * repository evolution tracking
+* architectural decision memory
+* cross-session repository understanding
 
----
+⸻
 
-# 15. Read-Only Tooling
+15. Read-Only Tooling
 
-## Tools
+Current Tools
 
-### read_file
+read_file
 
 Read indexed file content.
 
-### grep_search
+grep_search
 
 Regex search across indexed files.
 
-### list_directory
-
-Return directory structure.
-
-### find_symbol
-
-Locate functions/classes.
-
-### get_file_tree
+list_directory
 
 Return repository structure.
 
----
+find_symbol
 
-## Tool Safety
+Locate functions/classes.
+
+get_file_tree
+
+Return repository hierarchy.
+
+⸻
+
+Tool Safety
 
 * no shell execution
 * no filesystem writes
 * no arbitrary HTTP requests
 * no git write operations
 
-All tool calls are logged.
+All tool calls remain fully auditable.
 
----
+⸻
 
-# 16. API Design
+16. API Design
 
-## Authentication
+Repository APIs
 
-* GET /auth/github
-* GET /auth/github/callback
-* POST /auth/logout
-* GET /auth/me
-
----
-
-## Repository APIs
-
-* GET /repos
 * POST /repos/connect
-* DELETE /repos/:id
-* POST /repos/:id/reindex
 * GET /repos/:id/summary
+* POST /repos/:id/reindex
 
----
+Retrieval APIs
 
-## Search APIs
+* POST /search/context
 
-* POST /repos/:id/search
+Chat APIs
 
----
+* POST /chat
 
-## Session APIs
+Session APIs
 
 * POST /sessions
-* GET /sessions
 * GET /sessions/:id
-* POST /sessions/:id/ask
-* DELETE /sessions/:id
+* GET /sessions/:id/messages
 
----
+Context APIs
 
-## Tool APIs
+* POST /context/build
 
-* POST /repos/:id/tools/read-file
-* POST /repos/:id/tools/grep
-* POST /repos/:id/tools/list-directory
-* POST /repos/:id/tools/find-symbol
+⸻
 
----
+17. Database Models
 
-# 17. Core Database Models
-
-## User
-
-Stores:
-
-* GitHub identity
-* OAuth credentials
-* account metadata
-
----
-
-## Repository
+Repository
 
 Stores:
 
 * repository metadata
 * indexing status
-* GitHub linkage
+* sync state
 
----
-
-## CodeChunk
+CodeChunk
 
 Stores:
 
 * semantic chunks
 * embeddings
-* token counts
 * line ranges
+* token counts
+* language metadata
 
----
-
-## Session
+Session
 
 Stores:
 
 * engineering conversations
-* session metadata
+* repository-scoped memory
 
----
-
-## Message
+Message
 
 Stores:
 
 * user messages
 * assistant responses
 * citations
-* tool interactions
 
----
-
-## IndexJob
+IndexJob
 
 Stores:
 
@@ -801,196 +702,151 @@ Stores:
 * processing metrics
 * failures
 
----
+⸻
 
-# 18. Supporting Database Models
+18. Observability
 
-## RepositorySummary
+Monitoring
 
-Generated architecture understanding.
-
-## CodeSymbol
-
-Extracted symbols and relationships.
-
-## ToolCall
-
-Audit log for tool execution.
-
-## PinnedFile
-
-Files pinned into context.
-
----
-
-# 19. Observability
-
-## Monitoring
-
-* Sentry error tracking
-* OpenTelemetry tracing
+* Sentry
+* OpenTelemetry
 * request correlation IDs
-* structured JSON logs
+* structured logs
 
----
-
-## Metrics
+Metrics
 
 Track:
 
 * retrieval latency
-* embedding generation latency
+* embedding latency
 * indexing duration
 * token usage
-* queue depth
-* failed jobs
-* cache hit rate
-* API latency
+* context assembly latency
+* streaming response latency
+* failed retrievals
 
----
+⸻
 
-## Alerts
+19. Security
 
-Alert on:
+Read-Only Boundary
 
-* indexing failures
-* queue backlogs
-* failed embeddings
-* retrieval timeouts
-* API instability
-
----
-
-# 20. Cost Controls
-
-## Embedding Controls
-
-* content-hash deduplication
-* incremental re-indexing
-* batch embedding requests
-
----
-
-## Retrieval Controls
-
-* strict token budgeting
-* context compression
-* retrieval caching
-
----
-
-## Repository Limits
-
-* maximum repository size
-* maximum indexed file size
-* chunk count limits
-
----
-
-## Async Operations
-
-Expensive operations run asynchronously:
-
-* summarization
-* indexing
-* embeddings
-* compression
-
----
-
-# 21. Security
-
-## Read-Only Boundary
-
-* no file writes
 * no shell execution
+* no file modification
 * no arbitrary code execution
 
----
-
-## Secret Protection
+Secret Protection
 
 Skip indexing:
 
 * .env files
 * private keys
 * credentials
+* secret configuration
 
-Redact detected secrets before persistence.
+Sensitive values are redacted before persistence.
 
----
+⸻
 
-## OAuth Security
+20. Cost Controls
 
-* encrypted token storage
-* GitHub tokens never logged
-* scoped permissions only
+Embedding Optimization
 
----
+* chunk deduplication
+* incremental re-indexing
+* batching
+* retrieval caching
 
-# 22. Retrieval Evaluation
+Token Optimization
 
-## Metrics
+* strict token budgeting
+* context compression
+* ranked retrieval
 
-### Precision@K
+Repository Limits
 
-How relevant retrieved chunks are.
+* max repository size
+* max chunk count
+* max indexed file size
 
-### Citation Accuracy
+⸻
 
-Whether citations support generated answers.
+21. Retrieval Evaluation
 
-### Retrieval Latency
+Metrics
 
-Time required to retrieve context.
+Precision@K
 
-### Context Assembly Latency
+Measures retrieval quality.
 
-Time required to build final context window.
+Citation Accuracy
 
-### Hallucination Rate
+Ensures answers are grounded.
 
-Frequency of unsupported answers.
+Retrieval Latency
 
-### Embedding Freshness
+Measures semantic retrieval speed.
 
-Whether retrieval reflects latest indexed repository state.
+Hallucination Rate
 
----
+Measures unsupported AI responses.
 
-# 23. Future Scope
+Context Quality
 
-## Future Retrieval Work
+Measures usefulness of assembled context.
+
+⸻
+
+22. Current Development Priorities
+
+Current Focus
+
+* repository intelligence
+* semantic retrieval
+* context orchestration
+* grounded AI reasoning
+* session memory
+
+Deferred Until V2
+
+* autonomous execution
+* repository modification
+* multi-agent systems
+* tool execution
+* deployment automation
+* IDE plugins
+* distributed orchestration
+
+⸻
+
+23. Future Scope
+
+Future Retrieval Work
 
 * graph-aware retrieval
-* reranking optimization
+* symbol graph reasoning
 * long-context orchestration
-* cross-repository memory
+* cross-repository retrieval
 
----
-
-## Future Agent Work
+Future Agent Work
 
 * controlled code modification
 * approval workflows
 * autonomous planning
-* multi-agent orchestration
+* PR generation
+* debugging agents
 
----
-
-## Future Developer Experience
+Future Developer Experience
 
 * VS Code extension
-* IDE integrations
-* repository timeline replay
 * architecture visualizations
+* repository replay systems
+* engineering timelines
 
----
-
-## Future Infrastructure
+Future Infrastructure
 
 * multi-tenant architecture
 * distributed indexing
 * advanced observability
-* enterprise deployment options
-
+* enterprise deployment support
+* self-hosted models
