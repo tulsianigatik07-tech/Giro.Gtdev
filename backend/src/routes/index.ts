@@ -6,6 +6,7 @@ import { healthRoute } from "./health.js";
 import { repositoriesRoute } from "./repositories.js";
 import contextRouter from "./context.js";
 import searchRouter from "./search.js";
+import chatRouter from "./chat.js";
 
 export const routes = new Hono();
 
@@ -14,3 +15,4 @@ routes.route("/", healthRoute);
 routes.route("/repos", repositoriesRoute);
 routes.route("/context", contextRouter);
 routes.route("/search", searchRouter);
+routes.route("/chat", chatRouter);
