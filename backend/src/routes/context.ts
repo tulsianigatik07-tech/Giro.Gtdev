@@ -2,6 +2,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 
@@ -29,9 +30,13 @@ contextRouter.post("/build", async (c) => {
     );
   }
 
+  // Derive repository identifier from clone folder name (owner--repo)
+  const folderName = path.basename(clonePath);
+  const repository = folderName.replace("--", "/");
+
   const requestId = randomUUID();
   try {
-    const data = await buildRepositoryContext(clonePath);
+    const data = await buildRepositoryContext(clonePath, repository);
     return c.json({ success: true, requestId, data });
   } catch (err) {
     return c.json(

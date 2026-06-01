@@ -84,7 +84,7 @@ repositoriesRoute.post("/context", async (c) => {
   }
 
   try {
-    const context = await buildRepositoryContext(clonePath);
+    const context = await buildRepositoryContext(clonePath, `${owner}/${repo}`);
     return ok(c, {
       repository: { owner, repo, clonePath },
       ...context,
