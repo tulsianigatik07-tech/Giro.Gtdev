@@ -6,18 +6,23 @@ import { z } from "zod";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
-import { buildContext } from "../services/context/contextAssembler.js";
+import { assembleEnrichedContext } from "../services/context/enrichedAssembler.js";
+import { ok, fail } from "../lib/response.js";
+import { logger } from "../lib/logger.js";
 
 const STORAGE_PATH_GUARD = ".storage/repos";
 
 const BuildBody = z.object({ clonePath: z.string().min(1) });
 
 const AssembleBody = z.object({
-  query: z.string().min(1, "Query must not be empty"),
-  maxCharacters: z.number().int().min(500).max(100_000).optional().default(12_000),
+  query: z.string().min(1, "query is required"),
+  owner: z.string().min(1, "owner is required"),
+  repo: z.string().min(1, "repo is required"),
+  maxChars: z.number().int().min(1000).max(100000).optional().default(16000),
+  limit: z.number().int().min(1).max(50).optional().default(25),
 });
 
-const contextRouter = new Hono();
+const contextRouter = new Hono<{ Variables: { requestId: string } }>();
 
 contextRouter.post("/build", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -61,25 +66,38 @@ contextRouter.post("/assemble", async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = AssembleBody.safeParse(body);
   if (!parsed.success) {
-    return c.json(
-      { success: false, error: "Validation failed", details: parsed.error.errors },
+    return fail(
+      c,
+      {
+        code: "validation_error",
+        message: "Invalid request body",
+        details: parsed.error.flatten(),
+      },
       400,
     );
   }
 
-  const requestId = randomUUID();
+  const { query, owner, repo, maxChars, limit } = parsed.data;
   try {
-    const result = await buildContext(parsed.data.query, parsed.data.maxCharacters);
-    return c.json({ success: true, requestId, ...result });
+    const result = await assembleEnrichedContext({ query, owner, repo, maxChars, limit });
+    return ok(c, result);
   } catch (err) {
-    return c.json(
-      {
-        success: false,
-        requestId,
-        error: err instanceof Error ? err.message : "Context assembly failed",
-      },
-      500,
-    );
+    const message = err instanceof Error ? err.message : "Context assembly failed";
+    if (message.includes("not connected")) {
+      return fail(
+        c,
+        {
+          code: "repo_not_connected",
+          message: "Repository not connected. Call POST /repos/connect first.",
+        },
+        404,
+      );
+    }
+    logger.error("context_assemble_failed", {
+      requestId: c.get("requestId"),
+      message,
+    });
+    return fail(c, { code: "assembly_error", message }, 500);
   }
 });
 

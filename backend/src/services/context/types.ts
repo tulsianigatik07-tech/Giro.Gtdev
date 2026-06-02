@@ -24,3 +24,9 @@ export type ContextBuildResult = {
   totalChunks: number;
   chunks: CodeChunk[];
 };
+
+export type {
+  EnrichedContextChunk,
+  EnrichedAssembledContext,
+  EnrichedAssemblyRequest,
+} from "./contextTypes.js";
