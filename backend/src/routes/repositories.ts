@@ -13,6 +13,7 @@ import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.js";
 import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
 import { analyzeRepoDependencies } from "../services/graph/index.js";
+import { searchRepositoryFiles } from "../services/fileSearch/index.js";
 import type { ScanResult } from "../services/repository/types.js";
 
 const ConnectBody = z.object({ repoUrl: z.string().min(1) });
@@ -173,5 +174,50 @@ repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
       message,
     });
     return fail(c, { code: "dependency_error", message }, 500);
+  }
+});
+
+// GET /repos/search/:owner/:repo?q=query&limit=1-50 — file-level semantic search.
+repositoriesRoute.get("/search/:owner/:repo", async (c) => {
+  const owner = c.req.param("owner");
+  const repo = c.req.param("repo");
+  const query = c.req.query("q");
+  const limitRaw = c.req.query("limit");
+
+  if (!owner || !repo) {
+    return fail(c, { code: "validation_error", message: "owner and repo are required" }, 400);
+  }
+  if (!query || query.trim().length === 0) {
+    return fail(c, { code: "validation_error", message: "query (q) is required" }, 400);
+  }
+
+  let limit: number | undefined;
+  if (limitRaw !== undefined) {
+    const parsed = Number(limitRaw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 50) {
+      return fail(c, { code: "validation_error", message: "limit must be an integer 1-50" }, 400);
+    }
+    limit = parsed;
+  }
+
+  try {
+    const result = await searchRepositoryFiles({ query, owner, repo, limit });
+    return ok(c, result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    if (message === "Repository not connected") {
+      return fail(
+        c,
+        { code: "repo_not_connected", message: "Repository not connected. Call POST /repos/connect first." },
+        404,
+      );
+    }
+    logger.error("file_search_failed", {
+      requestId: c.get("requestId"),
+      owner,
+      repo,
+      message,
+    });
+    return fail(c, { code: "file_search_error", message }, 500);
   }
 });
