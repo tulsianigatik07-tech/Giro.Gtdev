@@ -8,6 +8,7 @@ import contextRouter from "./context.js";
 import searchRouter from "./search.js";
 import chatRouter from "./chat.js";
 import toolsRouter from "./tools.js";
+import retrievalRouter from "./retrieval.js";
 
 export const routes = new Hono();
 
@@ -18,3 +19,4 @@ routes.route("/context", contextRouter);
 routes.route("/search", searchRouter);
 routes.route("/chat", chatRouter);
 routes.route("/tools", toolsRouter);
+routes.route("/retrieval", retrievalRouter);
