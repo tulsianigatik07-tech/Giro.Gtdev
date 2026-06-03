@@ -1,9 +1,10 @@
 // Deterministic ask orchestration: load session -> gather context -> assemble
 // answer -> persist messages. Graceful degradation on retrieval, hard fail on persist.
 
-import { getSessionById, addMessageToSession } from "./sessionService.js";
+import { getSessionById, addMessageToSession, replaceSelectedContext } from "./sessionService.js";
 import { assembleAnswer } from "./answerAssembler.js";
 import type { AskResult, RepositorySummaryView } from "./answerTypes.js";
+import type { SelectedContextChunk } from "./types.js";
 import { assembleEnrichedContext } from "../context/enrichedAssembler.js";
 import { searchRepositoryFiles as searchFiles } from "../fileSearch/index.js";
 import { analyzeRepoDependencies } from "../graph/index.js";
@@ -13,6 +14,16 @@ import { analyzeRepository } from "../repository/analyzer.js";
 import { logger } from "../../lib/logger.js";
 
 type QuestionResult = AskResult | "session_not_found";
+
+// Strips the absolute ".storage/repos/<owner>--<repo>/" prefix so persisted
+// chunks only carry repository-relative paths.
+function toRelativePath(filePath: string): string {
+  const marker = ".storage/repos";
+  const idx = filePath.indexOf(marker);
+  if (idx === -1) return filePath;
+  const after = filePath.slice(idx + marker.length);
+  return after.replace(/\\/g, "/").replace(/^\/[^/]+\/[^/]+\//, "");
+}
 
 export async function answerSessionQuestion(
   sessionId: string,
@@ -124,6 +135,49 @@ export async function answerSessionQuestion(
     fileResults.results,
     summary,
   );
+
+  // STEP 7.5 — Build and persist selectedContext (graceful)
+  try {
+    const round3 = (n: number): number => Math.round(n * 1000) / 1000;
+    const seen = new Set<string>();
+    const selectedChunks: SelectedContextChunk[] = [];
+
+    for (const item of enrichedContext.context) {
+      const filePath = toRelativePath(item.filePath);
+      const key = `${filePath}:${item.startLine}:${item.endLine}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      selectedChunks.push({
+        filePath,
+        language: item.language,
+        content: item.content,
+        startLine: item.startLine,
+        endLine: item.endLine,
+        score: round3(item.score ?? 0),
+      });
+    }
+
+    selectedChunks.sort(
+      (a, b) =>
+        b.score - a.score ||
+        a.filePath.localeCompare(b.filePath) ||
+        a.startLine - b.startLine,
+    );
+
+    const top = selectedChunks.slice(0, 10);
+    replaceSelectedContext(sessionId, top);
+    logger.info("session_context_attached", {
+      sessionId,
+      selectedChunks: top.length,
+    });
+  } catch (err) {
+    logger.warn("session_context_attach_failed", {
+      sessionId,
+      owner,
+      repo,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+  }
 
   // STEP 8 — Persist messages sequentially (hard fail)
   await addMessageToSession(sessionId, { role: "user", content: question });
