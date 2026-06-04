@@ -110,6 +110,7 @@ test("7. empty input returns empty + zeroed statistics", () => {
     rerankedChunkCount: 0,
     duplicateChunksRemoved: 0,
     boostedChunkCount: 0,
+    crossFileBoostedChunkCount: 0,
   });
 });
 
@@ -126,4 +127,98 @@ test("9. input array is not mutated", () => {
   const snapshot = input.map((c) => ({ ...c }));
   rerankChunks(input, "retrieval");
   assert.deepEqual(input, snapshot);
+});
+
+test("10. related file chunk is boosted by a high-score seed", () => {
+  // Seed: src/session.ts (high score). Related (same dir + family): src/sessionService.ts.
+  const related = rerankChunks(
+    [
+      chunk({ filePath: "src/session.ts", content: "seed", score: 100, startLine: 1, endLine: 5 }),
+      chunk({ filePath: "src/sessionService.ts", content: "rel", score: 10, startLine: 1, endLine: 5 }),
+    ],
+    "nomatch",
+  );
+  // Compare against a run where the candidate is unrelated (different dir + family).
+  const baseline = rerankChunks(
+    [
+      chunk({ filePath: "src/session.ts", content: "seed", score: 100, startLine: 1, endLine: 5 }),
+      chunk({ filePath: "lib/unrelated.ts", content: "rel", score: 10, startLine: 1, endLine: 5 }),
+    ],
+    "nomatch",
+  );
+  const relScore = related.chunks.find((c) => c.filePath === "src/sessionService.ts")?.score ?? 0;
+  const baseScore = baseline.chunks.find((c) => c.filePath === "lib/unrelated.ts")?.score ?? 0;
+  assert.ok(relScore > baseScore);
+  assert.equal(related.statistics.crossFileBoostedChunkCount, 1);
+});
+
+test("11. seed file does not boost its own chunks", () => {
+  const { chunks, statistics } = rerankChunks(
+    [
+      chunk({ filePath: "src/session.ts", content: "seed", score: 100, startLine: 1, endLine: 5 }),
+      chunk({ filePath: "src/session.ts", content: "seed2", score: 100, startLine: 20, endLine: 25 }),
+    ],
+    "nomatch",
+  );
+  // Both chunks belong to the seed file -> no cross-file boost applied.
+  assert.equal(statistics.crossFileBoostedChunkCount, 0);
+  assert.ok(chunks.every((c) => c.score <= 1));
+});
+
+test("12. cross-file boost capped at +0.16 via relatedFiles", () => {
+  // 3 seeds all relate to target; 3 * 0.08 = 0.24 but capped at 0.16.
+  // target score 70 -> norm 0.70 (below 0.75 seed threshold, so it is a
+  // boost candidate, not a seed). 0.70 + 0.16 cap = 0.86.
+  const chunks = [
+    chunk({ filePath: "a.ts", content: "x", score: 100, startLine: 1, endLine: 5 }),
+    chunk({ filePath: "b.ts", content: "x", score: 100, startLine: 1, endLine: 5 }),
+    chunk({ filePath: "c.ts", content: "x", score: 100, startLine: 1, endLine: 5 }),
+    chunk({ filePath: "target.ts", content: "x", score: 70, startLine: 1, endLine: 5 }),
+  ];
+  const relatedFiles = {
+    "a.ts": ["target.ts"],
+    "b.ts": ["target.ts"],
+    "c.ts": ["target.ts"],
+  };
+  const { chunks: out } = rerankChunks(chunks, "nomatch", { relatedFiles });
+  const target = out.find((c) => c.filePath === "target.ts")?.score ?? 0;
+  assert.ok(Math.abs(target - 0.86) < 1e-9, `expected ~0.86 got ${target}`);
+});
+
+test("13. unrelated files unchanged by cross-file boosting", () => {
+  const { chunks, statistics } = rerankChunks(
+    [
+      chunk({ filePath: "src/alpha.ts", content: "seed", score: 100, startLine: 1, endLine: 5 }),
+      chunk({ filePath: "totally/different/zeta.ts", content: "x", score: 50, startLine: 1, endLine: 5 }),
+    ],
+    "nomatch",
+  );
+  // zeta is in a different dir and shares no family -> no boost.
+  assert.equal(statistics.crossFileBoostedChunkCount, 0);
+  const zeta = chunks.find((c) => c.filePath === "totally/different/zeta.ts")?.score ?? -1;
+  assert.ok(Math.abs(zeta - 0.5) < 1e-9, `expected 0.5 got ${zeta}`);
+});
+
+test("14. cross-file boosting is deterministic", () => {
+  const input = [
+    chunk({ filePath: "src/session.ts", content: "seed", score: 100, startLine: 1, endLine: 5 }),
+    chunk({ filePath: "src/sessionService.ts", content: "rel", score: 10, startLine: 1, endLine: 5 }),
+    chunk({ filePath: "src/sessionStore.ts", content: "rel2", score: 10, startLine: 1, endLine: 5 }),
+  ];
+  const a = rerankChunks(input, "nomatch");
+  const b = rerankChunks(input, "nomatch");
+  assert.deepEqual(a, b);
+});
+
+test("15. relatedFiles only boosts candidates present in the chunk list", () => {
+  const { statistics } = rerankChunks(
+    [
+      chunk({ filePath: "a.ts", content: "seed", score: 100, startLine: 1, endLine: 5 }),
+      chunk({ filePath: "present.ts", content: "x", score: 20, startLine: 1, endLine: 5 }),
+    ],
+    "nomatch",
+    { relatedFiles: { "a.ts": ["present.ts", "absent.ts"] } },
+  );
+  // Only present.ts is in the list -> exactly one cross-file boost.
+  assert.equal(statistics.crossFileBoostedChunkCount, 1);
 });

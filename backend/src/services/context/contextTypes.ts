@@ -41,6 +41,7 @@ export interface EnrichedAssembledContext {
       rerankedChunkCount: number;
       duplicateChunksRemoved: number;
       boostedChunkCount: number;
+      crossFileBoostedChunkCount: number;
     };
   };
 }
