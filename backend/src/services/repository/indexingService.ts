@@ -112,3 +112,8 @@ export function isRepositoryStale(owner: string, repo: string): boolean {
 
 // Status type re-exported for callers that narrow on it.
 export type { RepositoryIndexStatus };
+
+// test-only helper — resets in-memory registry
+export function clearRepositoryIndexRegistry(): void {
+  store.clear();
+}
