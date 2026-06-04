@@ -3,6 +3,7 @@
 
 import { hybridSearch } from "../retrieval/hybridSearch.js";
 import { searchRepositoryFiles } from "../fileSearch/index.js";
+import { rerankChunks } from "../retrieval/qualityReranker.js";
 import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
@@ -144,18 +145,15 @@ export async function assembleEnrichedContext(
     chunk.signals = roundSignals(chunk.signals);
   }
 
-  // Deterministic ordering.
-  merged.sort(
-    (a, b) =>
-      b.score - a.score ||
-      a.filePath.localeCompare(b.filePath) ||
-      a.startLine - b.startLine,
-  );
+  // Quality rerank (normalize -> keyword boost -> dedupe -> diversity -> sort)
+  // runs AFTER source merge/dedupe and BEFORE character budget trimming.
+  const reranked = rerankChunks(merged, request.query);
+  const rankedChunks = reranked.chunks;
 
   // Character budget enforcement with optional trim.
   const finalChunks: EnrichedContextChunk[] = [];
   let usedChars = 0;
-  for (const chunk of merged) {
+  for (const chunk of rankedChunks) {
     const remaining = maxChars - usedChars;
     if (remaining <= 0) break;
 
@@ -210,6 +208,7 @@ export async function assembleEnrichedContext(
       deduplicatedCount: removedCount,
       finalCount: finalChunks.length,
       sourceCounts,
+      rerank: reranked.statistics,
     },
   };
 }

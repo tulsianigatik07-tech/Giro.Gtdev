@@ -36,6 +36,12 @@ export interface EnrichedAssembledContext {
       graph: number;
       fileSearch: number;
     };
+    rerank?: {
+      originalChunkCount: number;
+      rerankedChunkCount: number;
+      duplicateChunksRemoved: number;
+      boostedChunkCount: number;
+    };
   };
 }
 
