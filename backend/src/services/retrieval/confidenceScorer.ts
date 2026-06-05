@@ -86,3 +86,20 @@ export function scoreContextConfidence(
     chunkCount: chunks.length,
   };
 }
+
+export interface RetrievalConfidenceMetadata {
+  confidence: number;
+  chunkConfidence: ChunkConfidence[];
+}
+
+// Pure integration helper: derives confidence metadata from a finalized chunk
+// set. Does not mutate the input. Used by enrichedAssembler and tested directly
+// with inline fixtures (no network/DB/AI).
+export function buildConfidenceMetadata(
+  finalChunks: EnrichedContextChunk[],
+): RetrievalConfidenceMetadata {
+  return {
+    confidence: scoreContextConfidence(finalChunks).confidence,
+    chunkConfidence: finalChunks.map((chunk) => scoreChunkConfidence(chunk)),
+  };
+}

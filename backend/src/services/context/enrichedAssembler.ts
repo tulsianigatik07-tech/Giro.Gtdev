@@ -4,6 +4,7 @@
 import { hybridSearch } from "../retrieval/hybridSearch.js";
 import { searchRepositoryFiles } from "../fileSearch/index.js";
 import { rerankChunks } from "../retrieval/qualityReranker.js";
+import { buildConfidenceMetadata } from "../retrieval/confidenceScorer.js";
 import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
@@ -186,6 +187,9 @@ export async function assembleEnrichedContext(
   const totalContentLength = finalChunks.reduce((s, c) => s + c.content.length, 0);
   const estimatedTokens = Math.ceil(totalContentLength / 4);
 
+  // Confidence metadata derived from the finalized chunk set (no mutation).
+  const confidenceMeta = buildConfidenceMetadata(finalChunks);
+
   logger.info("enriched_context_assembled", {
     query: request.query,
     repository,
@@ -209,6 +213,8 @@ export async function assembleEnrichedContext(
       finalCount: finalChunks.length,
       sourceCounts,
       rerank: reranked.statistics,
+      confidence: confidenceMeta.confidence,
+      chunkConfidence: confidenceMeta.chunkConfidence,
     },
   };
 }

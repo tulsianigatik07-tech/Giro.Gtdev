@@ -1,209 +1,217 @@
 # Giro.gtdev — Tasks
 
+# PHASE 1 — Repository Intelligence Core 
 
+## Core Backend
 
-## PHASE 1 — Project Setup
+* [x] Setup backend architecture
+* [x] Setup routing structure
+* [x] Setup middleware system
+* [x] Setup deterministic service layer
+* [x] Setup validation pipeline
+* [x] Setup logging and error handling
 
-* Create project structure
-* Create backend and frontend folders
-* Initialize Git repository
-* Setup README.md
-* Setup environment variables
-* Setup Python virtual environment
-* Install FastAPI dependencies
-* Setup Next.js frontend
-* Setup linting and formatting
-* Push initial architecture docs to GitHub
+## Repository Lifecycle
 
+* [x] Repository connection API
+* [x] Repository ingestion flow
+* [x] Repository metadata extraction
+* [x] Repository indexing lifecycle
+* [x] Indexed repository detection
+* [x] Repository stale-state handling
 
+## Retrieval Engine
 
-## PHASE 2 — Backend Foundation
+* [x] Semantic retrieval pipeline
+* [x] Keyword retrieval pipeline
+* [x] Hybrid retrieval engine
+* [x] File-level retrieval explanations
+* [x] Dependency graph retrieval
+* [x] Symbol-aware retrieval
+* [x] Deterministic retrieval ordering
 
-* Setup FastAPI server
-* Create health check endpoint
-* Setup API routing structure
-* Create service layer structure
-* Create middleware system
-* Setup request validation
-* Setup logging system
-* Setup error handling
-* Test backend locally
+## Context Engine
 
+* [x] Context assembly pipeline
+* [x] Deterministic context synthesis
+* [x] Context ranking system
+* [x] Context budget limiting
+* [x] Selected context persistence
+* [x] Stable retrieval orchestration
 
+## Session Architecture
 
-## PHASE 3 — Repository Ingestion Engine
+* [x] Session engine
+* [x] Repository-aware sessions
+* [x] Ask orchestration flow
+* [x] Message persistence
+* [x] Citation generation
+* [x] Deterministic answer synthesis
 
-* Create repository input API
-* Support GitHub repository URLs
-* Clone repositories locally
-* Scan repository file tree
-* Ignore unnecessary files
-* Parse supported languages
-* Create repository metadata service
-* Store indexed repository info
+# PHASE 2 — Retrieval Quality Optimization
 
+## Retrieval Ranking
 
+* [ ] Weighted hybrid reranking
+* [ ] Semantic/keyword balancing
+* [ ] Symbol score calibration
+* [ ] Graph traversal weighting
+* [ ] Duplicate chunk suppression
+* [ ] Cross-file relevance boosting
 
-## PHASE 4 — Chunking & Parsing System
+## Context Quality
 
-* Create file chunking engine
-* Implement semantic chunking
-* Extract functions/classes
-* Extract imports and dependencies
-* Generate chunk metadata
-* Store parsed chunks
-* Test chunk quality
-* Optimize chunk sizes
+* [ ] Adjacent chunk stitching
+* [ ] Smarter chunk merging
+* [ ] Context compression improvements
+* [ ] Long-file handling
+* [ ] Retrieval diversity enforcement
+* [ ] Retrieval fallback heuristics
 
+## Answer Quality
 
+* [ ] Architecture-aware explanations
+* [ ] Entrypoint tracing
+* [ ] Repository structure summaries
+* [ ] Retrieval trace metadata
+* [ ] Confidence scoring
+* [ ] Explanation consistency checks
 
-## PHASE 5 — Embedding & Search System
+# PHASE 3 — Repository Indexing Scalability
 
-* Setup embedding generation service
-* Generate embeddings for chunks
-* Setup vector storage
-* Implement semantic search
-* Create hybrid retrieval pipeline
-* Add keyword search
-* Test retrieval relevance
-* Optimize retrieval speed
+## Indexing Pipeline
 
+* [ ] Incremental indexing
+* [ ] Changed-file indexing
+* [ ] Parallel indexing workers
+* [ ] Batched indexing jobs
+* [ ] Retry-safe indexing
+* [ ] Reindex scheduler
 
+## Performance
 
-## PHASE 6 — Context Engine
+* [ ] Retrieval latency benchmarks
+* [ ] Context assembly benchmarks
+* [ ] Graph traversal benchmarks
+* [ ] Token estimation optimization
+* [ ] Large repository stress tests
+* [ ] Memory optimization
 
-* Create context assembly system
-* Implement token budget manager
-* Add context ranking system
-* Build retrieval orchestration layer
-* Add active file prioritization
-* Add recency boosting
-* Generate structured context output
-* Test multi-file retrieval
+## Lifecycle Management
 
+* [ ] Automatic stale detection
+* [ ] Repository cleanup
+* [ ] Session cleanup lifecycle
+* [ ] Cache invalidation rules
+* [ ] Background maintenance jobs
 
+# PHASE 4 — Persistence & Infrastructure
 
-## PHASE 7 — Knowledge Graph System
+## Persistence
 
-* Extract entity relationships
-* Build graph node system
-* Build graph edge system
-* Track imports and calls
-* Track model relationships
-* Create graph traversal engine
-* Test graph-aware retrieval
-* Optimize traversal depth
+* [ ] Persistent session storage
+* [ ] Persistent retrieval history
+* [ ] Persistent indexed chunks
+* [ ] Persistent citations
+* [ ] Persistent repository metadata
 
+## Infrastructure
 
+* [ ] PostgreSQL integration
+* [ ] pgvector integration
+* [ ] Redis caching
+* [ ] Queue-based indexing
+* [ ] Background workers
+* [ ] Structured observability
 
-## PHASE 8 — AI Runtime Layer
+# PHASE 5 — API Stabilization
 
-* Integrate OpenAI API
-* Integrate Claude API
-* Create prompt orchestration layer
-* Inject retrieval context into prompts
-* Create repo Q&A system
-* Create architecture explanation system
-* Create decision explanation flow
-* Test AI responses
+## Contracts
 
+* [ ] Stable response contracts
+* [ ] Shared DTO validation
+* [ ] Error normalization
+* [ ] Versioned APIs
+* [ ] Pagination standards
+* [ ] Request tracing IDs
 
+## Security
 
-## PHASE 9 — Session & Memory System
+* [ ] Repository ownership validation
+* [ ] Input sanitization
+* [ ] Rate limiting
+* [ ] Abuse protection
+* [ ] Secure repository path handling
 
-* Create session tracking system
-* Store previous interactions
-* Build episodic memory layer
-* Create long-term learning storage
-* Implement memory retrieval
-* Add contradiction detection
-* Add confidence scoring
-* Test memory persistence
+# PHASE 6 — Testing & Reliability
 
+## Automated Testing
 
+* [ ] Retrieval engine tests
+* [ ] Determinism snapshot tests
+* [ ] Context assembly tests
+* [ ] Route integration tests
+* [ ] Indexing lifecycle tests
+* [ ] Failure recovery tests
 
-## PHASE 10 — Frontend Platform
+## Reliability
 
-* Setup landing page
-* Setup dashboard UI
-* Create repository upload page
-* Create retrieval inspection UI
-* Create graph visualization UI
-* Create session history page
-* Display architecture summaries
-* Connect frontend to backend APIs
+* [ ] Empty repository handling
+* [ ] Large repository handling
+* [ ] Corrupted chunk recovery
+* [ ] Missing symbol resilience
+* [ ] Graceful degraded retrieval
+* [ ] Stable retry behavior
 
+# PHASE 7 — Frontend Platform
 
+## Frontend
 
-## PHASE 11 — Streaming & Realtime
+* [ ] Dashboard UI
+* [ ] Repository upload UI
+* [ ] Retrieval inspection UI
+* [ ] Session history UI
+* [ ] Architecture visualization
+* [ ] Graph visualization UI
 
-* Setup streaming responses
-* Add SSE/WebSocket support
-* Stream AI responses live
-* Stream retrieval progress
-* Add indexing progress UI
-* Test realtime interactions
+## Realtime
 
+* [ ] Streaming responses
+* [ ] SSE/WebSocket support
+* [ ] Live retrieval progress
+* [ ] Indexing progress streaming
 
+# PHASE 8 — OSS Readiness
 
-## PHASE 12 — Authentication & Security
+## Documentation
 
-* Setup authentication system
-* Create JWT token flow
-* Add tenant isolation
-* Create API permission system
-* Add rate limiting
-* Add sandbox restrictions
-* Validate secure tool execution
-* Test authorization flow
+* [ ] Architecture documentation
+* [ ] Setup guide
+* [ ] API documentation
+* [ ] Local development guide
+* [ ] Benchmark documentation
+* [ ] Repository diagrams
 
+## Open Source Readiness
 
+* [ ] Issue templates
+* [ ] PR templates
+* [ ] Contribution guidelines
+* [ ] Example repositories
+* [ ] Demo screenshots
+* [ ] Public launch preparation
 
-## PHASE 13 — Infrastructure & Deployment
+# CURRENT STATUS
 
-* Setup PostgreSQL
-* Setup pgvector
-* Setup Redis caching
-* Setup deployment pipelines
-* Deploy frontend
-* Deploy backend
-* Configure environment secrets
-* Setup monitoring and logging
+Current backend capabilities include:
 
+* deterministic retrieval orchestration
+* hybrid repository intelligence
+* dependency graph analysis
+* symbol-aware retrieval
+* deterministic answer synthesis
+* context budget enforcement
+* indexing lifecycle orchestration
+* repository-aware session architecture
 
-
-## PHASE 14 — Developer Experience
-
-* Improve README.md
-* Add architecture diagrams
-* Add API documentation
-* Add setup documentation
-* Create demo screenshots
-* Record demo video
-* Create GitHub issue templates
-* Prepare public repository
-
-
-
-## RESEARCH TASKS
-
-* Research retrieval reranking
-* Research graph-aware memory
-* Research long-context orchestration
-* Research vector database optimization
-* Research agent memory compression
-* Research hybrid retrieval systems
-
-
-
-## FINAL CHECK
-
-* Repository ingestion works
-* Chunking system works
-* Retrieval pipeline works
-* Graph traversal works
-* AI responses are relevant
-* Context assembly is stable
-* Frontend and backend connected
-* No broken APIs
-* System works end-to-end
+Backend maturity has progressed beyond prototype stage into infrastructure stabilization and retrieval optimization.
