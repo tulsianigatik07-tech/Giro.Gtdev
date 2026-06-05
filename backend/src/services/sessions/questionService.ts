@@ -7,6 +7,7 @@ import type { AskResult, RepositorySummaryView } from "./answerTypes.js";
 import type { SelectedContextChunk } from "./types.js";
 import { assembleEnrichedContext } from "../context/enrichedAssembler.js";
 import { trimContextToBudget } from "../context/contextBudget.js";
+import { buildRetrievalMetadata } from "../retrieval/retrievalMetadataExposure.js";
 import { searchRepositoryFiles as searchFiles } from "../fileSearch/index.js";
 import { analyzeRepoDependencies } from "../graph/index.js";
 import { repoClonePath } from "../repository/clone.js";
@@ -206,6 +207,8 @@ export async function answerSessionQuestion(
       dropped: budgetResult.dropped.length,
       estimatedTokens: budgetResult.estimatedTokens,
     },
+    // Pass-through of retrieval metadata already produced by enrichedAssembler.
+    retrieval: buildRetrievalMetadata(enrichedContext.stats),
   };
 
   // STEP 10 — Log success
