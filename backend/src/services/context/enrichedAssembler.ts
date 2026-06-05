@@ -7,6 +7,7 @@ import { rerankChunks } from "../retrieval/qualityReranker.js";
 import { buildConfidenceMetadata } from "../retrieval/confidenceScorer.js";
 import { buildRetrievalDebugReport } from "../retrieval/debugReport.js";
 import { buildAnswerProvenance } from "../retrieval/answerProvenance.js";
+import { buildRetrievalExplainability } from "../retrieval/explainability.js";
 import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
@@ -198,6 +199,9 @@ export async function assembleEnrichedContext(
   // Answer provenance (metadata only; which files contributed to the context).
   const answerProvenance = buildAnswerProvenance(finalChunks);
 
+  // Explainability (metadata only; why each chunk was retrieved).
+  const explainability = buildRetrievalExplainability(finalChunks);
+
   logger.info("enriched_context_assembled", {
     query: request.query,
     repository,
@@ -225,6 +229,7 @@ export async function assembleEnrichedContext(
       chunkConfidence: confidenceMeta.chunkConfidence,
       debugReport,
       answerProvenance,
+      explainability,
     },
   };
 }

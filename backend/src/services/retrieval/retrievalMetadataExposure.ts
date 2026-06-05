@@ -8,6 +8,7 @@ import type { ChunkConfidence } from "./confidenceScorer.js";
 import type { RetrievalDebugReport } from "./debugReport.js";
 import type { AnswerProvenance } from "./answerProvenance.js";
 import type { RerankStatistics } from "./qualityReranker.js";
+import type { RetrievalExplainability } from "./explainability.js";
 
 export interface RetrievalMetadata {
   confidence?: number;
@@ -15,6 +16,7 @@ export interface RetrievalMetadata {
   debugReport?: RetrievalDebugReport;
   answerProvenance?: AnswerProvenance;
   rerank?: RerankStatistics;
+  explainability?: RetrievalExplainability;
 }
 
 export function buildRetrievalMetadata(
@@ -26,5 +28,6 @@ export function buildRetrievalMetadata(
   if (stats.debugReport !== undefined) out.debugReport = stats.debugReport;
   if (stats.answerProvenance !== undefined) out.answerProvenance = stats.answerProvenance;
   if (stats.rerank !== undefined) out.rerank = stats.rerank;
+  if (stats.explainability !== undefined) out.explainability = stats.explainability;
   return out;
 }
