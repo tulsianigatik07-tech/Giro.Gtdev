@@ -2,6 +2,7 @@
 
 import type { ChunkConfidence } from "../retrieval/confidenceScorer.js";
 import type { RetrievalDebugReport } from "../retrieval/debugReport.js";
+import type { AnswerProvenance } from "../retrieval/answerProvenance.js";
 
 export interface EnrichedContextChunk {
   filePath: string;
@@ -49,6 +50,7 @@ export interface EnrichedAssembledContext {
     confidence?: number;
     chunkConfidence?: ChunkConfidence[];
     debugReport?: RetrievalDebugReport;
+    answerProvenance?: AnswerProvenance;
   };
 }
 
