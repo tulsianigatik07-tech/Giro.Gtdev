@@ -10,6 +10,7 @@ import type { AnswerProvenance } from "./answerProvenance.js";
 import type { RerankStatistics } from "./qualityReranker.js";
 import type { RetrievalExplainability } from "./explainability.js";
 import type { RepositoryCoverage } from "./repositoryCoverage.js";
+import type { RetrievalHotspots } from "./retrievalHotspots.js";
 
 export interface RetrievalMetadata {
   confidence?: number;
@@ -19,6 +20,7 @@ export interface RetrievalMetadata {
   rerank?: RerankStatistics;
   explainability?: RetrievalExplainability;
   repositoryCoverage?: RepositoryCoverage;
+  retrievalHotspots?: RetrievalHotspots;
 }
 
 export function buildRetrievalMetadata(
@@ -32,5 +34,6 @@ export function buildRetrievalMetadata(
   if (stats.rerank !== undefined) out.rerank = stats.rerank;
   if (stats.explainability !== undefined) out.explainability = stats.explainability;
   if (stats.repositoryCoverage !== undefined) out.repositoryCoverage = stats.repositoryCoverage;
+  if (stats.retrievalHotspots !== undefined) out.retrievalHotspots = stats.retrievalHotspots;
   return out;
 }

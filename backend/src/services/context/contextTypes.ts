@@ -5,6 +5,7 @@ import type { RetrievalDebugReport } from "../retrieval/debugReport.js";
 import type { AnswerProvenance } from "../retrieval/answerProvenance.js";
 import type { RetrievalExplainability } from "../retrieval/explainability.js";
 import type { RepositoryCoverage } from "../retrieval/repositoryCoverage.js";
+import type { RetrievalHotspots } from "../retrieval/retrievalHotspots.js";
 
 export interface EnrichedContextChunk {
   filePath: string;
@@ -55,6 +56,7 @@ export interface EnrichedAssembledContext {
     answerProvenance?: AnswerProvenance;
     explainability?: RetrievalExplainability;
     repositoryCoverage?: RepositoryCoverage;
+    retrievalHotspots?: RetrievalHotspots;
   };
 }
 
