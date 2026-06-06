@@ -8,6 +8,7 @@ import { buildConfidenceMetadata } from "../retrieval/confidenceScorer.js";
 import { buildRetrievalDebugReport } from "../retrieval/debugReport.js";
 import { buildAnswerProvenance } from "../retrieval/answerProvenance.js";
 import { buildRetrievalExplainability } from "../retrieval/explainability.js";
+import { buildRepositoryCoverage } from "../retrieval/repositoryCoverage.js";
 import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
@@ -202,6 +203,9 @@ export async function assembleEnrichedContext(
   // Explainability (metadata only; why each chunk was retrieved).
   const explainability = buildRetrievalExplainability(finalChunks);
 
+  // Repository coverage (metadata only; distribution of chunks across files).
+  const repositoryCoverage = buildRepositoryCoverage(finalChunks);
+
   logger.info("enriched_context_assembled", {
     query: request.query,
     repository,
@@ -230,6 +234,7 @@ export async function assembleEnrichedContext(
       debugReport,
       answerProvenance,
       explainability,
+      repositoryCoverage,
     },
   };
 }

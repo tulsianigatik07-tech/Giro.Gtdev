@@ -4,6 +4,7 @@ import type { ChunkConfidence } from "../retrieval/confidenceScorer.js";
 import type { RetrievalDebugReport } from "../retrieval/debugReport.js";
 import type { AnswerProvenance } from "../retrieval/answerProvenance.js";
 import type { RetrievalExplainability } from "../retrieval/explainability.js";
+import type { RepositoryCoverage } from "../retrieval/repositoryCoverage.js";
 
 export interface EnrichedContextChunk {
   filePath: string;
@@ -53,6 +54,7 @@ export interface EnrichedAssembledContext {
     debugReport?: RetrievalDebugReport;
     answerProvenance?: AnswerProvenance;
     explainability?: RetrievalExplainability;
+    repositoryCoverage?: RepositoryCoverage;
   };
 }
 
