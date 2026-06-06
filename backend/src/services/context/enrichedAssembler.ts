@@ -10,6 +10,7 @@ import { buildAnswerProvenance } from "../retrieval/answerProvenance.js";
 import { buildRetrievalExplainability } from "../retrieval/explainability.js";
 import { buildRepositoryCoverage } from "../retrieval/repositoryCoverage.js";
 import { buildRetrievalHotspots } from "../retrieval/retrievalHotspots.js";
+import { buildRetrievalDiversity } from "../retrieval/retrievalDiversity.js";
 import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
@@ -210,6 +211,9 @@ export async function assembleEnrichedContext(
   // Retrieval hotspots (metadata only; concentration analysis across files).
   const retrievalHotspots = buildRetrievalHotspots(finalChunks);
 
+  // Retrieval diversity (metadata only; spread of chunks across files).
+  const retrievalDiversity = buildRetrievalDiversity(finalChunks);
+
   logger.info("enriched_context_assembled", {
     query: request.query,
     repository,
@@ -240,6 +244,7 @@ export async function assembleEnrichedContext(
       explainability,
       repositoryCoverage,
       retrievalHotspots,
+      retrievalDiversity,
     },
   };
 }
