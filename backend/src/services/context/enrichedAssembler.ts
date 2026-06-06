@@ -11,6 +11,7 @@ import { buildRetrievalExplainability } from "../retrieval/explainability.js";
 import { buildRepositoryCoverage } from "../retrieval/repositoryCoverage.js";
 import { buildRetrievalHotspots } from "../retrieval/retrievalHotspots.js";
 import { buildRetrievalDiversity } from "../retrieval/retrievalDiversity.js";
+import { buildRetrievalBlindSpots } from "../retrieval/retrievalBlindSpots.js";
 import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
@@ -214,6 +215,9 @@ export async function assembleEnrichedContext(
   // Retrieval diversity (metadata only; spread of chunks across files).
   const retrievalDiversity = buildRetrievalDiversity(finalChunks);
 
+  // Retrieval blind spots (metadata only; absent sources / file extensions).
+  const retrievalBlindSpots = buildRetrievalBlindSpots(finalChunks);
+
   logger.info("enriched_context_assembled", {
     query: request.query,
     repository,
@@ -245,6 +249,7 @@ export async function assembleEnrichedContext(
       repositoryCoverage,
       retrievalHotspots,
       retrievalDiversity,
+      retrievalBlindSpots,
     },
   };
 }

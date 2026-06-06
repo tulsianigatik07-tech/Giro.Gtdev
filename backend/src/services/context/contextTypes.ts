@@ -7,6 +7,7 @@ import type { RetrievalExplainability } from "../retrieval/explainability.js";
 import type { RepositoryCoverage } from "../retrieval/repositoryCoverage.js";
 import type { RetrievalHotspots } from "../retrieval/retrievalHotspots.js";
 import type { RetrievalDiversity } from "../retrieval/retrievalDiversity.js";
+import type { RetrievalBlindSpots } from "../retrieval/retrievalBlindSpots.js";
 
 export interface EnrichedContextChunk {
   filePath: string;
@@ -59,6 +60,7 @@ export interface EnrichedAssembledContext {
     repositoryCoverage?: RepositoryCoverage;
     retrievalHotspots?: RetrievalHotspots;
     retrievalDiversity?: RetrievalDiversity;
+    retrievalBlindSpots?: RetrievalBlindSpots;
   };
 }
 
