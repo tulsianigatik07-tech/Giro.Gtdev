@@ -12,6 +12,7 @@ import { buildRepositoryCoverage } from "../retrieval/repositoryCoverage.js";
 import { buildRetrievalHotspots } from "../retrieval/retrievalHotspots.js";
 import { buildRetrievalDiversity } from "../retrieval/retrievalDiversity.js";
 import { buildRetrievalBlindSpots } from "../retrieval/retrievalBlindSpots.js";
+import { buildRetrievalQualityScore } from "../retrieval/retrievalQualityScore.js";
 import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
@@ -218,6 +219,16 @@ export async function assembleEnrichedContext(
   // Retrieval blind spots (metadata only; absent sources / file extensions).
   const retrievalBlindSpots = buildRetrievalBlindSpots(finalChunks);
 
+  // Retrieval quality score (metadata only; summary grade from existing
+  // metadata layers — never recomputed from chunks).
+  const retrievalQualityScore = buildRetrievalQualityScore({
+    confidence: confidenceMeta.confidence,
+    retrievalDiversity,
+    repositoryCoverage,
+    retrievalHotspots,
+    retrievalBlindSpots,
+  });
+
   logger.info("enriched_context_assembled", {
     query: request.query,
     repository,
@@ -250,6 +261,7 @@ export async function assembleEnrichedContext(
       retrievalHotspots,
       retrievalDiversity,
       retrievalBlindSpots,
+      retrievalQualityScore,
     },
   };
 }

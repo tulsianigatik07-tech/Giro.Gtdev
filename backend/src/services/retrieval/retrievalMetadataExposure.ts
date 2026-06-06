@@ -13,6 +13,7 @@ import type { RepositoryCoverage } from "./repositoryCoverage.js";
 import type { RetrievalHotspots } from "./retrievalHotspots.js";
 import type { RetrievalDiversity } from "./retrievalDiversity.js";
 import type { RetrievalBlindSpots } from "./retrievalBlindSpots.js";
+import type { RetrievalQualityScore } from "./retrievalQualityScore.js";
 
 export interface RetrievalMetadata {
   confidence?: number;
@@ -25,6 +26,7 @@ export interface RetrievalMetadata {
   retrievalHotspots?: RetrievalHotspots;
   retrievalDiversity?: RetrievalDiversity;
   retrievalBlindSpots?: RetrievalBlindSpots;
+  retrievalQualityScore?: RetrievalQualityScore;
 }
 
 export function buildRetrievalMetadata(
@@ -41,5 +43,6 @@ export function buildRetrievalMetadata(
   if (stats.retrievalHotspots !== undefined) out.retrievalHotspots = stats.retrievalHotspots;
   if (stats.retrievalDiversity !== undefined) out.retrievalDiversity = stats.retrievalDiversity;
   if (stats.retrievalBlindSpots !== undefined) out.retrievalBlindSpots = stats.retrievalBlindSpots;
+  if (stats.retrievalQualityScore !== undefined) out.retrievalQualityScore = stats.retrievalQualityScore;
   return out;
 }
