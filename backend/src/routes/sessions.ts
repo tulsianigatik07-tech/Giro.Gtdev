@@ -1,6 +1,7 @@
 // Session routes: validation + delegation only. No business logic here.
 
 import { Hono } from "hono";
+import { requireAuthenticatedUser } from "../services/auth/authContext.js";
 import { z } from "zod";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
@@ -48,7 +49,14 @@ sessionsRouter.post("/", async (c) => {
     if (!parsed.success) {
       return fail(c, { code: "validation_error", message: "Invalid request body", details: parsed.error.flatten() }, 400);
     }
-    const session = createNewSession(parsed.data);
+
+    const user = requireAuthenticatedUser(c);
+
+    const session = createNewSession({
+      ...parsed.data,
+      userId: user.userId,
+    });
+
     return ok(c, session, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";

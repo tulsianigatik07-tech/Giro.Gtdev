@@ -20,6 +20,7 @@ export function createNewSession(input: CreateSessionInput): Session {
   const timestamp = nowIso();
   const session: Session = {
     id: randomUUID(),
+    userId: input.userId,
     owner: input.owner,
     repo: input.repo,
     title: input.title ?? `${input.owner}/${input.repo} session`,
@@ -28,8 +29,12 @@ export function createNewSession(input: CreateSessionInput): Session {
     messages: [],
     selectedContext: [],
   };
+
   const created = store.createSession(session);
-  logger.info("session_created", { sessionId: created.id, repository: `${input.owner}/${input.repo}` });
+  logger.info("session_created", {
+    sessionId: created.id,
+    repository: `${input.owner}/${input.repo}`,
+  });
   return created;
 }
 
@@ -40,6 +45,7 @@ export function getSessionById(id: string): Session | null {
 export function listAllSessions(): SessionSummary[] {
   return store.listSessions().map((s) => ({
     id: s.id,
+    userId: s.userId,
     owner: s.owner,
     repo: s.repo,
     title: s.title,
@@ -69,8 +75,13 @@ export function addMessageToSession(
     messages: [...session.messages, message],
     updatedAt: nowIso(),
   };
+
   const saved = store.updateSession(updated);
-  logger.info("session_message_added", { sessionId, messageId: message.id, role: message.role });
+  logger.info("session_message_added", {
+    sessionId,
+    messageId: message.id,
+    role: message.role,
+  });
   return saved;
 }
 
@@ -86,8 +97,12 @@ export function replaceSelectedContext(
     selectedContext: [...chunks],
     updatedAt: nowIso(),
   };
+
   const saved = store.updateSession(updated);
-  logger.info("selected_context_updated", { sessionId, chunkCount: chunks.length });
+  logger.info("selected_context_updated", {
+    sessionId,
+    chunkCount: chunks.length,
+  });
   return saved;
 }
 

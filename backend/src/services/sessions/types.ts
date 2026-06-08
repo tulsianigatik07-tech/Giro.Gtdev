@@ -39,16 +39,18 @@ export interface Message {
 
 export interface Session {
   id: string;
+  userId: string;
   owner: string;
   repo: string;
   title: string;
-  createdAt: string; // ISO string
-  updatedAt: string; // ISO string
+  createdAt: string;
+  updatedAt: string;
   messages: Message[];
   selectedContext: SelectedContextChunk[];
 }
 
 export interface CreateSessionInput {
+  userId: string;
   owner: string;
   repo: string;
   title?: string;
@@ -62,6 +64,7 @@ export interface AddMessageInput {
 
 export interface SessionSummary {
   id: string;
+  userId: string;
   owner: string;
   repo: string;
   title: string;
