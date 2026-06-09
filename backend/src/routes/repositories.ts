@@ -14,7 +14,10 @@ import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.
 import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
 import { analyzeRepoDependencies } from "../services/graph/index.js";
 import { searchRepositoryFiles } from "../services/fileSearch/index.js";
-import { setRepositoryOwner } from "../services/repository/ownershipStore.js";
+import {
+  setRepositoryOwner,
+  getRepositoryOwner,
+} from "../services/repository/ownershipStore.js";
 import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
@@ -123,8 +126,21 @@ repositoriesRoute.post("/connect", async (c) => {
 });
 
 repositoriesRoute.get("/indexed", (c) => {
+  const user = getAuthenticatedUser(c);
+  if (!user) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+
   const repositories = listIndexedRepositories();
-  return ok(c, { repositories, count: repositories.length });
+  const ownedRepositories = repositories.filter((repository) => {
+    const repoId = `${repository.owner}/${repository.repo}`;
+    return getRepositoryOwner(repoId) === user.userId;
+  });
+
+  return ok(c, {
+    repositories: ownedRepositories,
+    count: ownedRepositories.length,
+  });
 });
 
 repositoriesRoute.post("/context", async (c) => {
