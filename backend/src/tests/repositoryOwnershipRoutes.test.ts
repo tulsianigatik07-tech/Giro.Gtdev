@@ -79,3 +79,44 @@ describe("repository summary ownership", () => {
     }
   });
 });
+
+describe("repository dependency route ownership", () => {
+  it("returns 401 without auth", async () => {
+    const result = await request("/repos/dependencies/acme/demo");
+
+    assert.equal(result.status, 401);
+    assert.equal(result.body.error?.code, "unauthorized");
+  });
+
+  it("returns 404 when repo is not connected/owned", async () => {
+    const token = await authHeader(USER_A);
+    const result = await request("/repos/dependencies/acme/demo", token);
+
+    assert.equal(result.status, 404);
+    assert.equal(result.body.error?.code, "repo_not_connected");
+  });
+
+  it("returns 403 when repo belongs to another user", async () => {
+    setRepositoryOwner("acme/demo", USER_A.userId);
+
+    const token = await authHeader(USER_B);
+    const result = await request("/repos/dependencies/acme/demo", token);
+
+    assert.equal(result.status, 403);
+    assert.equal(result.body.error?.code, "repo_not_owned");
+  });
+
+  it("valid owner passes ownership check and does not fail with auth or ownership error", async () => {
+    setRepositoryOwner("acme/demo", USER_A.userId);
+
+    const token = await authHeader(USER_A);
+    const result = await request("/repos/dependencies/acme/demo", token);
+
+    assert.notEqual(result.status, 401);
+    assert.notEqual(result.status, 403);
+
+    if (result.status === 404) {
+      assert.equal(result.body.error?.code, "repo_not_connected");
+    }
+  });
+});
