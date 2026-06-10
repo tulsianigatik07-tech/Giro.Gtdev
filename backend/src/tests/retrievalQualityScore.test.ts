@@ -175,3 +175,18 @@ test("19. exposure omits retrievalQualityScore when absent (backward compatible)
   const meta = buildRetrievalMetadata(stats);
   assert.ok(!("retrievalQualityScore" in meta));
 });
+
+test("quality score is deterministic for identical inputs", () => {
+  const input: RetrievalQualityInput = {
+    confidence: 0.82,
+    retrievalDiversity: diversity(0.7),
+    repositoryCoverage: coverage(6, 14),
+    retrievalHotspots: hotspots("moderate"),
+    retrievalBlindSpots: blindSpots(1),
+  };
+
+  const first = buildRetrievalQualityScore(input);
+  const second = buildRetrievalQualityScore(input);
+
+  assert.deepEqual(first, second);
+});
