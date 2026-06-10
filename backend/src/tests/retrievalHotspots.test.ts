@@ -151,3 +151,23 @@ test("15. exposure omits retrievalHotspots when absent (backward compatible)", (
   const meta = buildRetrievalMetadata(stats);
   assert.ok(!("retrievalHotspots" in meta));
 });
+test("16. hotspot calculation handles same file chunks with different line ranges", () => {
+  const chunks: EnrichedContextChunk[] = [
+    chunk("src/session.ts"),
+    chunk("src/session.ts"),
+    chunk("src/session.ts"),
+    chunk("src/auth.ts"),
+    chunk("src/auth.ts"),
+  ];
+
+  const h = buildRetrievalHotspots(chunks);
+
+  assert.equal(h.hotspotCount, 2);
+  assert.equal(h.dominantHotspot?.filePath, "src/session.ts");
+  assert.equal(h.dominantHotspot?.chunkCount, 3);
+  assert.equal(h.dominantHotspot?.percentage, 60);
+
+  const auth = h.hotspotFiles.find((f) => f.filePath === "src/auth.ts");
+  assert.equal(auth?.chunkCount, 2);
+  assert.equal(auth?.percentage, 40);
+});
