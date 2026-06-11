@@ -125,3 +125,15 @@ test("13. exposure omits retrievalDiversity when absent (backward compatible)", 
   const meta = buildRetrievalMetadata(stats);
   assert.ok(!("retrievalDiversity" in meta));
 });
+test("14. same file repeated chunks produce concentrated diversity", () => {
+  const d = buildRetrievalDiversity([
+    ...nChunks("src/session.ts", 4),
+    chunk("src/auth.ts"),
+  ]);
+
+  assert.equal(d.totalFiles, 2);
+  assert.equal(d.totalChunks, 5);
+  assert.equal(d.diversityScore, 0.4);
+  assert.equal(d.concentrationScore, 0.8);
+  assert.equal(d.classification, "medium-diversity");
+});
