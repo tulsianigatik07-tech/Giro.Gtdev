@@ -19,6 +19,8 @@ import {
   getRepositoryOwner,
 } from "../services/repository/ownershipStore.js";
 import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { saveRepositoryFileSnapshot, getRepositoryFileSnapshot } from "../services/repository/fileSnapshotStore.js";
+import { detectChangedFiles } from "../services/repository/changedFileDetection.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
@@ -114,6 +116,22 @@ repositoriesRoute.post("/connect", async (c) => {
     touchRepositoryAccess(owner, repo);
     // The connecting user becomes the repository owner.
     setRepositoryOwner(repoId, user.userId);
+
+    // Persist the indexed file snapshot for future incremental indexing.
+    // Detection is computed for logging/debugging only; it does not affect
+    // the response shape or any indexing decision in this phase.
+    const previousSnapshot = getRepositoryFileSnapshot(repoId);
+    const changes = detectChangedFiles(previousSnapshot?.files ?? null, stats.files);
+    saveRepositoryFileSnapshot(repoId, stats.files);
+    logger.info("repos_file_snapshot", {
+      requestId: c.get("requestId"),
+      owner,
+      repo,
+      added: changes.added.length,
+      removed: changes.removed.length,
+      unchanged: changes.unchanged.length,
+      shouldReindexFully: changes.shouldReindexFully,
+    });
 
     return ok(c, { ...result, ...analysis });
   } catch (err) {

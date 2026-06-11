@@ -6,15 +6,23 @@ import { shouldIgnoreFile, shouldIgnorePath, IGNORED_DIRS } from "./ignore.js";
 
 const MAX_FILE_SIZE = 512 * 1024;
 
+export interface ScannedFile {
+  filePath: string;
+  size: number;
+  language: string;
+}
+
 export interface ScanStats {
   totalFiles: number;
   totalDirectories: number;
   languages: Record<string, number>;
   tree: string[];
+  files: ScannedFile[];
 }
 
 export async function scanRepo(clonePath: string): Promise<ScanStats> {
   const languages: Record<string, number> = {};
+  const files: ScannedFile[] = [];
   let totalFiles = 0;
   let totalDirectories = 0;
 
@@ -39,13 +47,16 @@ export async function scanRepo(clonePath: string): Promise<ScanStats> {
       totalFiles += 1;
       const ext = path.extname(entry.name).toLowerCase() || "none";
       languages[ext] = (languages[ext] ?? 0) + 1;
+      files.push({ filePath: rel, size: info.size, language: ext });
     }
   }
 
   await walk(clonePath);
   const tree = await buildTree(clonePath);
 
-  return { totalFiles, totalDirectories, languages, tree };
+  files.sort((a, b) => a.filePath.localeCompare(b.filePath));
+
+  return { totalFiles, totalDirectories, languages, tree, files };
 }
 
 async function buildTree(clonePath: string): Promise<string[]> {
