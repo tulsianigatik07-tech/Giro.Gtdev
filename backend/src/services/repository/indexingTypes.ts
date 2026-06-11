@@ -14,4 +14,8 @@ export interface RepositoryIndexMetadata {
   graphNodeCount: number;
   graphEdgeCount: number;
   summaryAvailable: boolean;
+  // Incremental indexing lifecycle metadata (additive, historical).
+  firstIndexedAt: string | null;
+  lastIndexedAt: string | null;
+  totalIndexedFiles: number;
 }

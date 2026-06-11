@@ -29,6 +29,9 @@ function defaultMetadata(owner: string, repo: string): RepositoryIndexMetadata {
     graphNodeCount: 0,
     graphEdgeCount: 0,
     summaryAvailable: false,
+    firstIndexedAt: null,
+    lastIndexedAt: null,
+    totalIndexedFiles: 0,
   };
 }
 
@@ -62,16 +65,20 @@ export function setRepositoryIndexed(
 ): void {
   const key = repoKey(owner, repo);
   const existing = store.get(key) ?? defaultMetadata(owner, repo);
+  const now = new Date().toISOString();
   store.set(key, {
     ...existing,
     status: "indexed",
-    indexedAt: new Date().toISOString(),
+    indexedAt: now,
     chunkCount: counts.chunkCount,
     fileCount: counts.fileCount,
     symbolCount: counts.symbolCount,
     graphNodeCount: counts.graphNodeCount,
     graphEdgeCount: counts.graphEdgeCount,
     summaryAvailable: counts.summaryAvailable,
+    firstIndexedAt: existing.firstIndexedAt ?? now,
+    lastIndexedAt: now,
+    totalIndexedFiles: counts.fileCount,
   });
 }
 
