@@ -150,3 +150,20 @@ test("13. exposure omits retrievalBlindSpots when absent (backward compatible)",
   const meta = buildRetrievalMetadata(stats);
   assert.ok(!("retrievalBlindSpots" in meta));
 });
+
+test("14. minimum full source and extension coverage has no blind spots", () => {
+  const chunks: EnrichedContextChunk[] = [
+    chunk("semantic", "a.ts"),
+    chunk("keyword", "b.tsx"),
+    chunk("symbol", "c.js"),
+    chunk("graph", "d.jsx"),
+    chunk("file-search", "e.json"),
+    chunk("semantic", "f.md"),
+  ];
+
+  const r = buildRetrievalBlindSpots(chunks);
+
+  assert.equal(r.hasBlindSpots, false);
+  assert.equal(r.blindSpotCount, 0);
+  assert.deepEqual(r.blindSpots, []);
+});
