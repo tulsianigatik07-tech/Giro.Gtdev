@@ -190,3 +190,17 @@ test("quality score is deterministic for identical inputs", () => {
 
   assert.deepEqual(first, second);
 });
+test("20. penalties cannot push score below zero", () => {
+  const r = buildRetrievalQualityScore({
+    confidence: 0,
+    retrievalDiversity: diversity(0),
+    repositoryCoverage: coverage(0, 0),
+    retrievalHotspots: hotspots("concentrated"),
+    retrievalBlindSpots: blindSpots(10),
+  });
+
+  assert.equal(r.score, 0);
+  assert.equal(r.grade, "poor");
+  assert.ok(r.factors.hotspotPenalty >= 0);
+  assert.ok(r.factors.blindSpotPenalty >= 0);
+});
