@@ -115,3 +115,14 @@ test("13. exposure omits explainability when absent (backward compatible)", () =
   const meta = buildRetrievalMetadata(stats);
   assert.ok(!("explainability" in meta));
 });
+test("14. chunk with no matching signals returns empty reasons", () => {
+  const r = buildRetrievalExplainability([
+    chunk({
+      source: "semantic",
+      signals: {},
+    }),
+  ]);
+
+  assert.equal(r.chunks.length, 1);
+  assert.deepEqual(r.chunks[0]?.reasons, []);
+});
