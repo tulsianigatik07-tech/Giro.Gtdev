@@ -22,6 +22,10 @@ import { requireRepositoryAccess } from "../services/repository/ownershipGuard.j
 import { saveRepositoryFileSnapshot, getRepositoryFileSnapshot } from "../services/repository/fileSnapshotStore.js";
 import { buildRepositoryIndexingPlan } from "../services/repository/indexingPlan.js";
 import { executeIndexingPlan } from "../services/repository/indexingExecutor.js";
+import {
+  buildIndexCleanupPlanFromIndexingPlan,
+  executeIndexCleanup,
+} from "../services/repository/indexCleanup.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
@@ -164,6 +168,22 @@ repositoriesRoute.post("/connect", async (c) => {
     touchRepositoryAccess(owner, repo);
     // The connecting user becomes the repository owner.
     setRepositoryOwner(repoId, user.userId);
+
+    // Deletion cleanup foundation: if the plan dropped files, resolve what
+    // needs cleaning BEFORE the new snapshot overwrites the old one. This is
+    // foundation-only — no disk/store deletions happen yet.
+    const cleanupPlan = buildIndexCleanupPlanFromIndexingPlan(indexingPlan);
+    if (cleanupPlan.cleanupRequired) {
+      const cleanup = executeIndexCleanup(cleanupPlan);
+      logger.info("repository_index_cleanup", {
+        requestId: c.get("requestId"),
+        owner,
+        repo,
+        cleaned: cleanup.cleanedFileCount,
+        skipped: cleanup.skippedFileCount,
+        reason: cleanup.reason,
+      });
+    }
 
     // Persist the new indexed file snapshot for future incremental indexing.
     saveRepositoryFileSnapshot(repoId, stats.files);
