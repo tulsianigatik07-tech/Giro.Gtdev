@@ -118,6 +118,44 @@ export function removeRepositorySymbolsForFiles(
   );
 }
 
+// --- Incremental, per-file refresh (for future incremental execution) ---
+
+// Replace ALL records for a single file: drop existing entries for filePath,
+// insert the provided symbols (carrying filePath), and re-sort the repo's flat
+// array deterministically. Builds the full new array, then assigns atomically
+// (via saveRepositorySymbols). Accepts already-extracted ExtractedSymbol[].
+export function setFileSymbols(
+  repoId: string,
+  filePath: string,
+  symbols: readonly ExtractedSymbol[],
+): void {
+  const others = getRepositorySymbols(repoId).filter((s) => s.filePath !== filePath);
+  const added: RepositorySymbolRecord[] = symbols.map((sym) => ({
+    filePath,
+    symbolName: sym.name,
+    kind: sym.kind,
+    startLine: sym.line,
+    endLine: sym.line,
+  }));
+  saveRepositorySymbols(repoId, [...others, ...added]);
+}
+
+// Drop all entries for a single file; other files untouched.
+export function removeFileSymbols(repoId: string, filePath: string): void {
+  removeRepositorySymbolsForFiles(repoId, [filePath]);
+}
+
+// Pure orchestrator: apply per-file removals and changes to a repo's persisted
+// symbol set. Accepts ALREADY-EXTRACTED FileSymbolMap[] (no filesystem access).
+// Identical input -> deepEqual resulting store state.
+export function applyIncrementalSymbolRefresh(
+  repoId: string,
+  input: { changed: FileSymbolMap[]; removed: string[] },
+): void {
+  for (const filePath of input.removed) removeFileSymbols(repoId, filePath);
+  for (const map of input.changed) setFileSymbols(repoId, map.filePath, map.symbols);
+}
+
 // test-only helper — resets the in-memory symbol index
 export function clearRepositorySymbols(): void {
   store.clear();
