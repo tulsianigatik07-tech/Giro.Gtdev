@@ -101,6 +101,20 @@ export function setRepositoryFailed(owner: string, repo: string): void {
   store.set(key, { ...existing, status: "failed" });
 }
 
+// Additive: update ONLY symbolCount on an existing entry (e.g. after pruning
+// removed files' symbols). Preserves status, indexedAt, lastAccessedAt, and all
+// other counts. No timestamps touched. No-op if the repo has no entry.
+export function updateRepositorySymbolCount(
+  owner: string,
+  repo: string,
+  symbolCount: number,
+): void {
+  const key = repoKey(owner, repo);
+  const existing = store.get(key);
+  if (!existing) return;
+  store.set(key, { ...existing, symbolCount });
+}
+
 export function markRepositoryStale(owner: string, repo: string): void {
   const key = repoKey(owner, repo);
   const existing = store.get(key);
