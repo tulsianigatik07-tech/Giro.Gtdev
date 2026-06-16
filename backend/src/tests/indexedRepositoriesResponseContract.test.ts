@@ -57,6 +57,12 @@ const ENTRY_KEYS = [
   "totalIndexedFiles",
   "lastIndexMode",
   "lastChangedFileCount",
+  "lastFailureAt",
+  "failureReason",
+  "failedFileCount",
+  "lastSuccessfulFile",
+  "retryCount",
+  "lastRetryAt",
 ].sort();
 
 const NUMBER_FIELDS = [

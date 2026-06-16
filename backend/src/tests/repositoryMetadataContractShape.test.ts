@@ -60,6 +60,12 @@ const EXPECTED_KEYS = [
   "totalIndexedFiles",
   "lastIndexMode",
   "lastChangedFileCount",
+  "lastFailureAt",
+  "failureReason",
+  "failedFileCount",
+  "lastSuccessfulFile",
+  "retryCount",
+  "lastRetryAt",
 ].sort();
 
 const TIMESTAMP_OR_NULL = new Set(["indexedAt", "lastAccessedAt", "firstIndexedAt", "lastIndexedAt"]);

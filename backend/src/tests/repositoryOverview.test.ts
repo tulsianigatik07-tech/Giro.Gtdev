@@ -24,6 +24,12 @@ function meta(overrides?: Partial<RepositoryIndexMetadata>): RepositoryIndexMeta
     totalIndexedFiles: 5,
     lastIndexMode: "full",
     lastChangedFileCount: 0,
+    lastFailureAt: null,
+    failureReason: null,
+    failedFileCount: 0,
+    lastSuccessfulFile: null,
+    retryCount: 0,
+    lastRetryAt: null,
     ...overrides,
   };
 }

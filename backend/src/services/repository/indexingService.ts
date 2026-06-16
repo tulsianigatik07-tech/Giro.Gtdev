@@ -35,6 +35,12 @@ function defaultMetadata(owner: string, repo: string): RepositoryIndexMetadata {
     totalIndexedFiles: 0,
     lastIndexMode: null,
     lastChangedFileCount: 0,
+    lastFailureAt: null,
+    failureReason: null,
+    failedFileCount: 0,
+    lastSuccessfulFile: null,
+    retryCount: 0,
+    lastRetryAt: null,
   };
 }
 
@@ -113,6 +119,68 @@ export function updateRepositorySymbolCount(
   const existing = store.get(key);
   if (!existing) return;
   store.set(key, { ...existing, symbolCount });
+}
+
+// Additive: update ONLY the two graph counts on an existing entry (e.g. after
+// an incremental graph recompute). Preserves status/timestamps/other counts.
+// No-op if the repo has no entry. Deterministic.
+export function updateRepositoryGraphCounts(
+  owner: string,
+  repo: string,
+  graphNodeCount: number,
+  graphEdgeCount: number,
+): void {
+  const key = repoKey(owner, repo);
+  const existing = store.get(key);
+  if (!existing) return;
+  store.set(key, { ...existing, graphNodeCount, graphEdgeCount });
+}
+
+// Records an indexing failure: status "failed" + failure metadata. Preserves
+// other fields. Does NOT touch the existing setRepositoryFailed signature.
+export function recordIndexingFailure(
+  owner: string,
+  repo: string,
+  info: { reason: string; failedFileCount: number; lastSuccessfulFile: string | null },
+): void {
+  const key = repoKey(owner, repo);
+  const existing = store.get(key) ?? defaultMetadata(owner, repo);
+  store.set(key, {
+    ...existing,
+    status: "failed",
+    lastFailureAt: new Date().toISOString(),
+    failureReason: info.reason,
+    failedFileCount: info.failedFileCount,
+    lastSuccessfulFile: info.lastSuccessfulFile,
+  });
+}
+
+// Records a retry attempt: increments retryCount, sets lastRetryAt. No-op if
+// the repo has no entry. Preserves everything else.
+export function recordIndexingRetry(owner: string, repo: string): void {
+  const key = repoKey(owner, repo);
+  const existing = store.get(key);
+  if (!existing) return;
+  store.set(key, {
+    ...existing,
+    retryCount: existing.retryCount + 1,
+    lastRetryAt: new Date().toISOString(),
+  });
+}
+
+// Clears the failure fields after a successful (re)index. Preserves retryCount/
+// lastRetryAt (historical) and all other fields. No-op if no entry.
+export function clearIndexingFailure(owner: string, repo: string): void {
+  const key = repoKey(owner, repo);
+  const existing = store.get(key);
+  if (!existing) return;
+  store.set(key, {
+    ...existing,
+    lastFailureAt: null,
+    failureReason: null,
+    failedFileCount: 0,
+    lastSuccessfulFile: null,
+  });
 }
 
 export function markRepositoryStale(owner: string, repo: string): void {

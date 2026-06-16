@@ -22,4 +22,11 @@ export interface RepositoryIndexMetadata {
   // cross-file type dependency on indexingPlan.ts).
   lastIndexMode: "full" | "incremental" | null;
   lastChangedFileCount: number;
+  // Retry-safe indexing foundation (additive; failure/retry tracking).
+  lastFailureAt: string | null;
+  failureReason: string | null;
+  failedFileCount: number;
+  lastSuccessfulFile: string | null;
+  retryCount: number;
+  lastRetryAt: string | null;
 }
