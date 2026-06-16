@@ -110,7 +110,7 @@
 * [x] Persist extracted symbols during indexing
 * [x] Incremental symbol refresh for changed files
 * [x] Removed-file symbol pruning
-* [ ] Incremental graph update foundation
+* [x] Incremental graph update foundation
 
 ## Indexing Pipeline
 
@@ -118,27 +118,17 @@
 * [x] Incremental indexing foundation
 * [ ] Parallel indexing workers
 * [ ] Batched indexing jobs
-* [ ] Retry-safe indexing
+* [x] Retry-safe indexing
 * [ ] Reindex scheduler
-
-## Performance
-
-* [ ] Retrieval latency benchmarks
-* [ ] Context assembly benchmarks
-* [ ] Graph traversal benchmarks
-* [ ] Token estimation optimization
-* [ ] Large repository stress tests
-* [ ] Memory optimization
 
 ## Lifecycle Management
 
-* [ ] Automatic stale detection
+* [x] Automatic stale detection
 * [ ] Repository cleanup
 * [ ] Session cleanup lifecycle
 * [ ] Cache invalidation rules
 * [ ] Background maintenance jobs
 
----
 
 # REPOSITORY INTELLIGENCE PIPELINE  COMPLETE
 
@@ -291,31 +281,49 @@ All stages are deterministic, fully tested, and independent from LLM generation.
 
 # CURRENT STATUS
 
+# CURRENT STATUS
+
 Current backend capabilities include:
 
-- deterministic retrieval orchestration
-- hybrid repository intelligence
-- dependency graph analysis
-- symbol-aware retrieval
-- deterministic answer synthesis
-- context budget enforcement
-- indexing lifecycle metadata
-- changed-file detection
-- file snapshot persistence
-- incremental indexing planning
-- incremental indexing execution
-- deletion cleanup foundation
-- symbol index store
-- repository symbol extraction engine
-- symbol persistence during indexing
-- incremental symbol refresh
-- removed-file symbol pruning
-- repository overview generation
-- repository health analysis
-- retrieval context generation
-- repository-aware session architecture
-- ownership and isolation protections
-- 600+ passing backend tests
+* deterministic retrieval orchestration
+* hybrid repository intelligence
+* dependency graph analysis
+* symbol-aware retrieval
+* deterministic answer synthesis
+* context budget enforcement
+* indexing lifecycle metadata
+* changed-file detection
+* file snapshot persistence
+* incremental indexing planning
+* incremental indexing execution
+* deletion cleanup foundation
+* symbol index store
+* repository symbol extraction engine
+* symbol persistence during indexing
+* incremental symbol refresh
+* removed-file symbol pruning
+* incremental graph update foundation
+* retry-safe indexing
+* automatic stale detection
+* repository overview generation
+* repository health analysis
+* retrieval context generation
+* repository-aware session architecture
+* ownership and isolation protections
+* 640+ passing backend tests
+
+Backend maturity has progressed beyond prototype stage into scalable repository intelligence infrastructure.
+
+Current priority:
+
+1. Repository cleanup lifecycle
+2. Parallel indexing workers
+3. Batched indexing jobs
+4. Reindex scheduler
+5. Session cleanup lifecycle
+6. PostgreSQL persistence layer
+7. pgvector integration
+
 
 Backend maturity has progressed beyond prototype stage into scalable MVP infrastructure.
 
