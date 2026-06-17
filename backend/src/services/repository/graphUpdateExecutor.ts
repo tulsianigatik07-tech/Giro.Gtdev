@@ -20,14 +20,15 @@ import type { DependencyGraph, FileSymbolMap } from "../graph/types.js";
 export function applyGraphUpdate(
   owner: string,
   repo: string,
-  input: { changed: FileSymbolMap[]; removed: string[] },
+  input: { added: FileSymbolMap[]; modified: FileSymbolMap[]; removed: string[] },
 ): DependencyGraph {
   const repoId = `${owner}/${repo}`;
 
   for (const filePath of input.removed) {
     removeFileSymbolMap(repoId, filePath);
   }
-  for (const map of input.changed) {
+  // added and modified are both upserts into the per-file source store.
+  for (const map of [...input.added, ...input.modified]) {
     setFileSymbolMap(repoId, map);
   }
 

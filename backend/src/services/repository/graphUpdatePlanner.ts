@@ -8,10 +8,11 @@ import { buildDependencyGraph } from "../graph/graphBuilder.js";
 import type { FileSymbolMap } from "../graph/types.js";
 
 export interface GraphUpdatePlan {
+  nodesToAdd: string[];
   nodesToRefresh: string[];
   nodesToRemove: string[];
-  edgesToRefresh: Array<{ from: string; to: string }>;
   affectedFiles: string[];
+  edgesToRefresh: Array<{ from: string; to: string }>;
 }
 
 function sortUnique(values: string[]): string[] {
@@ -19,16 +20,18 @@ function sortUnique(values: string[]): string[] {
 }
 
 export function planGraphUpdate(input: {
-  changed: FileSymbolMap[];
+  added: FileSymbolMap[];
+  modified: FileSymbolMap[];
   removed: string[];
   currentMaps: FileSymbolMap[];
 }): GraphUpdatePlan {
-  const changedPaths = input.changed.map((m) => m.filePath);
+  const addedPaths = input.added.map((m) => m.filePath);
+  const modifiedPaths = input.modified.map((m) => m.filePath);
   const removedPaths = [...input.removed];
-  const directly = new Set<string>([...changedPaths, ...removedPaths]);
+  const directly = new Set<string>([...addedPaths, ...modifiedPaths, ...removedPaths]);
 
   // Use the real resolver (via buildDependencyGraph over the CURRENT maps) to
-  // find graph neighbors of directly-affected files.
+  // find undirected graph neighbors of directly-affected files.
   const { edges } = buildDependencyGraph(input.currentMaps);
 
   const affected = new Set<string>(directly);
@@ -43,9 +46,10 @@ export function planGraphUpdate(input: {
     .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
 
   return {
-    nodesToRefresh: sortUnique(changedPaths),
+    nodesToAdd: sortUnique(addedPaths),
+    nodesToRefresh: sortUnique(modifiedPaths),
     nodesToRemove: sortUnique(removedPaths),
-    edgesToRefresh,
     affectedFiles: sortUnique([...affected]),
+    edgesToRefresh,
   };
 }
