@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { buildCacheInvalidationPlan } from "../services/repository/cacheInvalidationRules.js";
 
 describe("cache invalidation rules", () => {
