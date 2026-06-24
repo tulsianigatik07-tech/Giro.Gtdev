@@ -1,0 +1,19 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`architecture markdown snapshot > matches expected markdown output 1`] = `
+"# Architecture Review Report
+
+Risk Level: HIGH
+Coupling Level: HIGH
+Coupling Score: 90
+
+## Summary
+
+Architecture requires attention.
+
+## Findings
+
+- High Internal Coupling: Modules have a high level of dependency coupling.
+
+Recommendations: 1"
+`;

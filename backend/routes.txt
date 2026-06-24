@@ -1,0 +1,12 @@
+src/routes/architecture.ts
+src/routes/chat.ts
+src/routes/context.ts
+src/routes/health.ts
+src/routes/index.ts
+src/routes/repositories.ts
+src/routes/retrieval.ts
+src/routes/root.ts
+src/routes/search.ts
+src/routes/sessions.test.ts
+src/routes/sessions.ts
+src/routes/tools.ts
