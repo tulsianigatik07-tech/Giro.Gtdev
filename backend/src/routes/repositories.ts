@@ -12,6 +12,7 @@ import { analyzeRepository } from "../services/repository/analyzer.js";
 import { extractRepoSymbols } from "../services/graph/symbolExtractor.js";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.js";
+import { buildRepositoryIntelligence } from "../services/repository/repositoryIntelligenceService.js";
 import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
 import { analyzeRepoDependencies } from "../services/graph/index.js";
 import { searchRepositoryFiles } from "../services/fileSearch/index.js";
@@ -323,6 +324,82 @@ repositoriesRoute.get("/:id/summary", async (c) => {
     const message = err instanceof Error ? err.message : "unknown error";
     logger.error("repos_summary_failed", { requestId: c.get("requestId"), message });
     return fail(c, { code: "summary_error", message }, 500);
+  }
+});
+
+// GET /repos/intelligence/:owner/:repo — unified repository intelligence payload.
+repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
+  const owner = c.req.param("owner");
+  const repo = c.req.param("repo");
+
+  if (!owner || !repo) {
+    return fail(
+      c,
+      { code: "validation_error", message: "owner and repo are required" },
+      400,
+    );
+  }
+
+  const user = getAuthenticatedUser(c);
+  if (!user) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+
+  const repoId = `${owner}/${repo}`;
+  const access = requireRepositoryAccess({ repoId, userId: user.userId });
+  if (!access.ok) {
+    return fail(c, { code: access.code, message: access.message }, access.status);
+  }
+
+  const clonePath = repoClonePath(owner, repo);
+
+  if (!existsSync(clonePath)) {
+    return fail(
+      c,
+      {
+        code: "repo_not_connected",
+        message: "Repository not connected. Call POST /repos/connect first.",
+      },
+      404,
+    );
+  }
+
+  try {
+    const stats = await scanRepo(clonePath);
+    const analysis = await analyzeRepository(clonePath, stats);
+
+    const overview = {
+      structure: {
+        totalFiles: stats.totalFiles,
+        totalSymbols: 0,
+        repositoryScale:
+          stats.totalFiles < 50 ? "small" : stats.totalFiles < 250 ? "medium" : "large",
+      },
+      architecture: {
+        totalFiles: stats.totalFiles,
+        totalDependencies: 0,
+        architectureComplexity:
+          analysis.framework === "unknown" ? "low" : "medium",
+      },
+    };
+
+    const intelligence = buildRepositoryIntelligence({
+      repositoryId: repoId,
+      repositoryName: repo,
+      overview: overview as never,
+    });
+
+    return ok(c, intelligence);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    logger.error("repository_intelligence_failed", {
+      requestId: c.get("requestId"),
+      owner,
+      repo,
+      message,
+    });
+
+    return fail(c, { code: "repository_intelligence_error", message }, 500);
   }
 });
 
