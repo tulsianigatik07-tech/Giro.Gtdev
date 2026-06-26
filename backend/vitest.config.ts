@@ -69,6 +69,9 @@ export default defineConfig({
       "src/tests/repositoryIntelligenceScore.test.ts",
       "src/tests/repositoryIntelligenceText.test.ts",
       "src/tests/repositoryIntelligenceExport.test.ts",
+      "src/tests/repositoryIntelligenceHistory.test.ts",
+      "src/tests/repositoryIntelligenceTrend.test.ts",
+      "src/tests/repositoryIntelligenceRoutes.test.ts",
     ],
   },
 });
