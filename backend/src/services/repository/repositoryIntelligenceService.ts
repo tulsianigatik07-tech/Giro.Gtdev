@@ -1,22 +1,30 @@
 import type { RepositoryOverview } from "./repositoryOverview.js";
 import { analyzeRepository } from "./repositoryAnalysisService.js";
 import { getArchitectureDashboardData } from "./architectureDashboardIntegration.js";
+import { buildRetrievalContextSummary } from "./retrievalContextSummary.js";
+import {
+  buildRetrievalQualityScore,
+  type RetrievalQualityInput,
+} from "../retrieval/retrievalQualityScore.js";
 
 export interface RepositoryIntelligenceInput {
   repositoryId: string;
   repositoryName: string;
   overview: RepositoryOverview;
+  retrievalQuality?: RetrievalQualityInput;
 }
 
 export interface RepositoryIntelligenceSummary {
   healthScore: number;
   healthCategory: string;
   hasArchitectureReport: boolean;
+  retrievalGrade: string;
 }
 
 export interface RepositoryIntelligenceStatus {
   indexed: boolean;
   architectureReady: boolean;
+  retrievalReady: boolean;
   ready: boolean;
 }
 
@@ -27,6 +35,10 @@ export interface RepositoryIntelligenceResult {
   summary: RepositoryIntelligenceSummary;
   analysis: ReturnType<typeof analyzeRepository>;
   architecture: ReturnType<typeof getArchitectureDashboardData>;
+  retrieval: {
+    context: ReturnType<typeof buildRetrievalContextSummary>;
+    quality: ReturnType<typeof buildRetrievalQualityScore>;
+  };
 }
 
 export function buildRepositoryIntelligence(
@@ -35,10 +47,20 @@ export function buildRepositoryIntelligence(
   const analysis = analyzeRepository(input.repositoryName, input.overview);
   const architecture = getArchitectureDashboardData(input.repositoryId);
 
+  const retrievalContext = buildRetrievalContextSummary(
+    input.overview,
+    analysis.health.summary,
+  );
+
+  const retrievalQuality = buildRetrievalQualityScore(
+    input.retrievalQuality ?? {},
+  );
+
   const status: RepositoryIntelligenceStatus = {
     indexed: true,
     architectureReady: architecture.hasReport,
-    ready: architecture.hasReport,
+    retrievalReady: retrievalQuality.score > 0,
+    ready: architecture.hasReport && retrievalQuality.score > 0,
   };
 
   return {
@@ -49,8 +71,13 @@ export function buildRepositoryIntelligence(
       healthScore: analysis.health.summary.healthScore,
       healthCategory: analysis.health.summary.healthCategory,
       hasArchitectureReport: architecture.hasReport,
+      retrievalGrade: retrievalQuality.grade,
     },
     analysis,
     architecture,
+    retrieval: {
+      context: retrievalContext,
+      quality: retrievalQuality,
+    },
   };
 }
