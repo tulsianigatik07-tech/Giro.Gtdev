@@ -16,6 +16,7 @@ import { buildRepositoryIntelligence } from "../services/repository/repositoryIn
 import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
 import { analyzeRepoDependencies } from "../services/graph/index.js";
 import { searchRepositoryFiles } from "../services/fileSearch/index.js";
+import { saveRepositoryIntelligence } from "../services/repository/repositoryIntelligenceHistory.js";
 import {
   setRepositoryOwner,
   getRepositoryOwner,
@@ -384,10 +385,12 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
     };
 
     const intelligence = buildRepositoryIntelligence({
-      repositoryId: repoId,
-      repositoryName: repo,
-      overview: overview as never,
-    });
+  repositoryId: repoId,
+  repositoryName: repo,
+  overview: overview as never,
+});
+
+saveRepositoryIntelligence(intelligence);
 
     return ok(c, intelligence);
   } catch (err) {
