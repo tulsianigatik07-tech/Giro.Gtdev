@@ -37,5 +37,7 @@ describe("repository intelligence service", () => {
     expect(result.indexing.indexed).toBe(false);
     expect(result.summary.indexStatus).toBe("unknown");
     expect(result.status.indexed).toBe(false);
+    expect(result.retrieval.indexingReport.metrics.totalFiles).toBe(0);
+    expect(result.retrieval.indexingReport.health.healthy).toBe(false);
   });
 });

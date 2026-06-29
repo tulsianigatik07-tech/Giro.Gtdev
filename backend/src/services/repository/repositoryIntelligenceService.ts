@@ -10,6 +10,7 @@ import {
   type RetrievalQualityInput,
 } from "../retrieval/retrievalQualityScore.js";
 import { getRepositoryIndexMetadata } from "./indexingService.js";
+import { buildRepositoryIndexingReport } from "./indexingReport.js";
 
 export interface RepositoryIntelligenceInput {
   repositoryId: string;
@@ -45,10 +46,13 @@ export interface RepositoryIntelligenceResult {
   retrieval: {
     context: ReturnType<typeof buildRetrievalContextSummary>;
     quality: ReturnType<typeof buildRetrievalQualityScore>;
+    indexingReport: ReturnType<typeof buildRepositoryIndexingReport>;
   };
 }
 
-function parseRepositoryId(repositoryId: string): { owner: string; repo: string } | null {
+function parseRepositoryId(
+  repositoryId: string,
+): { owner: string; repo: string } | null {
   const [owner, repo] = repositoryId.split("/");
 
   if (!owner || !repo) {
@@ -61,50 +65,81 @@ function parseRepositoryId(repositoryId: string): { owner: string; repo: string 
 export function buildRepositoryIntelligence(
   input: RepositoryIntelligenceInput,
 ): RepositoryIntelligenceResult {
-  const analysis = analyzeRepository(input.repositoryName, input.overview);
-  const architecture = getArchitectureDashboardData(input.repositoryId);
+  const analysis = analyzeRepository(
+    input.repositoryName,
+    input.overview,
+  );
+
+  const architecture = getArchitectureDashboardData(
+    input.repositoryId,
+  );
 
   const parsed = parseRepositoryId(input.repositoryId);
+
   const indexing = parsed
-    ? getRepositoryIndexMetadata(parsed.owner, parsed.repo)
+    ? getRepositoryIndexMetadata(
+        parsed.owner,
+        parsed.repo,
+      )
     : null;
-  const indexingSummary = buildRepositoryIndexSummary(indexing);  
 
-  const retrievalContext = buildRetrievalContextSummary(
-    input.overview,
-    analysis.health.summary,
-  );
+  const indexingSummary =
+    buildRepositoryIndexSummary(indexing);
 
-  const retrievalQuality = buildRetrievalQualityScore(
-    input.retrievalQuality ?? {},
-  );
+  const indexingReport =
+    buildRepositoryIndexingReport(indexing);
+
+  const retrievalContext =
+    buildRetrievalContextSummary(
+      input.overview,
+      analysis.health.summary,
+    );
+
+  const retrievalQuality =
+    buildRetrievalQualityScore(
+      input.retrievalQuality ?? {},
+    );
 
   const indexed = indexingSummary.indexed;
 
   const status: RepositoryIntelligenceStatus = {
     indexed,
-    architectureReady: architecture.hasReport,
-    retrievalReady: retrievalQuality.score > 0,
-    ready: indexed && architecture.hasReport && retrievalQuality.score > 0,
+    architectureReady:
+      architecture.hasReport,
+    retrievalReady:
+      retrievalQuality.score > 0,
+    ready:
+      indexed &&
+      architecture.hasReport &&
+      retrievalQuality.score > 0,
   };
 
-  const intelligence = buildRepositoryIntelligenceScore({
-    healthScore: analysis.health.summary.healthScore,
-    indexed: status.indexed,
-    architectureReady: status.architectureReady,
-    retrievalScore: retrievalQuality.score,
-  });
+  const intelligence =
+    buildRepositoryIntelligenceScore({
+      healthScore:
+        analysis.health.summary.healthScore,
+      indexed: status.indexed,
+      architectureReady:
+        status.architectureReady,
+      retrievalScore:
+        retrievalQuality.score,
+    });
 
   return {
     repositoryId: input.repositoryId,
     repositoryName: input.repositoryName,
     status,
     summary: {
-      healthScore: analysis.health.summary.healthScore,
-      healthCategory: analysis.health.summary.healthCategory,
-      hasArchitectureReport: architecture.hasReport,
-      retrievalGrade: retrievalQuality.grade,
-      indexStatus: indexing?.status ?? "unknown",
+      healthScore:
+        analysis.health.summary.healthScore,
+      healthCategory:
+        analysis.health.summary.healthCategory,
+      hasArchitectureReport:
+        architecture.hasReport,
+      retrievalGrade:
+        retrievalQuality.grade,
+      indexStatus:
+        indexing?.status ?? "unknown",
     },
     analysis,
     architecture,
@@ -113,6 +148,7 @@ export function buildRepositoryIntelligence(
     retrieval: {
       context: retrievalContext,
       quality: retrievalQuality,
+      indexingReport,
     },
   };
 }
