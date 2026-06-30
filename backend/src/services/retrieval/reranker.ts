@@ -16,28 +16,49 @@ export const DEFAULT_RERANKING_WEIGHTS: RerankingWeights = {
   graph: 0.1,
 };
 
-function keyOf(r: RetrievalResult): string {
-  return `${r.filePath}:${r.startLine}-${r.endLine}`;
+function keyOf(result: RetrievalResult): string {
+  return `${result.filePath}:${result.startLine}-${result.endLine}`;
 }
 
-function strongestSignal(s: RetrievalSignals): number {
-  return Math.max(s.semantic ?? 0, s.keyword ?? 0, s.symbol ?? 0);
+function strongestSignal(signals: RetrievalSignals): number {
+  return Math.max(
+    signals.semantic ?? 0,
+    signals.keyword ?? 0,
+    signals.symbol ?? 0,
+  );
 }
 
 function pathMultiplier(filePath: string): number {
-  const p = filePath.toLowerCase();
+  const path = filePath.toLowerCase();
 
-  if (p.includes("node_modules")) return 0.1;
-  if (/\.(lock|lockb)$|lock\.json$/.test(p)) return 0.2;
-  if (p.includes("/dist/") || p.startsWith("dist/") || /\.min\.(js|css)$/.test(p)) {
+  if (path.includes("node_modules")) return 0.1;
+  if (/\.(lock|lockb)$|lock\.json$/.test(path)) return 0.2;
+
+  if (
+    path.includes("/dist/") ||
+    path.startsWith("dist/") ||
+    /\.min\.(js|css)$/.test(path)
+  ) {
     return 0.3;
   }
-  if (p.includes("generated")) return 0.3;
 
-  if (/(^|\/)(route|controller|handler)/.test(p)) return 1.3;
-  if (/(^|\/)(service|lib|util)/.test(p)) return 1.2;
-  if (/(^|\/)(index|main|app)\.(ts|js|tsx|jsx)$/.test(p)) return 1.2;
-  if (/(^|\/)(config|env)\.(ts|js)$/.test(p)) return 1.1;
+  if (path.includes("generated")) return 0.3;
+
+  if (/(^|\/)(route|controller|handler)/.test(path)) return 1.3;
+  if (/(^|\/)(service|lib|util)/.test(path)) return 1.2;
+  if (/(^|\/)(index|main|app)\.(ts|js|tsx|jsx)$/.test(path)) return 1.2;
+  if (/(^|\/)(config|env)\.(ts|js)$/.test(path)) return 1.1;
+
+  return 1.0;
+}
+
+function contentMultiplier(content: string): number {
+  const length = content.length;
+
+  if (length > 2000) return 1.15;
+  if (length > 1000) return 1.1;
+  if (length > 500) return 1.05;
+  if (length < 100) return 0.9;
 
   return 1.0;
 }
@@ -45,6 +66,7 @@ function pathMultiplier(filePath: string): number {
 export function calculateRerankScore(
   signals: RetrievalSignals,
   filePath: string,
+  content: string,
   weights: RerankingWeights = DEFAULT_RERANKING_WEIGHTS,
 ): number {
   const base =
@@ -53,7 +75,7 @@ export function calculateRerankScore(
     (signals.symbol ?? 0) * weights.symbol +
     (signals.graph ?? 0) * weights.graph;
 
-  return base * pathMultiplier(filePath);
+  return base * pathMultiplier(filePath) * contentMultiplier(content);
 }
 
 export function mergeAndRerank(
@@ -64,47 +86,53 @@ export function mergeAndRerank(
 ): RetrievalResult[] {
   const merged = new Map<string, RetrievalResult>();
 
-  for (const r of results) {
-    const key = keyOf(r);
+  for (const result of results) {
+    const key = keyOf(result);
     const existing = merged.get(key);
 
     if (!existing) {
-      merged.set(key, { ...r, signals: { ...r.signals } });
+      merged.set(key, { ...result, signals: { ...result.signals } });
       continue;
     }
 
-    const sig = existing.signals;
+    const signals = existing.signals;
 
-    for (const k of ["semantic", "keyword", "symbol"] as const) {
-      const incoming = r.signals[k];
+    for (const key of ["semantic", "keyword", "symbol"] as const) {
+      const incoming = result.signals[key];
 
-      if (incoming !== undefined && incoming > (sig[k] ?? 0)) {
-        sig[k] = incoming;
+      if (incoming !== undefined && incoming > (signals[key] ?? 0)) {
+        signals[key] = incoming;
       }
     }
 
-    if (strongestSignal(r.signals) > strongestSignal(existing.signals)) {
-      existing.content = r.content;
-      existing.source = r.source;
+    if (strongestSignal(result.signals) > strongestSignal(existing.signals)) {
+      existing.content = result.content;
+      existing.source = result.source;
     }
   }
 
-  const out: RetrievalResult[] = [];
+  const output: RetrievalResult[] = [];
 
-  for (const r of merged.values()) {
+  for (const result of merged.values()) {
     if (graphNodes) {
-      const centrality = graphNodes.get(r.filePath);
+      const centrality = graphNodes.get(result.filePath);
 
       if (centrality !== undefined) {
-        r.signals.graph = centrality;
+        result.signals.graph = centrality;
       }
     }
 
-    r.score = calculateRerankScore(r.signals, r.filePath, weights);
-    out.push(r);
+    result.score = calculateRerankScore(
+      result.signals,
+      result.filePath,
+      result.content,
+      weights,
+    );
+
+    output.push(result);
   }
 
-  return out
+  return output
     .sort(
       (a, b) =>
         b.score - a.score ||

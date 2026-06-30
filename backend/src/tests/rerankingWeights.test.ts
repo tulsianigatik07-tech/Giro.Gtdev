@@ -15,9 +15,30 @@ describe("reranking weights", () => {
         graph: 1,
       },
       "src/plain.ts",
+      "export const app = true;",
     );
 
-    expect(score).toBeCloseTo(1);
+    expect(score).toBeCloseTo(0.9);
+  });
+
+  it("boosts richer content", () => {
+    const shortScore = calculateRerankScore(
+      {
+        semantic: 1,
+      },
+      "src/plain.ts",
+      "short",
+    );
+
+    const longScore = calculateRerankScore(
+      {
+        semantic: 1,
+      },
+      "src/plain.ts",
+      "x".repeat(2500),
+    );
+
+    expect(longScore).toBeGreaterThan(shortScore);
   });
 
   it("exposes default weights", () => {
