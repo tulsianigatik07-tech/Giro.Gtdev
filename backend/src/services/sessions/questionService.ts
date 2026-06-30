@@ -14,6 +14,7 @@ import { repoClonePath } from "../repository/clone.js";
 import { scanRepo } from "../repository/scanner.js";
 import { analyzeRepository } from "../repository/analyzer.js";
 import { logger } from "../../lib/logger.js";
+import { executeRetrieval } from "../retrieval/retrievalExecutionService.js";
 
 type QuestionResult = AskResult | "session_not_found";
 
@@ -135,6 +136,17 @@ export async function answerSessionQuestion(
     maxChunks: 8,
     maxEstimatedTokens: 3500,
   });
+  const retrievalExecution = executeRetrieval({
+  candidates: budgetResult.selected.map((item) => ({
+    filePath: toRelativePath(item.filePath),
+    content: item.content,
+    score: item.score ?? 0,
+  })),
+  question,
+  minScore: 0,
+  maxCandidates: 8,
+  maxCharacters: 16000,
+});
 
   // STEP 7 — Assemble answer (synchronous)
   const { answer, sources, citations } = assembleAnswer(
@@ -207,6 +219,10 @@ export async function answerSessionQuestion(
       dropped: budgetResult.dropped.length,
       estimatedTokens: budgetResult.estimatedTokens,
     },
+    retrievalExecution: {
+  chunkCount: retrievalExecution.chunkCount,
+  files: retrievalExecution.files,
+},
     // Pass-through of retrieval metadata already produced by enrichedAssembler.
     retrieval: buildRetrievalMetadata(enrichedContext.stats),
   };
