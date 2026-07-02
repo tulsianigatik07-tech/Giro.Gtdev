@@ -29,6 +29,10 @@ describe("repository intelligence history", () => {
   lastIndexedAt: null,
 },
       intelligence: {} as never,
+      readiness: {
+  score: 100,
+  level: "excellent",
+},
       retrieval: {} as never,
     });
 

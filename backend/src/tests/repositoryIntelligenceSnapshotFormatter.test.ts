@@ -27,6 +27,10 @@ describe("repository intelligence snapshot formatter", () => {
         score: 95,
         grade: "excellent",
       } as never,
+      readiness: {
+  score: 100,
+  level: "excellent",
+},
       retrieval: {} as never,
     });
 

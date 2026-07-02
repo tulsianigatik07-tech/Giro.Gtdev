@@ -27,6 +27,10 @@ describe("repository intelligence overview", () => {
         score: 96,
         grade: "excellent",
       } as never,
+      readiness: {
+  score: 100,
+  level: "excellent",
+},
       retrieval: {} as never,
     });
 

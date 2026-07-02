@@ -24,6 +24,10 @@ describe("repository intelligence timeline", () => {
       intelligence: {
         score: 90,
       } as never,
+      readiness: {
+  score: 100,
+  level: "excellent",
+},
       retrieval: {} as never,
     });
 

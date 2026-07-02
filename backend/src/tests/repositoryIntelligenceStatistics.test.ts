@@ -26,6 +26,10 @@ describe("repository intelligence statistics", () => {
       intelligence: {
         score: 90,
       } as never,
+      readiness: {
+  score: 100,
+  level: "excellent",
+},
       retrieval: {} as never,
     });
 
@@ -42,6 +46,11 @@ describe("repository intelligence statistics", () => {
       intelligence: {
         score: 70,
       } as never,
+      readiness: {
+  score: 100,
+  level: "excellent",
+},
+      
       retrieval: {} as never,
     });
 

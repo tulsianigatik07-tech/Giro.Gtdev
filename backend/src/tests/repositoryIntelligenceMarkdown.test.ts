@@ -37,6 +37,10 @@ describe("repository intelligence markdown", () => {
         score: 95,
         grade: "excellent",
       },
+      readiness: {
+  score: 100,
+  level: "excellent",
+},
       retrieval: {} as never,
     });
 

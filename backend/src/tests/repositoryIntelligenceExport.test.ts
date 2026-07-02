@@ -37,6 +37,10 @@ describe("repository intelligence export", () => {
           totalGraphEdges: 0,
           lastIndexedAt: null,
         },
+      readiness: {
+  score: 100,
+  level: "excellent",
+},  
       retrieval: {} as never,
     });
 
