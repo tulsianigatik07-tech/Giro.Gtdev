@@ -2,6 +2,7 @@ import type {
   RepositoryIntelligenceResult,
 } from "./repositoryIntelligenceService.js";
 import { buildRepositoryIntelligenceTimeline } from "./repositoryIntelligenceTimeline.js";
+import { buildRepositoryIntelligenceHealthSummary } from "./repositoryIntelligenceHealthSummary.js";
 
 export interface RepositoryIntelligenceDashboard {
   repositoryId: string;
@@ -13,6 +14,7 @@ export interface RepositoryIntelligenceDashboard {
   architectureReady: boolean;
   retrievalReady: boolean;
   timelineLength: number;
+  healthSummary: ReturnType<typeof buildRepositoryIntelligenceHealthSummary>;
 }
 
 export function buildRepositoryIntelligenceDashboard(
@@ -20,7 +22,9 @@ export function buildRepositoryIntelligenceDashboard(
 ): RepositoryIntelligenceDashboard {
   const timeline = buildRepositoryIntelligenceTimeline(
     intelligence.repositoryId,
+    
   );
+  const healthSummary = buildRepositoryIntelligenceHealthSummary(intelligence);
 
   return {
     repositoryId: intelligence.repositoryId,
@@ -32,5 +36,6 @@ export function buildRepositoryIntelligenceDashboard(
     architectureReady: intelligence.status.architectureReady,
     retrievalReady: intelligence.status.retrievalReady,
     timelineLength: timeline.length,
+    healthSummary,
   };
 }
