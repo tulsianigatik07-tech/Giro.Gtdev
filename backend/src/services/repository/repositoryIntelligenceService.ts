@@ -1,6 +1,6 @@
 import type { RepositoryOverview } from "./repositoryOverview.js";
 import { buildRepositoryIndexSummary } from "./indexingSummary.js";
-
+import { buildRepositoryReadinessScore } from "./repositoryReadinessScore.js";
 import { analyzeRepository } from "./repositoryAnalysisService.js";
 import { getArchitectureDashboardData } from "./architectureDashboardIntegration.js";
 import { buildRetrievalContextSummary } from "./retrievalContextSummary.js";
@@ -43,6 +43,7 @@ export interface RepositoryIntelligenceResult {
   architecture: ReturnType<typeof getArchitectureDashboardData>;
   indexing: ReturnType<typeof buildRepositoryIndexSummary>;
   intelligence: ReturnType<typeof buildRepositoryIntelligenceScore>;
+  readiness: ReturnType<typeof buildRepositoryReadinessScore>;
   retrieval: {
     context: ReturnType<typeof buildRetrievalContextSummary>;
     quality: ReturnType<typeof buildRetrievalQualityScore>;
@@ -65,86 +66,66 @@ function parseRepositoryId(
 export function buildRepositoryIntelligence(
   input: RepositoryIntelligenceInput,
 ): RepositoryIntelligenceResult {
-  const analysis = analyzeRepository(
-    input.repositoryName,
-    input.overview,
-  );
-
-  const architecture = getArchitectureDashboardData(
-    input.repositoryId,
-  );
+  const analysis = analyzeRepository(input.repositoryName, input.overview);
+  const architecture = getArchitectureDashboardData(input.repositoryId);
 
   const parsed = parseRepositoryId(input.repositoryId);
-
   const indexing = parsed
-    ? getRepositoryIndexMetadata(
-        parsed.owner,
-        parsed.repo,
-      )
+    ? getRepositoryIndexMetadata(parsed.owner, parsed.repo)
     : null;
 
-  const indexingSummary =
-    buildRepositoryIndexSummary(indexing);
+  const indexingSummary = buildRepositoryIndexSummary(indexing);
+  const indexingReport = buildRepositoryIndexingReport(indexing);
 
-  const indexingReport =
-    buildRepositoryIndexingReport(indexing);
+  const retrievalContext = buildRetrievalContextSummary(
+    input.overview,
+    analysis.health.summary,
+  );
 
-  const retrievalContext =
-    buildRetrievalContextSummary(
-      input.overview,
-      analysis.health.summary,
-    );
-
-  const retrievalQuality =
-    buildRetrievalQualityScore(
-      input.retrievalQuality ?? {},
-    );
-
-  const indexed = indexingSummary.indexed;
+  const retrievalQuality = buildRetrievalQualityScore(
+    input.retrievalQuality ?? {},
+  );
 
   const status: RepositoryIntelligenceStatus = {
-    indexed,
-    architectureReady:
-      architecture.hasReport,
-    retrievalReady:
-      retrievalQuality.score > 0,
+    indexed: indexingSummary.indexed,
+    architectureReady: architecture.hasReport,
+    retrievalReady: retrievalQuality.score > 0,
     ready:
-      indexed &&
+      indexingSummary.indexed &&
       architecture.hasReport &&
       retrievalQuality.score > 0,
   };
 
-  const intelligence =
-    buildRepositoryIntelligenceScore({
-      healthScore:
-        analysis.health.summary.healthScore,
-      indexed: status.indexed,
-      architectureReady:
-        status.architectureReady,
-      retrievalScore:
-        retrievalQuality.score,
-    });
+  const intelligence = buildRepositoryIntelligenceScore({
+    healthScore: analysis.health.summary.healthScore,
+    indexed: status.indexed,
+    architectureReady: status.architectureReady,
+    retrievalScore: retrievalQuality.score,
+  });
+
+  const readiness = buildRepositoryReadinessScore({
+    indexed: status.indexed,
+    architectureReady: status.architectureReady,
+    retrievalReady: status.retrievalReady,
+    healthScore: analysis.health.summary.healthScore,
+  });
 
   return {
     repositoryId: input.repositoryId,
     repositoryName: input.repositoryName,
     status,
     summary: {
-      healthScore:
-        analysis.health.summary.healthScore,
-      healthCategory:
-        analysis.health.summary.healthCategory,
-      hasArchitectureReport:
-        architecture.hasReport,
-      retrievalGrade:
-        retrievalQuality.grade,
-      indexStatus:
-        indexing?.status ?? "unknown",
+      healthScore: analysis.health.summary.healthScore,
+      healthCategory: analysis.health.summary.healthCategory,
+      hasArchitectureReport: architecture.hasReport,
+      retrievalGrade: retrievalQuality.grade,
+      indexStatus: indexing?.status ?? "unknown",
     },
     analysis,
     architecture,
     indexing: indexingSummary,
     intelligence,
+    readiness,
     retrieval: {
       context: retrievalContext,
       quality: retrievalQuality,
