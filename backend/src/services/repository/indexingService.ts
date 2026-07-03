@@ -10,6 +10,7 @@ import type {
   RepositoryIndexStatus,
 } from "./indexingTypes.js";
 import type { IndexingMode } from "./indexingPlan.js";
+import type { RepositoryLifecycleReport } from "./repositoryLifecycleReport.js";
 
 const store = new Map<string, RepositoryIndexMetadata>();
 
@@ -41,6 +42,9 @@ function defaultMetadata(owner: string, repo: string): RepositoryIndexMetadata {
     lastSuccessfulFile: null,
     retryCount: 0,
     lastRetryAt: null,
+    lastLifecycleSeverity: null,
+lastReindexMode: null,
+lastReindexReason: null,
   };
 }
 
@@ -62,6 +66,7 @@ export function getRepositoryIndexMetadata(
   owner: string,
   repo: string,
 ): RepositoryIndexMetadata | null {
+   
   const found = store.get(repoKey(owner, repo));
   return found ? { ...found } : null;
 }
@@ -234,4 +239,22 @@ export function clearRepositoryIndexRegistry(): void {
 // other repos.
 export function removeRepositoryIndexMetadata(owner: string, repo: string): void {
   store.delete(repoKey(owner, repo));
+}
+
+
+
+export function recordRepositoryLifecycleReport(
+  owner: string,
+  repo: string,
+  report: RepositoryLifecycleReport,
+): void {
+  const key = repoKey(owner, repo);
+  const existing = store.get(key) ?? defaultMetadata(owner, repo);
+
+  store.set(key, {
+    ...existing,
+    lastLifecycleSeverity: report.changes.severity,
+    lastReindexMode: report.plan.mode,
+    lastReindexReason: report.plan.reason,
+  });
 }

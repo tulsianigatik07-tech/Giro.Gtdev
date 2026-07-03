@@ -29,4 +29,7 @@ export interface RepositoryIndexMetadata {
   lastSuccessfulFile: string | null;
   retryCount: number;
   lastRetryAt: string | null;
+  lastLifecycleSeverity: "none" | "low" | "medium" | "high" | null;
+lastReindexMode: "none" | "incremental" | "full" | null;
+lastReindexReason: string | null;
 }
