@@ -27,6 +27,9 @@ describe("repository indexing report", () => {
       lastSuccessfulFile: null,
       retryCount: 0,
       lastRetryAt: null,
+      lastLifecycleSeverity: null,
+lastReindexMode: null,
+lastReindexReason: null,
     });
 
     expect(report.metrics.totalFiles).toBe(20);

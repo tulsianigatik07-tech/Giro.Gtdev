@@ -27,6 +27,9 @@ describe("indexing summary", () => {
       lastSuccessfulFile: null,
       retryCount: 0,
       lastRetryAt: null,
+      lastLifecycleSeverity: null,
+lastReindexMode: null,
+lastReindexReason: null,
     });
 
     expect(summary.indexed).toBe(true);

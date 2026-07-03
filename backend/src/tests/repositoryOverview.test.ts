@@ -31,6 +31,9 @@ function meta(overrides?: Partial<RepositoryIndexMetadata>): RepositoryIndexMeta
     retryCount: 0,
     lastRetryAt: null,
     ...overrides,
+    lastLifecycleSeverity: null,
+lastReindexMode: null,
+lastReindexReason: null,
   };
 }
 
