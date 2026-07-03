@@ -17,6 +17,7 @@ import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.
 import { analyzeRepoDependencies } from "../services/graph/index.js";
 import { searchRepositoryFiles } from "../services/fileSearch/index.js";
 import { saveRepositoryIntelligence } from "../services/repository/repositoryIntelligenceHistory.js";
+import { buildRepositoryIntelligenceApiResponse } from "../services/repository/repositoryIntelligenceApiResponse.js";
 import {
   setRepositoryOwner,
   getRepositoryOwner,
@@ -392,7 +393,7 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
 
 saveRepositoryIntelligence(intelligence);
 
-    return ok(c, intelligence);
+    return ok(c, buildRepositoryIntelligenceApiResponse(intelligence));
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
     logger.error("repository_intelligence_failed", {
