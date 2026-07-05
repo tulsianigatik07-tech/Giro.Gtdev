@@ -18,10 +18,10 @@ import { analyzeRepoDependencies } from "../services/graph/index.js";
 import { searchRepositoryFiles } from "../services/fileSearch/index.js";
 import { saveRepositoryIntelligence } from "../services/repository/repositoryIntelligenceHistory.js";
 import { buildRepositoryIntelligenceApiResponse } from "../services/repository/repositoryIntelligenceApiResponse.js";
-import { buildRepositoryDashboardSummary } from "../services/repository/repositoryDashboardSummary.js";
-import { executeRepositoryCleanupPlan } from "../services/repository/repositoryCleanupExecutor.js";
-import { buildRepositoryCleanupPlan } from "../services/repository/repositoryCleanupPlanner.js";
-import { buildRepositoryCleanupReport } from "../services/repository/repositoryCleanupReport.js";
+import {
+  cleanupRepository,
+  getRepositorySummary,
+} from "../services/repository/repositoryLifecycleManager.js";
 import {
   setRepositoryOwner,
   getRepositoryOwner,
@@ -550,9 +550,7 @@ repositoriesRoute.delete("/:owner/:repo", (c) => {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }
 
-  const plan = buildRepositoryCleanupPlan(owner, repo);
-  const execution = executeRepositoryCleanupPlan(plan);
-  const report = buildRepositoryCleanupReport(execution);
+  const report = cleanupRepository({ owner, repo });
 
   return ok(c, report);
 });
@@ -590,5 +588,5 @@ repositoriesRoute.get("/:owner/:repo/dashboard", async (c) => {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }
 
-  return ok(c, buildRepositoryDashboardSummary(owner, repo));
+  return ok(c, getRepositorySummary({ owner, repo }));
 });
