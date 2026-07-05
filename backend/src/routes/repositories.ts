@@ -25,6 +25,9 @@ import {
 import {
   buildRepositoryDashboardIntelligenceBundleForRepository,
 } from "../services/repository/repositoryDashboardIntelligenceBundle.js";
+import { buildRepositoryRecommendations } from "../services/repository/repositoryRecommendationEngine.js";
+import { buildRepositoryIntelligenceReport } from "../services/repository/repositoryIntelligenceReport.js";
+import { buildRepositoryIntelligencePresentation } from "../services/repository/repositoryIntelligencePresenter.js";
 import {
   setRepositoryOwner,
   getRepositoryOwner,
@@ -592,6 +595,81 @@ repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
   }
 
   return ok(c, buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo));
+});
+
+// GET /repos/:owner/:repo/workspace — primary repository workspace payload.
+repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
+  const owner = c.req.param("owner");
+  const repo = c.req.param("repo");
+
+  if (!owner || !repo) {
+    return fail(
+      c,
+      { code: "validation_error", message: "owner and repo are required" },
+      400,
+    );
+  }
+
+  const user = getAuthenticatedUser(c);
+
+  if (!user) {
+    return fail(
+      c,
+      { code: "unauthorized", message: "Authentication required" },
+      401,
+    );
+  }
+
+  const repoId = `${owner}/${repo}`;
+  const access = requireRepositoryAccess({
+    repoId,
+    userId: user.userId,
+  });
+
+  if (!access.ok) {
+    return fail(c, { code: access.code, message: access.message }, access.status);
+  }
+
+  if (!getRepositoryIndexMetadata(owner, repo)) {
+    return fail(
+      c,
+      {
+        code: "repo_not_connected",
+        message: "Repository not connected. Call POST /repos/connect first.",
+      },
+      404,
+    );
+  }
+
+  const bundle = buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo);
+  const recommendations = buildRepositoryRecommendations({
+    dashboard: bundle.dashboard,
+    health: bundle.health,
+    aiReadiness: bundle.aiReadiness,
+    insights: bundle.insights,
+    timeline: bundle.timeline,
+  });
+  const intelligenceReport = buildRepositoryIntelligenceReport({
+    dashboard: bundle.dashboard,
+    health: bundle.health,
+    aiReadiness: bundle.aiReadiness,
+    insights: bundle.insights,
+    recommendations,
+    timeline: bundle.timeline,
+  });
+  const presentation = buildRepositoryIntelligencePresentation(intelligenceReport);
+
+  return ok(c, {
+    repositoryId: bundle.repositoryId,
+    dashboard: bundle.dashboard,
+    health: bundle.health,
+    aiReadiness: bundle.aiReadiness,
+    insights: bundle.insights,
+    recommendations,
+    timeline: bundle.timeline,
+    intelligenceReport,
+    presentation,
+  });
 });
 
 // GET /repos/:owner/:repo/dashboard — frontend-ready repository dashboard summary.
