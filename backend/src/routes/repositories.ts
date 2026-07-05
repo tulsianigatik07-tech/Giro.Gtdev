@@ -23,6 +23,9 @@ import {
   getRepositorySummary,
 } from "../services/repository/repositoryLifecycleManager.js";
 import {
+  buildRepositoryDashboardIntelligenceBundleForRepository,
+} from "../services/repository/repositoryDashboardIntelligenceBundle.js";
+import {
   setRepositoryOwner,
   getRepositoryOwner,
 } from "../services/repository/ownershipStore.js";
@@ -553,6 +556,42 @@ repositoriesRoute.delete("/:owner/:repo", (c) => {
   const report = cleanupRepository({ owner, repo });
 
   return ok(c, report);
+});
+
+// GET /repos/:owner/:repo/dashboard/intelligence — full dashboard intelligence bundle.
+repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
+  const owner = c.req.param("owner");
+  const repo = c.req.param("repo");
+
+  if (!owner || !repo) {
+    return fail(
+      c,
+      { code: "validation_error", message: "owner and repo are required" },
+      400,
+    );
+  }
+
+  const user = getAuthenticatedUser(c);
+
+  if (!user) {
+    return fail(
+      c,
+      { code: "unauthorized", message: "Authentication required" },
+      401,
+    );
+  }
+
+  const repoId = `${owner}/${repo}`;
+  const access = requireRepositoryAccess({
+    repoId,
+    userId: user.userId,
+  });
+
+  if (!access.ok) {
+    return fail(c, { code: access.code, message: access.message }, access.status);
+  }
+
+  return ok(c, buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo));
 });
 
 // GET /repos/:owner/:repo/dashboard — frontend-ready repository dashboard summary.
