@@ -19,6 +19,9 @@ import { searchRepositoryFiles } from "../services/fileSearch/index.js";
 import { saveRepositoryIntelligence } from "../services/repository/repositoryIntelligenceHistory.js";
 import { buildRepositoryIntelligenceApiResponse } from "../services/repository/repositoryIntelligenceApiResponse.js";
 import { buildRepositoryDashboardSummary } from "../services/repository/repositoryDashboardSummary.js";
+import { executeRepositoryCleanupPlan } from "../services/repository/repositoryCleanupExecutor.js";
+import { buildRepositoryCleanupPlan } from "../services/repository/repositoryCleanupPlanner.js";
+import { buildRepositoryCleanupReport } from "../services/repository/repositoryCleanupReport.js";
 import {
   setRepositoryOwner,
   getRepositoryOwner,
@@ -513,6 +516,45 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
     });
     return fail(c, { code: "file_search_error", message }, 500);
   }
+});
+
+// DELETE /repos/:owner/:repo — cleanup repository lifecycle metadata.
+repositoriesRoute.delete("/:owner/:repo", (c) => {
+  const owner = c.req.param("owner");
+  const repo = c.req.param("repo");
+
+  if (!owner || !repo) {
+    return fail(
+      c,
+      { code: "validation_error", message: "owner and repo are required" },
+      400,
+    );
+  }
+
+  const user = getAuthenticatedUser(c);
+  if (!user) {
+    return fail(
+      c,
+      { code: "unauthorized", message: "Authentication required" },
+      401,
+    );
+  }
+
+  const repoId = `${owner}/${repo}`;
+  const access = requireRepositoryAccess({
+    repoId,
+    userId: user.userId,
+  });
+
+  if (!access.ok) {
+    return fail(c, { code: access.code, message: access.message }, access.status);
+  }
+
+  const plan = buildRepositoryCleanupPlan(owner, repo);
+  const execution = executeRepositoryCleanupPlan(plan);
+  const report = buildRepositoryCleanupReport(execution);
+
+  return ok(c, report);
 });
 
 // GET /repos/:owner/:repo/dashboard — frontend-ready repository dashboard summary.
