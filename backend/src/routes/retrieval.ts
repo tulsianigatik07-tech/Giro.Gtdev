@@ -5,14 +5,24 @@ import { z } from "zod";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
 import { hybridSearch } from "../services/retrieval/hybridSearch.js";
+import {
+  ChunkLimitSchema,
+  RepositoryNameSchema,
+  RepositoryOwnerSchema,
+  SearchQuerySchema,
+} from "../validation/repositorySchemas.js";
 
 type Variables = { requestId: string };
 
 const HybridBody = z.object({
-  query: z.string().min(1, "query is required"),
-  owner: z.string().min(1, "owner is required"),
-  repo: z.string().min(1, "repo is required"),
-  limit: z.number().int().min(1).max(50).optional(),
+  query: SearchQuerySchema.refine((value) => value.length > 0, {
+    message: "query is required",
+  }),
+  owner: RepositoryOwnerSchema,
+  repo: RepositoryNameSchema,
+  limit: ChunkLimitSchema.refine((value) => value <= 50, {
+    message: "limit must be less than or equal to 50",
+  }).optional(),
 });
 
 const retrievalRouter = new Hono<{ Variables: Variables }>();

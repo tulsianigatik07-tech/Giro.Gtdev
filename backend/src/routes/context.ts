@@ -9,17 +9,27 @@ import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { assembleEnrichedContext } from "../services/context/enrichedAssembler.js";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+import {
+  ChunkLimitSchema,
+  RepositoryNameSchema,
+  RepositoryOwnerSchema,
+  SearchQuerySchema,
+} from "../validation/repositorySchemas.js";
 
 const STORAGE_PATH_GUARD = ".storage/repos";
 
 const BuildBody = z.object({ clonePath: z.string().min(1) });
 
 const AssembleBody = z.object({
-  query: z.string().min(1, "query is required"),
-  owner: z.string().min(1, "owner is required"),
-  repo: z.string().min(1, "repo is required"),
+  query: SearchQuerySchema.refine((value) => value.length > 0, {
+    message: "query is required",
+  }),
+  owner: RepositoryOwnerSchema,
+  repo: RepositoryNameSchema,
   maxChars: z.number().int().min(1000).max(100000).optional().default(16000),
-  limit: z.number().int().min(1).max(50).optional().default(25),
+  limit: ChunkLimitSchema.refine((value) => value <= 50, {
+    message: "limit must be less than or equal to 50",
+  }).optional().default(25),
 });
 
 const contextRouter = new Hono<{ Variables: { requestId: string } }>();

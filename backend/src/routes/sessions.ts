@@ -14,6 +14,11 @@ import {
 import { requireSessionAccess } from "../services/sessions/sessionOwnershipGuard.js";
 import { requireSessionRepositoryOwnership } from "../services/sessions/sessionRepositoryGuard.js";
 import { answerSessionQuestion } from "../services/sessions/questionService.js";
+import {
+  QuestionTextSchema,
+  RepositoryNameSchema,
+  RepositoryOwnerSchema,
+} from "../validation/repositorySchemas.js";
 
 const CitationSchema = z
   .object({
@@ -27,8 +32,8 @@ const CitationSchema = z
   });
 
 const CreateSessionBody = z.object({
-  owner: z.string().min(1, "owner is required"),
-  repo: z.string().min(1, "repo is required"),
+  owner: RepositoryOwnerSchema,
+  repo: RepositoryNameSchema,
   title: z.string().min(1).optional(),
 });
 
@@ -39,7 +44,9 @@ const AddMessageBody = z.object({
 });
 
 const AskBody = z.object({
-  question: z.string().min(1, "question is required").max(2000),
+  question: QuestionTextSchema.refine((value) => value.length <= 2000, {
+    message: "question must contain at most 2000 character(s)",
+  }),
 });
 
 const sessionsRouter = new Hono<{ Variables: { requestId: string } }>();

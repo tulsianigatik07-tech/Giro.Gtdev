@@ -1,16 +1,18 @@
 // POST /repos/connect — clone + scan a GitHub repository.
 
 import { Hono } from "hono";
+import { z } from "zod";
 import { existsSync } from "node:fs";
 import { parseRepoUrl } from "../lib/parseRepoUrl.js";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
 import {
-  RepositoryCleanupRequestSchema,
-  RepositoryConnectRequestSchema,
-  RepositoryDashboardParamsSchema,
-  RepositoryWorkspaceParamsSchema,
-} from "../contracts/repositoryContracts.js";
+  CloneOptionsSchema,
+  GithubRepositoryUrlSchema,
+  RepositoryNameSchema,
+  RepositoryOwnerSchema,
+  SearchQuerySchema,
+} from "../validation/repositorySchemas.js";
 import { cloneRepo, repoClonePath } from "../services/repository/clone.js";
 import { scanRepo } from "../services/repository/scanner.js";
 import { analyzeRepository } from "../services/repository/analyzer.js";
@@ -64,9 +66,27 @@ type Variables = { requestId: string; authenticatedUser: AuthenticatedUser };
 
 export const repositoriesRoute = new Hono<{ Variables: Variables }>();
 
+const RepositoryRouteParamsSchema = z.object({
+  owner: RepositoryOwnerSchema,
+  repo: RepositoryNameSchema,
+});
+
+const RepositoryConnectBodySchema = z.object({
+  repoUrl: GithubRepositoryUrlSchema,
+  cloneOptions: CloneOptionsSchema.optional(),
+});
+
+function parseRepositoryParams(owner: string, repo: string) {
+  return RepositoryRouteParamsSchema.safeParse({ owner, repo });
+}
+
+function invalidOwnerRepo(c: Parameters<typeof fail>[0]) {
+  return fail(c, { code: "validation_error", message: "owner and repo are required" }, 400);
+}
+
 repositoriesRoute.post("/connect", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const parsed = RepositoryConnectRequestSchema.safeParse(body);
+  const parsed = RepositoryConnectBodySchema.safeParse(body);
   if (!parsed.success) {
     return fail(c, { code: "validation_error", message: "repoUrl is required" }, 400);
   }
@@ -249,7 +269,7 @@ repositoriesRoute.get("/indexed", (c) => {
 
 repositoriesRoute.post("/context", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const parsed = RepositoryConnectRequestSchema.safeParse(body);
+  const parsed = RepositoryConnectBodySchema.safeParse(body);
   if (!parsed.success) {
     return fail(c, { code: "validation_error", message: "repoUrl is required" }, 400);
   }
@@ -305,7 +325,12 @@ repositoriesRoute.get("/:id/summary", async (c) => {
     return fail(c, { code: "invalid_id", message: "id must be 'owner--repo'" }, 400);
   }
 
-  const [owner, repo] = id.split("--") as [string, string];
+  const [ownerRaw, repoRaw] = id.split("--") as [string, string];
+  const parsedId = parseRepositoryParams(ownerRaw, repoRaw);
+  if (!parsedId.success) {
+    return fail(c, { code: "invalid_id", message: "id must be 'owner--repo'" }, 400);
+  }
+  const { owner, repo } = parsedId.data;
   const clonePath = repoClonePath(owner, repo);
   const repository = `${owner}/${repo}`;
 
@@ -344,16 +369,9 @@ repositoriesRoute.get("/:id/summary", async (c) => {
 
 // GET /repos/intelligence/:owner/:repo — unified repository intelligence payload.
 repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
-  const parsedParams = RepositoryWorkspaceParamsSchema.safeParse({
-    owner: c.req.param("owner"),
-    repo: c.req.param("repo"),
-  });
+  const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
-    return fail(
-      c,
-      { code: "validation_error", message: "owner and repo are required" },
-      400,
-    );
+    return invalidOwnerRepo(c);
   }
   const { owner, repo } = parsedParams.data;
 
@@ -430,16 +448,9 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
 
 // GET /repos/dependencies/:owner/:repo — dependency graph + symbol intelligence.
 repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
-  const parsedParams = RepositoryWorkspaceParamsSchema.safeParse({
-    owner: c.req.param("owner"),
-    repo: c.req.param("repo"),
-  });
+  const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
-    return fail(
-      c,
-      { code: "validation_error", message: "owner and repo are required" },
-      400,
-    );
+    return invalidOwnerRepo(c);
   }
   const { owner, repo } = parsedParams.data;
 
@@ -479,10 +490,7 @@ repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
 
 // GET /repos/search/:owner/:repo?q=query&limit=1-50 — file-level semantic search.
 repositoriesRoute.get("/search/:owner/:repo", async (c) => {
-  const parsedParams = RepositoryWorkspaceParamsSchema.safeParse({
-    owner: c.req.param("owner"),
-    repo: c.req.param("repo"),
-  });
+  const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   const query = c.req.query("q");
   const limitRaw = c.req.query("limit");
 
@@ -490,7 +498,8 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
     return fail(c, { code: "validation_error", message: "owner and repo are required" }, 400);
   }
   const { owner, repo } = parsedParams.data;
-  if (!query || query.trim().length === 0) {
+  const parsedQuery = SearchQuerySchema.safeParse(query ?? "");
+  if (!parsedQuery.success || parsedQuery.data.length === 0) {
     return fail(c, { code: "validation_error", message: "query (q) is required" }, 400);
   }
 
@@ -513,7 +522,7 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
   }
 
   try {
-    const result = await searchRepositoryFiles({ query, owner, repo, limit });
+    const result = await searchRepositoryFiles({ query: parsedQuery.data, owner, repo, limit });
     return ok(c, result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -536,16 +545,9 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
 
 // DELETE /repos/:owner/:repo — cleanup repository lifecycle metadata.
 repositoriesRoute.delete("/:owner/:repo", (c) => {
-  const parsedParams = RepositoryCleanupRequestSchema.safeParse({
-    owner: c.req.param("owner"),
-    repo: c.req.param("repo"),
-  });
+  const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
-    return fail(
-      c,
-      { code: "validation_error", message: "owner and repo are required" },
-      400,
-    );
+    return invalidOwnerRepo(c);
   }
   const { owner, repo } = parsedParams.data;
 
@@ -575,16 +577,9 @@ repositoriesRoute.delete("/:owner/:repo", (c) => {
 
 // GET /repos/:owner/:repo/dashboard/intelligence — full dashboard intelligence bundle.
 repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
-  const parsedParams = RepositoryDashboardParamsSchema.safeParse({
-    owner: c.req.param("owner"),
-    repo: c.req.param("repo"),
-  });
+  const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
-    return fail(
-      c,
-      { code: "validation_error", message: "owner and repo are required" },
-      400,
-    );
+    return invalidOwnerRepo(c);
   }
   const { owner, repo } = parsedParams.data;
 
@@ -613,16 +608,9 @@ repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
 
 // GET /repos/:owner/:repo/workspace — primary repository workspace payload.
 repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
-  const parsedParams = RepositoryWorkspaceParamsSchema.safeParse({
-    owner: c.req.param("owner"),
-    repo: c.req.param("repo"),
-  });
+  const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
-    return fail(
-      c,
-      { code: "validation_error", message: "owner and repo are required" },
-      400,
-    );
+    return invalidOwnerRepo(c);
   }
   const { owner, repo } = parsedParams.data;
 
@@ -690,16 +678,9 @@ repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
 
 // GET /repos/:owner/:repo/dashboard — frontend-ready repository dashboard summary.
 repositoriesRoute.get("/:owner/:repo/dashboard", async (c) => {
-  const parsedParams = RepositoryDashboardParamsSchema.safeParse({
-    owner: c.req.param("owner"),
-    repo: c.req.param("repo"),
-  });
+  const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
-    return fail(
-      c,
-      { code: "validation_error", message: "owner and repo are required" },
-      400,
-    );
+    return invalidOwnerRepo(c);
   }
   const { owner, repo } = parsedParams.data;
 
