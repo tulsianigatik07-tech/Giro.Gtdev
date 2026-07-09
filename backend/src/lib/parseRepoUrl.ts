@@ -13,6 +13,7 @@ export function parseRepoUrl(url: string): ParsedRepo {
   if (!raw) throw new Error("Repository URL is empty");
 
   let cleaned = raw
+    .replace(/^git@github\.com:/, "")
     .replace(/^https?:\/\//, "")
     .replace(/^github\.com\//, "")
     .replace(/\.git$/, "")

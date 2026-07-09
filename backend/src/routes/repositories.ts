@@ -15,6 +15,7 @@ import {
   SearchQuerySchema,
 } from "../validation/repositorySchemas.js";
 import { cloneRepo, repoClonePath } from "../services/repository/clone.js";
+import { buildRepositoryConnectFailureError } from "../services/repository/cloneFailureClassifier.js";
 import { scanRepo } from "../services/repository/scanner.js";
 import { analyzeRepository } from "../services/repository/analyzer.js";
 import { extractRepoSymbols } from "../services/graph/symbolExtractor.js";
@@ -252,10 +253,14 @@ repositoriesRoute.post("/connect", async (c) => {
     return ok(c, { ...result, ...analysis });
   } catch (err) {
     setRepositoryFailed(owner, repo);
-    const message = err instanceof Error ? err.message : "unknown error";
-    const code = message.startsWith("Clone failed") ? "clone_error" : "filesystem_error";
-    logger.error("repos_connect_failed", { requestId: c.get("requestId"), message });
-    return fail(c, { code, message }, 500);
+    const error = buildRepositoryConnectFailureError(err, repoId);
+    logger.error("repos_connect_failed", {
+      requestId: c.get("requestId"),
+      owner,
+      repo,
+      failureType: (error.details as { failureType?: string } | undefined)?.failureType,
+    });
+    return fail(c, error, error.status === 404 ? 404 : 500);
   }
 });
 

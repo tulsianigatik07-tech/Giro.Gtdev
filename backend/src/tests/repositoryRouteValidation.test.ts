@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { createApp } from "../app.js";
 import { signAccessToken } from "../services/auth/jwt.js";
+import { buildRepositoryConnectFailureError } from "../services/repository/cloneFailureClassifier.js";
 import {
   clearRepositoryIndexRegistry,
   setRepositoryIndexed,
@@ -122,6 +123,119 @@ test("valid repository URL on connect still reaches existing success path", asyn
   assert.equal(result.body.success, true);
   assert.equal(result.body.data?.skipped, true);
   assert.equal(result.body.data?.reason, "already_indexed");
+});
+
+test("valid SSH repository URL on connect still reaches existing success path", async () => {
+  setRepositoryOwner("acme/demo", USER_A.userId);
+  setRepositoryIndexed("acme", "demo", INDEX_COUNTS);
+
+  const result = await request({
+    method: "POST",
+    path: "/repos/connect",
+    token: await authHeader(USER_A),
+    body: { repoUrl: "git@github.com:acme/demo.git" },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.success, true);
+  assert.equal(result.body.data?.skipped, true);
+  assert.equal(result.body.data?.reason, "already_indexed");
+});
+
+test("clone repo not found maps to standardized repository error", () => {
+  const error = buildRepositoryConnectFailureError(
+    new Error("Clone failed: remote: Repository not found."),
+    "acme/missing",
+  );
+
+  assert.equal(error.code, "repo_not_found");
+  assert.equal(error.status, 404);
+  assert.equal(error.category, "repository");
+  assert.equal(error.retryable, false);
+  assert.deepEqual(error.details, {
+    repository: "acme/missing",
+    failureType: "repo_not_found",
+  });
+});
+
+test("private or inaccessible repo maps to non-retryable clone_failed", () => {
+  const error = buildRepositoryConnectFailureError(
+    new Error("Clone failed: fatal: could not read Username for 'https://github.com'"),
+    "acme/private",
+  );
+
+  assert.equal(error.code, "clone_failed");
+  assert.equal(error.status, 500);
+  assert.equal(error.category, "repository");
+  assert.equal(error.retryable, false);
+  assert.deepEqual(error.details, {
+    repository: "acme/private",
+    failureType: "private_or_inaccessible",
+  });
+});
+
+test("git executable failure maps to non-retryable clone_failed", () => {
+  const error = buildRepositoryConnectFailureError(
+    new Error("spawn git ENOENT"),
+    "acme/demo",
+  );
+
+  assert.equal(error.code, "clone_failed");
+  assert.equal(error.status, 500);
+  assert.equal(error.category, "repository");
+  assert.equal(error.retryable, false);
+  assert.deepEqual(error.details, {
+    repository: "acme/demo",
+    failureType: "git_executable_failure",
+  });
+});
+
+test("clone timeout maps to retryable clone_failed", () => {
+  const error = buildRepositoryConnectFailureError(
+    new Error("Clone failed: operation timed out"),
+    "acme/slow",
+  );
+
+  assert.equal(error.code, "clone_failed");
+  assert.equal(error.status, 500);
+  assert.equal(error.category, "repository");
+  assert.equal(error.retryable, true);
+  assert.deepEqual(error.details, {
+    repository: "acme/slow",
+    failureType: "clone_timeout",
+  });
+});
+
+test("destination already exists maps to non-retryable clone_failed", () => {
+  const error = buildRepositoryConnectFailureError(
+    new Error("fatal: destination path 'demo' already exists and is not an empty directory."),
+    "acme/demo",
+  );
+
+  assert.equal(error.code, "clone_failed");
+  assert.equal(error.status, 500);
+  assert.equal(error.category, "repository");
+  assert.equal(error.retryable, false);
+  assert.deepEqual(error.details, {
+    repository: "acme/demo",
+    failureType: "destination_exists",
+  });
+});
+
+test("unknown clone failure maps to retryable clone_failed", () => {
+  const error = buildRepositoryConnectFailureError(
+    new Error("Clone failed: unexpected transport failure"),
+    "acme/demo",
+  );
+
+  assert.equal(error.code, "clone_failed");
+  assert.equal(error.status, 500);
+  assert.equal(error.category, "repository");
+  assert.equal(error.retryable, true);
+  assert.deepEqual(error.details, {
+    repository: "acme/demo",
+    failureType: "unknown_clone_failure",
+  });
 });
 
 test("path traversal repo param is rejected", async () => {
