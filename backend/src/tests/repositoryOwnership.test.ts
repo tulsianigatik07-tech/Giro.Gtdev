@@ -38,6 +38,20 @@ test("1. ownership assignment: store records owner", () => {
   assert.equal(getRepositoryOwner("acme/demo"), USER_A.userId);
 });
 
+test("1b. ownership assignment replaces existing owner", () => {
+  setRepositoryOwner("acme/demo", USER_A.userId);
+  setRepositoryOwner("acme/demo", USER_B.userId);
+
+  assert.equal(getRepositoryOwner("acme/demo"), USER_B.userId);
+});
+
+test("1c. ownership reset clears repository owners", () => {
+  setRepositoryOwner("acme/demo", USER_A.userId);
+  clearRepositoryOwners();
+
+  assert.equal(getRepositoryOwner("acme/demo"), undefined);
+});
+
 test("2. guard: unknown ownership -> 404 repo_not_connected", () => {
   const r = requireRepositoryAccess({ repoId: "ghost/missing", userId: USER_A.userId });
   assert.equal(r.ok, false);
@@ -61,6 +75,30 @@ test("4. guard: correct owner -> ok", () => {
   setRepositoryOwner("acme/demo", USER_A.userId);
   const r = requireRepositoryAccess({ repoId: "acme/demo", userId: USER_A.userId });
   assert.equal(r.ok, true);
+});
+
+test("4b. repeated ownership checks are deterministic", () => {
+  setRepositoryOwner("acme/demo", USER_A.userId);
+
+  const firstAllowed = requireRepositoryAccess({
+    repoId: "acme/demo",
+    userId: USER_A.userId,
+  });
+  const secondAllowed = requireRepositoryAccess({
+    repoId: "acme/demo",
+    userId: USER_A.userId,
+  });
+  const firstDenied = requireRepositoryAccess({
+    repoId: "acme/demo",
+    userId: USER_B.userId,
+  });
+  const secondDenied = requireRepositoryAccess({
+    repoId: "acme/demo",
+    userId: USER_B.userId,
+  });
+
+  assert.deepEqual(secondAllowed, firstAllowed);
+  assert.deepEqual(secondDenied, firstDenied);
 });
 
 // --- route-level enforcement (no cloning: guard runs before network work) ---
