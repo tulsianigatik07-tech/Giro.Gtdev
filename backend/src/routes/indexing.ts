@@ -2,12 +2,17 @@ import { Hono } from "hono";
 import { createApiError, createValidationError } from "../lib/apiErrors.js";
 import { fail, ok } from "../lib/response.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
-import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
-import type { IndexingJob, IndexingJobFailure } from "../services/indexing/jobs/indexingJobStore.js";
+import type {
+  IndexingJob,
+  IndexingJobFailure,
+  IndexingJobStore,
+} from "../services/indexing/jobs/indexingJobStore.js";
 import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
 import { IndexingJobIdSchema } from "../validation/repositorySchemas.js";
 
-const indexingRoute = new Hono();
+type Variables = { indexingJobStore: IndexingJobStore };
+
+const indexingRoute = new Hono<{ Variables: Variables }>();
 
 function safeFailure(failure: IndexingJobFailure | null) {
   if (!failure) return null;
@@ -44,6 +49,7 @@ indexingRoute.get("/jobs/:jobId", async (c) => {
 
   let job: IndexingJob | null;
   try {
+    const indexingJobStore = c.get("indexingJobStore");
     job = await indexingJobStore.getJob(parsed.data);
   } catch {
     return fail(

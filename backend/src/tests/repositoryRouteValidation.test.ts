@@ -50,7 +50,7 @@ async function request(input: {
   token?: string;
   body?: unknown;
 }): Promise<{ status: number; body: ApiResponse }> {
-  const app = createApp();
+  const app = createApp({ indexingJobStore });
   const headers: Record<string, string> = {};
   if (input.token) headers.authorization = input.token;
   if (input.body !== undefined) headers["content-type"] = "application/json";

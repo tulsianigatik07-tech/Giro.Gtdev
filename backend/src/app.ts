@@ -8,17 +8,29 @@ import { requestId } from "./middleware/requestId.js";
 import { requestLogger } from "./middleware/logger.js";
 import { onError, onNotFound } from "./middleware/errorHandler.js";
 import { routes } from "./routes/index.js";
+import type { IndexingJobStore } from "./services/indexing/jobs/indexingJobStore.js";
+import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexingJobStore.js";
 
 type Variables = {
   requestId: string;
+  indexingJobStore: IndexingJobStore;
 };
 
-export function createApp() {
+export interface CreateAppOptions {
+  indexingJobStore?: IndexingJobStore;
+}
+
+export function createApp(options: CreateAppOptions = {}) {
+  const indexingJobStore = options.indexingJobStore ?? runtimeIndexingJobStore;
   const app = new Hono<{ Variables: Variables }>();
 
   // Order matters: requestId first so logger and errors can attach it.
   app.use("*", requestId());
   app.use("*", requestLogger());
+  app.use("*", async (c, next) => {
+    c.set("indexingJobStore", indexingJobStore);
+    await next();
+  });
   app.use(
     "*",
     cors({

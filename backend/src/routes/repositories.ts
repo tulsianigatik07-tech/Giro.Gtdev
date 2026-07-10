@@ -48,9 +48,13 @@ import {
   setRepositoryIndexing,
   listIndexedRepositories,
 } from "../services/repository/indexingService.js";
-import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
+import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
 
-type Variables = { requestId: string; authenticatedUser: AuthenticatedUser };
+type Variables = {
+  requestId: string;
+  authenticatedUser: AuthenticatedUser;
+  indexingJobStore: IndexingJobStore;
+};
 
 export const repositoriesRoute = new Hono<{ Variables: Variables }>();
 
@@ -121,6 +125,7 @@ repositoriesRoute.post("/connect", async (c) => {
   }
 
   setRepositoryOwner(repoId, user.userId);
+  const indexingJobStore = c.get("indexingJobStore");
   const job = await indexingJobStore.createJob({
     repositoryId: repoId,
     ownerUserId: user.userId,

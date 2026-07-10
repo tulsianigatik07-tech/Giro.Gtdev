@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
+import { createApp } from "../app.js";
+import { runProcessNextIndexingJobCommand } from "../commands/processNextIndexingJob.js";
+import { signAccessToken } from "../services/auth/jwt.js";
 import type { IndexingJobPersistenceRow } from "../services/indexing/jobs/indexingJobPersistenceMapper.js";
 import {
   IndexingJobPersistenceError,
@@ -15,6 +18,13 @@ import type {
   CreateIndexingJobInput,
   IndexingJobFailure,
 } from "../services/indexing/jobs/indexingJobStore.js";
+import type { IndexingJobRepositoryStore } from "../services/indexing/jobs/indexingJobWorker.js";
+import {
+  clearRepositoryIndexRegistry,
+} from "../services/repository/indexingService.js";
+import {
+  clearRepositoryOwners,
+} from "../services/repository/ownershipStore.js";
 
 const BASE_INPUT: CreateIndexingJobInput = {
   repositoryId: "acme/demo",
@@ -361,6 +371,8 @@ function persistedRow(
 beforeEach(() => {
   client = new FakeSupabaseClient();
   store = new SupabaseIndexingJobStore({ client });
+  clearRepositoryOwners();
+  clearRepositoryIndexRegistry();
 });
 
 test("creates a queued job through the database-owned create RPC", async () => {
@@ -676,4 +688,81 @@ test("constructor and operations have no global environment dependency", async (
     if (priorKey === undefined) delete process.env.SUPABASE_ANON_KEY;
     else process.env.SUPABASE_ANON_KEY = priorKey;
   }
+});
+
+test("API, worker, and status route share persistent jobs across store instances", async () => {
+  const apiStore = new SupabaseIndexingJobStore({ client });
+  const workerStore = new SupabaseIndexingJobStore({ client });
+  const statusStore = new SupabaseIndexingJobStore({ client });
+  const user = { userId: "persistent-user", email: "persistent@example.com" };
+  const authorization = `Bearer ${await signAccessToken(user)}`;
+
+  const api = createApp({ indexingJobStore: apiStore });
+  const connectResponse = await api.request("/repos/connect", {
+    method: "POST",
+    headers: {
+      authorization,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ repoUrl: "https://github.com/acme/persistent" }),
+  });
+  const connectBody = await connectResponse.json() as {
+    success: boolean;
+    data: Record<string, unknown>;
+  };
+
+  assert.equal(connectResponse.status, 200);
+  assert.deepEqual(connectBody.data, {
+    repositoryId: "acme/persistent",
+    jobId: "indexing-job-1",
+    status: "queued",
+  });
+  assert.equal(client.rows[0]?.status, "queued");
+
+  const repositoryStore: IndexingJobRepositoryStore = {
+    markIndexing() {},
+    markIndexed() {},
+    markFailed() {},
+  };
+  const commandResult = await runProcessNextIndexingJobCommand({
+    workerId: "manual-worker",
+    jobStore: workerStore,
+    repositoryStore,
+    executeIndexingPipeline: async () => ({
+      counts: {
+        chunkCount: 2,
+        fileCount: 1,
+        symbolCount: 1,
+        graphNodeCount: 1,
+        graphEdgeCount: 0,
+        summaryAvailable: true,
+      },
+    }),
+    writeOutput() {},
+  });
+
+  assert.equal(commandResult.status, "succeeded");
+  assert.equal(commandResult.jobId, "indexing-job-1");
+
+  const statusApi = createApp({ indexingJobStore: statusStore });
+  const statusResponse = await statusApi.request(
+    "/indexing/jobs/indexing-job-1",
+    { headers: { authorization } },
+  );
+  const statusBody = await statusResponse.json() as {
+    success: boolean;
+    data: Record<string, unknown>;
+  };
+
+  assert.equal(statusResponse.status, 200);
+  assert.deepEqual(statusBody.data, {
+    jobId: "indexing-job-1",
+    repositoryId: "acme/persistent",
+    status: "succeeded",
+    progress: 100,
+    currentStage: "complete",
+    attempt: 1,
+    maxAttempts: 3,
+    failure: null,
+  });
 });

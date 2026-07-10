@@ -54,7 +54,7 @@ async function call(
   authorization?: string,
   body?: unknown,
 ): Promise<{ status: number; json: ApiResponse }> {
-  const app = createApp();
+  const app = createApp({ indexingJobStore });
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (authorization) headers.authorization = authorization;
   const res = await app.fetch(

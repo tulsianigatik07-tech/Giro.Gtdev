@@ -90,7 +90,7 @@ function failingPipeline(
 }
 
 async function connect(): Promise<{ status: number; body: Record<string, unknown> }> {
-  const app = createApp();
+  const app = createApp({ indexingJobStore });
   const res = await app.request("/repos/connect", {
     method: "POST",
     headers: {

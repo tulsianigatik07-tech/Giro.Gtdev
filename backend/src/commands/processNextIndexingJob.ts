@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
 import type {
   IndexingJobFailure,
   IndexingJobStore,
@@ -12,6 +11,7 @@ import {
   type ExecuteIndexingPipeline,
   type IndexingJobRepositoryStore,
 } from "../services/indexing/jobs/indexingJobWorker.js";
+import { runtimeIndexingJobStore } from "../services/indexing/jobs/runtimeIndexingJobStore.js";
 
 const COMMAND_NAME = "indexing:work-once" as const;
 const DEFAULT_WORKER_ID = "manual-worker";
@@ -129,12 +129,9 @@ async function runExecutable(): Promise<void> {
     process.env.INDEXING_WORKER_ID,
   );
 
-  // These shared module instances match the API composition only within one
-  // Node process. API-to-CLI handoff requires a persistent Postgres/Supabase or
-  // Redis job store and repository-state adapter; a fresh CLI process is idle.
   const result = await runProcessNextIndexingJobCommand({
     workerId,
-    jobStore: indexingJobStore,
+    jobStore: runtimeIndexingJobStore,
     repositoryStore: indexingJobRepositoryStore,
     writeOutput: (output) => console.log(output),
   });

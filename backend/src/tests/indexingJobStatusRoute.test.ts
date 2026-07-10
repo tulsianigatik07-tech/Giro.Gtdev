@@ -48,7 +48,7 @@ async function request(
   jobId: string,
   token?: string,
 ): Promise<{ status: number; body: ApiResponse }> {
-  const app = createApp();
+  const app = createApp({ indexingJobStore });
   const headers: Record<string, string> = {};
   if (token) headers.authorization = token;
   const res = await app.request(`/indexing/jobs/${encodeURIComponent(jobId)}`, {
@@ -64,7 +64,7 @@ async function request(
 async function connect(
   token = TOKEN_A,
 ): Promise<{ status: number; body: ApiResponse }> {
-  const app = createApp();
+  const app = createApp({ indexingJobStore });
   const res = await app.request("/repos/connect", {
     method: "POST",
     headers: {
