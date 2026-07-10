@@ -221,3 +221,5 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
     return order;
   }
 }
+
+export const indexingJobStore: IndexingJobStore = new MemoryIndexingJobStore();

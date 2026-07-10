@@ -1,4 +1,4 @@
-// POST /repos/connect — clone + scan a GitHub repository.
+// POST /repos/connect — enqueue repository indexing.
 
 import { Hono } from "hono";
 import { z } from "zod";
@@ -14,11 +14,9 @@ import {
   RepositoryOwnerSchema,
   SearchQuerySchema,
 } from "../validation/repositorySchemas.js";
-import { cloneRepo, repoClonePath } from "../services/repository/clone.js";
-import { buildRepositoryConnectFailureError } from "../services/repository/cloneFailureClassifier.js";
+import { repoClonePath } from "../services/repository/clone.js";
 import { scanRepo } from "../services/repository/scanner.js";
 import { analyzeRepository } from "../services/repository/analyzer.js";
-import { extractRepoSymbols } from "../services/graph/symbolExtractor.js";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.js";
 import { buildRepositoryIntelligence } from "../services/repository/repositoryIntelligenceService.js";
@@ -42,27 +40,15 @@ import {
   getRepositoryOwner,
 } from "../services/repository/ownershipStore.js";
 import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
-import { saveRepositoryFileSnapshot, getRepositoryFileSnapshot } from "../services/repository/fileSnapshotStore.js";
-import { buildRepositoryIndexingPlan } from "../services/repository/indexingPlan.js";
-import { executeIndexingPlan } from "../services/repository/indexingExecutor.js";
-import {
-  buildIndexCleanupPlanFromIndexingPlan,
-  executeIndexCleanup,
-} from "../services/repository/indexCleanup.js";
-import { removeRepositorySymbolsForFiles, saveRepositorySymbols, symbolRecordsFromFileMaps } from "../services/repository/symbolIndexStore.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
   getRepositoryIndexMetadata,
-  isRepositoryHealthy,
   isRepositoryStale,
   setRepositoryIndexing,
-  setRepositoryIndexed,
-  setRepositoryFailed,
-  touchRepositoryAccess,
   listIndexedRepositories,
 } from "../services/repository/indexingService.js";
-import type { ScanResult } from "../services/repository/types.js";
+import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
 
 type Variables = { requestId: string; authenticatedUser: AuthenticatedUser };
 
@@ -117,151 +103,39 @@ repositoriesRoute.post("/connect", async (c) => {
   }
   const repoId = `${owner}/${repo}`;
 
-  // Skip-if-indexed guard: a healthy index short-circuits re-ingestion.
-  // A stale index falls through and re-indexes.
   const existing = getRepositoryIndexMetadata(owner, repo);
-  if (existing && isRepositoryHealthy(owner, repo)) {
-    // Enforce ownership before returning the existing index to this user.
-    const access = requireRepositoryAccess({ repoId, userId: user.userId });
-    if (!access.ok) {
-      return fail(c, { code: access.code, message: access.message }, access.status);
-    }
-    touchRepositoryAccess(owner, repo);
-    return ok(c, {
-      skipped: true,
-      reason: "already_indexed",
-      owner,
-      repo,
-      status: existing.status,
-      indexedAt: existing.indexedAt,
-    });
+  const ownerUserId = getRepositoryOwner(repoId);
+  if (ownerUserId !== undefined && ownerUserId !== user.userId) {
+    return fail(
+      c,
+      {
+        code: "repo_not_owned",
+        message: "You do not have access to this repository.",
+      },
+      403,
+    );
   }
   const reindexingStale = existing !== null && isRepositoryStale(owner, repo);
   if (reindexingStale) {
     logger.info("repos_reindex_stale", { requestId: c.get("requestId"), owner, repo });
   }
 
+  setRepositoryOwner(repoId, user.userId);
+  const job = await indexingJobStore.createJob({
+    repositoryId: repoId,
+    ownerUserId: user.userId,
+    repositoryOwner: owner,
+    repositoryName: repo,
+    repositoryUrl: parsed.data.repoUrl,
+    branch: parsed.data.cloneOptions?.branch ?? null,
+  });
   setRepositoryIndexing(owner, repo);
 
-  try {
-    const { clonePath, alreadyExisted } = await cloneRepo(owner, repo);
-    const stats = await scanRepo(clonePath);
-    const analysis = await analyzeRepository(clonePath, stats);
-
-    // Extract repository symbols from the freshly cloned/scanned source. If
-    // this throws, the existing catch runs setRepositoryFailed and no symbols
-    // are persisted (a failed index never partially writes a symbol set).
-    const symbolMaps = await extractRepoSymbols(clonePath);
-    const symbolCount = symbolMaps.reduce((n, m) => n + m.symbols.length, 0);
-
-    const result: ScanResult = {
-      owner,
-      repo,
-      clonePath,
-      alreadyExisted,
-      totalFiles: stats.totalFiles,
-      totalDirectories: stats.totalDirectories,
-      languages: stats.languages,
-      tree: stats.tree,
-    };
-
-    // Build the incremental indexing plan from the PREVIOUS snapshot, before
-    // the new snapshot overwrites it below. Planning/recording only — no
-    // partial re-embedding happens here.
-    const previousSnapshot = getRepositoryFileSnapshot(repoId);
-    const indexingPlan = buildRepositoryIndexingPlan({
-      previousSnapshot,
-      currentFiles: stats.files,
-    });
-    logger.info("repository_indexing_plan", {
-      requestId: c.get("requestId"),
-      owner,
-      repo,
-      mode: indexingPlan.mode,
-      totalChangedFiles: indexingPlan.totalChangedFiles,
-      reason: indexingPlan.reason,
-    });
-
-    // Execute the plan: analyze only the files the plan selects. Full reindex
-    // analyzes every file; incremental analyzes only changed (added) files and
-    // skips unchanged ones. Per-file analysis here records a lightweight file
-    // descriptor — the seam future commits (chunking/embedding) will expand.
-    const execution = await executeIndexingPlan({
-      plan: indexingPlan,
-      currentFiles: stats.files,
-      analyzeFile: (file) => ({
-        filePath: file.filePath,
-        language: file.language,
-        size: file.size,
-      }),
-    });
-    logger.info("repository_indexing_execution", {
-      requestId: c.get("requestId"),
-      owner,
-      repo,
-      mode: execution.mode,
-      analyzed: execution.analyzedFiles.length,
-      skipped: execution.skippedFiles.length,
-    });
-
-    setRepositoryIndexed(
-      owner,
-      repo,
-      {
-        chunkCount: 0,
-        fileCount: stats.totalFiles ?? 0,
-        symbolCount,
-        graphNodeCount: 0,
-        graphEdgeCount: 0,
-        summaryAvailable: analysis.framework !== "unknown",
-      },
-      {
-        indexMode: indexingPlan.mode,
-        changedFileCount: indexingPlan.totalChangedFiles,
-      },
-    );
-    touchRepositoryAccess(owner, repo);
-    // The connecting user becomes the repository owner.
-    setRepositoryOwner(repoId, user.userId);
-
-    // Deletion cleanup foundation: if the plan dropped files, resolve what
-    // needs cleaning BEFORE the new snapshot overwrites the old one. This is
-    // foundation-only — no disk/store deletions happen yet.
-    const cleanupPlan = buildIndexCleanupPlanFromIndexingPlan(indexingPlan);
-    if (cleanupPlan.cleanupRequired) {
-      const cleanup = executeIndexCleanup(cleanupPlan);
-      // Drop stale symbol records for removed files (no-op until symbol
-      // extraction output is persisted into the store in a later commit).
-      removeRepositorySymbolsForFiles(repoId, cleanup.removedFiles);
-      logger.info("repository_index_cleanup", {
-        requestId: c.get("requestId"),
-        owner,
-        repo,
-        cleaned: cleanup.cleanedFileCount,
-        skipped: cleanup.skippedFileCount,
-        reason: cleanup.reason,
-      });
-    }
-
-    // Persist the extracted symbol set for this repo (atomic overwrite). Runs
-    // only on the success path, so a failed index never corrupts a prior set.
-    saveRepositorySymbols(repoId, symbolRecordsFromFileMaps(symbolMaps));
-
-    // Persist the new indexed file snapshot for future incremental indexing.
-    saveRepositoryFileSnapshot(repoId, stats.files);
-
-    return ok(c, { ...result, ...analysis });
-  } catch (err) {
-    setRepositoryFailed(owner, repo);
-    const error = buildRepositoryConnectFailureError(err, repoId);
-    logger.error("repos_connect_failed", {
-      requestId: c.get("requestId"),
-      owner,
-      repo,
-      failureType: (error.details as { failureType?: string } | undefined)?.failureType,
-    });
-    return fail(c, error, error.status === 404 ? 404 : 500);
-  }
+  return ok(c, {
+    repositoryId: repoId,
+    jobId: job.jobId,
+    status: "queued",
+  });
 });
 
 repositoriesRoute.get("/indexed", (c) => {

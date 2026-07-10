@@ -13,6 +13,7 @@ import {
   clearRepositoryOwners,
   setRepositoryOwner,
 } from "../services/repository/ownershipStore.js";
+import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
 
 const USER_A = { userId: "user-a", email: "a@example.com" };
 const USER_B = { userId: "user-b", email: "b@example.com" };
@@ -64,9 +65,10 @@ async function request(input: {
   return { status: res.status, body };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   clearRepositoryOwners();
   clearRepositoryIndexRegistry();
+  await indexingJobStore.clear();
 });
 
 test("invalid owner param is rejected before ownership lookup", async () => {
@@ -108,7 +110,7 @@ test("invalid repository URL on connect is rejected", async () => {
   assert.equal(result.body.error?.category, "validation");
 });
 
-test("valid repository URL on connect still reaches existing success path", async () => {
+test("valid repository URL on connect returns queued indexing job", async () => {
   setRepositoryOwner("acme/demo", USER_A.userId);
   setRepositoryIndexed("acme", "demo", INDEX_COUNTS);
 
@@ -121,11 +123,12 @@ test("valid repository URL on connect still reaches existing success path", asyn
 
   assert.equal(result.status, 200);
   assert.equal(result.body.success, true);
-  assert.equal(result.body.data?.skipped, true);
-  assert.equal(result.body.data?.reason, "already_indexed");
+  assert.equal(result.body.data?.repositoryId, "acme/demo");
+  assert.equal(typeof result.body.data?.jobId, "string");
+  assert.equal(result.body.data?.status, "queued");
 });
 
-test("valid SSH repository URL on connect still reaches existing success path", async () => {
+test("valid SSH repository URL on connect returns queued indexing job", async () => {
   setRepositoryOwner("acme/demo", USER_A.userId);
   setRepositoryIndexed("acme", "demo", INDEX_COUNTS);
 
@@ -138,8 +141,9 @@ test("valid SSH repository URL on connect still reaches existing success path", 
 
   assert.equal(result.status, 200);
   assert.equal(result.body.success, true);
-  assert.equal(result.body.data?.skipped, true);
-  assert.equal(result.body.data?.reason, "already_indexed");
+  assert.equal(result.body.data?.repositoryId, "acme/demo");
+  assert.equal(typeof result.body.data?.jobId, "string");
+  assert.equal(result.body.data?.status, "queued");
 });
 
 test("clone repo not found maps to standardized repository error", () => {

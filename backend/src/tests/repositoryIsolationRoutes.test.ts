@@ -19,6 +19,7 @@ import {
   getRepositoryOwner,
   clearRepositoryOwners,
 } from "../services/repository/ownershipStore.js";
+import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
 
 const USER_A = { userId: "user-a", email: "a@example.com" };
 const USER_B = { userId: "user-b", email: "b@example.com" };
@@ -84,9 +85,10 @@ async function search(token?: string) {
   return call("GET", "/repos/search/acme/demo?q=foo", token);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   clearRepositoryOwners();
   clearRepositoryIndexRegistry();
+  await indexingJobStore.clear();
 });
 
 // --- 1 & 2: auth runs before everything ---
@@ -103,13 +105,14 @@ test("2. invalid JWT -> 401 invalid_token", async () => {
 });
 
 // --- 3: owner passes the ownership gate (stopped only at missing clone) ---
-test("3a. connect: owner + healthy index -> 200 skipped:true (no clone)", async () => {
+test("3a. connect: owner + healthy index -> 200 queued job", async () => {
   owned();
   setRepositoryIndexed("acme", "demo", COUNTS); // makes index healthy
   const { status, json } = await call("POST", "/repos/connect", TOKEN_A, { repoUrl: REPO_URL });
   assert.equal(status, 200);
-  assert.equal(asRecord(json.data).skipped, true);
-  assert.equal(asRecord(json.data).reason, "already_indexed");
+  assert.equal(asRecord(json.data).repositoryId, "acme/demo");
+  assert.equal(typeof asRecord(json.data).jobId, "string");
+  assert.equal(asRecord(json.data).status, "queued");
 });
 
 test("3b. owner passes gate on context/summary/dependencies/search -> 404 repo_not_connected", async () => {
