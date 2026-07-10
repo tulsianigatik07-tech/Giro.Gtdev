@@ -116,6 +116,19 @@ export const SessionIdSchema = freezeSchema(z
   .max(128, "session id is too long")
   .regex(/^[a-zA-Z0-9._:-]+$/, "session id contains invalid characters"));
 
+export const IndexingJobIdSchema = freezeSchema(z
+  .string()
+  .trim()
+  .min(1, "indexing job id is required")
+  .max(128, "indexing job id is too long")
+  .regex(/^[a-zA-Z0-9._:-]+$/, "indexing job id contains invalid characters")
+  .refine((value) => !hasPathTraversal(value), {
+    message: "indexing job id must not contain path traversal",
+  })
+  .refine((value) => !hasControlCharacters(value), {
+    message: "indexing job id must not contain control characters",
+  }));
+
 export const GithubRepositoryUrlSchema = freezeSchema(z
   .string()
   .trim()
@@ -212,6 +225,7 @@ export type RepositoryOwner = z.infer<typeof RepositoryOwnerSchema>;
 export type RepositoryName = z.infer<typeof RepositoryNameSchema>;
 export type RepositoryId = z.infer<typeof RepositoryIdSchema>;
 export type SessionId = z.infer<typeof SessionIdSchema>;
+export type IndexingJobId = z.infer<typeof IndexingJobIdSchema>;
 export type GithubRepositoryUrl = z.infer<typeof GithubRepositoryUrlSchema>;
 export type BranchName = z.infer<typeof BranchNameSchema>;
 export type CommitSha = z.infer<typeof CommitShaSchema>;

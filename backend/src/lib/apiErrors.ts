@@ -9,6 +9,7 @@ export type ApiErrorCode =
   | "session_not_owned"
   | "invalid_repo_url"
   | "clone_failed"
+  | "indexing_job_not_found"
   | "indexing_failed"
   | "retrieval_failed"
   | "embedding_failed"
@@ -76,6 +77,7 @@ const ERROR_DEFAULTS: Record<ApiErrorCode, ApiErrorDefaults> = {
   session_not_owned: { status: 403, category: "session", retryable: false },
   invalid_repo_url: { status: 400, category: "validation", retryable: false },
   clone_failed: { status: 500, category: "repository", retryable: true },
+  indexing_job_not_found: { status: 404, category: "indexing", retryable: false },
   indexing_failed: { status: 500, category: "indexing", retryable: true },
   retrieval_failed: { status: 500, category: "retrieval", retryable: true },
   embedding_failed: { status: 502, category: "external", retryable: true },

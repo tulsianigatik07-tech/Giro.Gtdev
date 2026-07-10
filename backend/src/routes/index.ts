@@ -11,6 +11,7 @@ import toolsRouter from "./tools.js";
 import retrievalRouter from "./retrieval.js";
 import sessionsRouter from "./sessions.js";
 import architectureRouter from "./architecture.js";
+import indexingRouter from "./indexing.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 
 export const routes = new Hono();
@@ -28,6 +29,7 @@ routes.use("/tools/*", authMiddleware());
 routes.use("/retrieval/*", authMiddleware());
 routes.use("/sessions/*", authMiddleware());
 routes.use("/architecture/*", authMiddleware());
+routes.use("/indexing/*", authMiddleware());
 
 // Protected routes.
 routes.route("/repos", repositoriesRoute);
@@ -38,3 +40,4 @@ routes.route("/tools", toolsRouter);
 routes.route("/retrieval", retrievalRouter);
 routes.route("/sessions", sessionsRouter);
 routes.route("/architecture", architectureRouter);
+routes.route("/indexing", indexingRouter);
