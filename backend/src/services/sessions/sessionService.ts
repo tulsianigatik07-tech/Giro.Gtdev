@@ -1,8 +1,9 @@
-// Session business logic. Owns all mutation rules; delegates storage to store.ts.
+// Session business logic. Owns mutation rules; delegates persistence to SessionStore.
 
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/logger.js";
-import * as store from "./store.js";
+import { sessionStore } from "./store.js";
+import type { SessionStore } from "./store/sessionStore.js";
 import type {
   AddMessageInput,
   CreateSessionInput,
@@ -15,6 +16,8 @@ import type {
 function nowIso(): string {
   return new Date().toISOString();
 }
+
+const store: SessionStore = sessionStore;
 
 export function createNewSession(input: CreateSessionInput): Session {
   const timestamp = nowIso();
@@ -70,13 +73,9 @@ export function addMessageToSession(
     createdAt: nowIso(),
   };
 
-  const updated: Session = {
-    ...session,
-    messages: [...session.messages, message],
-    updatedAt: nowIso(),
-  };
+  const saved = store.appendMessage(sessionId, message, nowIso());
+  if (!saved) return null;
 
-  const saved = store.updateSession(updated);
   logger.info("session_message_added", {
     sessionId,
     messageId: message.id,

@@ -1,47 +1,41 @@
-// Pure in-memory storage for sessions. No business logic lives here.
+// Session storage compatibility API. The persistence boundary is the
+// SessionStore interface; this module preserves the historical synchronous
+// function surface used by routes and tests.
 
-import type { Session } from "./types.js";
+import { MemorySessionStore } from "./store/memorySessionStore.js";
+import type { SessionStore } from "./store/sessionStore.js";
+import type { Message, Session } from "./types.js";
 
-const sessions = new Map<string, Session>();
-
-function clone(session: Session): Session {
-  // Shallow-copy the session and its array fields so callers can't mutate
-  // the stored reference.
-  return {
-    ...session,
-    messages: [...session.messages],
-    selectedContext: [...session.selectedContext],
-  };
-}
+export const sessionStore: SessionStore = new MemorySessionStore();
 
 export function createSession(session: Session): Session {
-  sessions.set(session.id, clone(session));
-  return clone(session);
+  return sessionStore.createSession(session);
 }
 
 export function getSession(id: string): Session | null {
-  const found = sessions.get(id);
-  return found ? clone(found) : null;
+  return sessionStore.getSession(id);
 }
 
 export function listSessions(): Session[] {
-  return [...sessions.values()]
-    .map(clone)
-    .sort(
-      (a, b) =>
-        b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
-    );
+  return sessionStore.listSessions();
 }
 
 export function updateSession(session: Session): Session {
-  sessions.set(session.id, clone(session));
-  return clone(session);
+  return sessionStore.updateSession(session);
 }
 
 export function deleteSession(id: string): boolean {
-  return sessions.delete(id);
+  return sessionStore.deleteSession(id);
+}
+
+export function appendMessage(
+  sessionId: string,
+  message: Message,
+  updatedAt: string,
+): Session | null {
+  return sessionStore.appendMessage(sessionId, message, updatedAt);
 }
 
 export function clearAllSessions(): void {
-  sessions.clear();
+  sessionStore.clear();
 }

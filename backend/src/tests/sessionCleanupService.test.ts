@@ -1,20 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 
 import { findSessionCleanupCandidates } from "../services/sessions/sessionCleanupService.js";
 
-describe("session cleanup service", () => {
-  it("returns cleanup candidates array", () => {
-    const result = findSessionCleanupCandidates();
+test("session cleanup service returns cleanup candidates array", () => {
+  const result = findSessionCleanupCandidates();
 
-    expect(Array.isArray(result)).toBe(true);
-  });
+  assert.equal(Array.isArray(result), true);
+});
 
-  it("returns cleanup candidates with required fields", () => {
-    const result = findSessionCleanupCandidates();
+test("session cleanup service returns cleanup candidates with required fields", () => {
+  const result = findSessionCleanupCandidates();
 
-    for (const candidate of result) {
-      expect(candidate).toHaveProperty("sessionId");
-      expect(candidate).toHaveProperty("reason");
-    }
-  });
+  for (const candidate of result) {
+    assert.equal(typeof candidate.sessionId, "string");
+    assert.equal(typeof candidate.reason, "string");
+  }
 });
