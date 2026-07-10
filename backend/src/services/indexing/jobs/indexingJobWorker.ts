@@ -91,7 +91,7 @@ const STAGE_PROGRESS_BY_STAGE = new Map(
   INDEXING_JOB_STAGE_PROGRESS.map((item) => [item.stage, item.progress]),
 );
 
-const defaultRepositoryStore: IndexingJobRepositoryStore = {
+export const indexingJobRepositoryStore: IndexingJobRepositoryStore = {
   markIndexing(job) {
     setRepositoryIndexing(job.repositoryOwner, job.repositoryName);
   },
@@ -252,7 +252,7 @@ export async function processNextIndexingJob(
   const {
     workerId,
     jobStore,
-    repositoryStore = defaultRepositoryStore,
+    repositoryStore = indexingJobRepositoryStore,
     executeIndexingPipeline = executeRepositoryIndexingPipeline,
   } = input;
 
