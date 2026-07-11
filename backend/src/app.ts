@@ -7,9 +7,11 @@ import { env } from "./config/env.js";
 import { requestId } from "./middleware/requestId.js";
 import { requestLogger } from "./middleware/logger.js";
 import { onError, onNotFound } from "./middleware/errorHandler.js";
-import { routes } from "./routes/index.js";
+import { createRoutes } from "./routes/index.js";
+import type { ReadinessCheck } from "./routes/health.js";
 import type { IndexingJobStore } from "./services/indexing/jobs/indexingJobStore.js";
 import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexingJobStore.js";
+import { createRuntimeReadinessCheck } from "./services/health/runtimeReadiness.js";
 
 type Variables = {
   requestId: string;
@@ -18,10 +20,13 @@ type Variables = {
 
 export interface CreateAppOptions {
   indexingJobStore?: IndexingJobStore;
+  readinessCheck?: ReadinessCheck;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
   const indexingJobStore = options.indexingJobStore ?? runtimeIndexingJobStore;
+  const readinessCheck =
+    options.readinessCheck ?? createRuntimeReadinessCheck({ indexingJobStore });
   const app = new Hono<{ Variables: Variables }>();
 
   // Order matters: requestId first so logger and errors can attach it.
@@ -42,7 +47,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }),
   );
 
-  app.route("/", routes);
+  app.route("/", createRoutes(readinessCheck));
 
   app.notFound(onNotFound);
   app.onError(onError);

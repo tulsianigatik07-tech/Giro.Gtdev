@@ -7,13 +7,13 @@ function getRequestId(c: Context): string {
   return c.get("requestId") ?? "unknown";
 }
 
-export function ok<T>(c: Context, data: T, status = 200) {
+export function ok<T>(c: Context, data: T, status: 200 | 201 | 503 = 200) {
   const body: ApiResponse<T> = {
     success: true,
     data,
     requestId: getRequestId(c),
   };
-  return c.json(body, status as 200);
+  return c.json(body, status);
 }
 
 export function fail(
