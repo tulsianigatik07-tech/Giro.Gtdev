@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { env } from "../config/env.js";
 
 import type {
   IndexingJobFailure,
@@ -126,7 +127,7 @@ export async function runProcessNextIndexingJobCommand(
 async function runExecutable(): Promise<void> {
   const workerId = resolveIndexingWorkerId(
     process.argv.slice(2),
-    process.env.INDEXING_WORKER_ID,
+    env.INDEXING_WORKER_ID,
   );
 
   const result = await runProcessNextIndexingJobCommand({

@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { env } from "../../config/env.js";
 import { supabase } from "../../lib/supabase.js";
 import type { IndexingJobStore } from "../indexing/jobs/indexingJobStore.js";
 import { runtimeIndexingJobStore } from "../indexing/jobs/runtimeIndexingJobStore.js";
@@ -23,8 +24,7 @@ async function probeTable(
 }
 
 function requireOpenAiConfiguration(): void {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey || apiKey.length < 20) {
+  if (!env.OPENAI_API_KEY) {
     throw new Error("Required configuration is unavailable.");
   }
 }
