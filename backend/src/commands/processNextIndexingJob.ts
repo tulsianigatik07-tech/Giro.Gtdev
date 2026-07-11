@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { env } from "../config/env.js";
+import { stderrLogger } from "../lib/logger.js";
+import { runOneShotWorkerRuntime } from "../runtime/oneShotWorkerRuntime.js";
 
 import type {
   IndexingJobFailure,
@@ -130,13 +132,31 @@ async function runExecutable(): Promise<void> {
     env.INDEXING_WORKER_ID,
   );
 
-  const result = await runProcessNextIndexingJobCommand({
-    workerId,
-    jobStore: runtimeIndexingJobStore,
-    repositoryStore: indexingJobRepositoryStore,
+  await runOneShotWorkerRuntime({
+    timeoutMs: env.SHUTDOWN_TIMEOUT_MS,
+    logger: stderrLogger,
+    runCommand: (writeOutput) =>
+      runProcessNextIndexingJobCommand({
+        workerId,
+        jobStore: runtimeIndexingJobStore,
+        repositoryStore: indexingJobRepositoryStore,
+        writeOutput,
+      }),
     writeOutput: (output) => console.log(output),
+    interruptedOutput: JSON.stringify(
+      internalFailure("Indexing worker shutdown was forced."),
+    ),
+    subscribeToSignal: (signal, handler) => {
+      process.on(signal, handler);
+      return () => process.off(signal, handler);
+    },
+    setExitCode: (code) => {
+      const existingFailure =
+        process.exitCode !== undefined && process.exitCode !== 0;
+      process.exitCode = existingFailure ? 1 : code;
+    },
+    forceExit: (code) => process.exit(code),
   });
-  process.exitCode = getProcessNextIndexingJobCommandExitCode(result);
 }
 
 const executablePath = process.argv[1]

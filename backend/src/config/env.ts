@@ -34,6 +34,12 @@ const EnvSchema = z
     EMBEDDINGS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
     MODEL_NAME: z.string().trim().min(1).default("gpt-4.1-mini"),
     INDEXING_WORKER_ID: optionalNonEmptyString,
+    SHUTDOWN_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(60_000)
+      .default(10_000),
   })
   .superRefine((value, context) => {
     if (!value.SUPABASE_SERVICE_ROLE_KEY && !value.SUPABASE_ANON_KEY) {

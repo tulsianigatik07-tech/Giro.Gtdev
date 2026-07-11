@@ -21,12 +21,17 @@ type Variables = {
 export interface CreateAppOptions {
   indexingJobStore?: IndexingJobStore;
   readinessCheck?: ReadinessCheck;
+  isShuttingDown?: () => boolean;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
   const indexingJobStore = options.indexingJobStore ?? runtimeIndexingJobStore;
   const readinessCheck =
-    options.readinessCheck ?? createRuntimeReadinessCheck({ indexingJobStore });
+    options.readinessCheck ??
+    createRuntimeReadinessCheck({
+      indexingJobStore,
+      isShuttingDown: options.isShuttingDown,
+    });
   const app = new Hono<{ Variables: Variables }>();
 
   // Order matters: requestId first so logger and errors can attach it.

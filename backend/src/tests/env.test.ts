@@ -90,6 +90,22 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.EMBEDDINGS_PROVIDER, "mock");
   assert.equal(result.MODEL_NAME, "gpt-4.1-mini");
   assert.equal(result.INDEXING_WORKER_ID, undefined);
+  assert.equal(result.SHUTDOWN_TIMEOUT_MS, 10_000);
+});
+
+test("shutdown timeout is bounded", () => {
+  assert.equal(
+    validateEnv({ ...REQUIRED, SHUTDOWN_TIMEOUT_MS: "1000" })
+      .SHUTDOWN_TIMEOUT_MS,
+    1000,
+  );
+  assert.equal(
+    validateEnv({ ...REQUIRED, SHUTDOWN_TIMEOUT_MS: "60000" })
+      .SHUTDOWN_TIMEOUT_MS,
+    60000,
+  );
+  assert.throws(() => validateEnv({ ...REQUIRED, SHUTDOWN_TIMEOUT_MS: "999" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, SHUTDOWN_TIMEOUT_MS: "60001" }));
 });
 
 test("anon key remains a valid fallback when service role is absent", () => {

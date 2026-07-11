@@ -54,6 +54,7 @@ function requireRuntimeInitialization(jobStore: IndexingJobStore): void {
 export function createRuntimeReadinessCheck(options: {
   client?: SupabaseClient;
   indexingJobStore?: IndexingJobStore;
+  isShuttingDown?: () => boolean;
 } = {}): () => Promise<ApplicationReadiness> {
   const client = options.client ?? supabase;
   const indexingJobStore = options.indexingJobStore ?? runtimeIndexingJobStore;
@@ -95,5 +96,22 @@ export function createRuntimeReadinessCheck(options: {
     },
   ];
 
-  return () => checkApplicationReadiness(checks);
+  return () => {
+    if (options.isShuttingDown?.()) {
+      return Promise.resolve(
+        Object.freeze({
+          status: "not_ready",
+          checks: Object.freeze([
+            Object.freeze({
+              name: "runtime_shutdown",
+              status: "fail",
+              critical: true,
+              message: "Application shutdown is in progress.",
+            }),
+          ]),
+        }),
+      );
+    }
+    return checkApplicationReadiness(checks);
+  };
 }
