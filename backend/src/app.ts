@@ -15,6 +15,8 @@ import type { ReadinessCheck } from "./routes/health.js";
 import type { IndexingJobStore } from "./services/indexing/jobs/indexingJobStore.js";
 import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexingJobStore.js";
 import { createRuntimeReadinessCheck } from "./services/health/runtimeReadiness.js";
+import { createMetricsMiddleware } from "./middleware/metricsMiddleware.js";
+import { runtimeMetrics, type MetricsRegistry } from "./observability/metrics.js";
 
 type Variables = RequestContextVariables & {
   indexingJobStore: IndexingJobStore;
@@ -25,10 +27,12 @@ export interface CreateAppOptions {
   readinessCheck?: ReadinessCheck;
   isShuttingDown?: () => boolean;
   requestContext?: RequestContextOptions;
+  metrics?: MetricsRegistry;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
   const indexingJobStore = options.indexingJobStore ?? runtimeIndexingJobStore;
+  const metrics = options.metrics ?? runtimeMetrics;
   const readinessCheck =
     options.readinessCheck ??
     createRuntimeReadinessCheck({
@@ -39,6 +43,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   // Order matters: correlation context wraps every later middleware and route.
   app.use("*", createRequestContextMiddleware(options.requestContext));
+  app.use("*", createMetricsMiddleware(metrics));
   app.use("*", async (c, next) => {
     c.set("indexingJobStore", indexingJobStore);
     await next();
@@ -59,7 +64,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }),
   );
 
-  app.route("/", createRoutes(readinessCheck));
+  app.route("/", createRoutes(readinessCheck, metrics));
 
   app.notFound(onNotFound);
   app.onError(onError);

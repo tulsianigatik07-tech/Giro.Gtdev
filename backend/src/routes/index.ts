@@ -15,13 +15,16 @@ import indexingRouter from "./indexing.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { env } from "../config/env.js";
 import { rateLimiter } from "../middleware/rateLimiter.js";
+import type { MetricsRegistry } from "../observability/metrics.js";
+import { createMetricsRoute } from "./metrics.js";
 
-export function createRoutes(readinessCheck: ReadinessCheck) {
+export function createRoutes(readinessCheck: ReadinessCheck, metrics: MetricsRegistry) {
   const routes = new Hono();
 
   // Public routes — no authentication required.
   routes.route("/", rootRoute);
-  routes.route("/", createHealthRoute(readinessCheck));
+  routes.route("/", createHealthRoute(readinessCheck, metrics));
+  routes.route("/", createMetricsRoute(metrics));
 
   // Protected route middleware.
   routes.use("/repos/*", authMiddleware());
@@ -37,6 +40,7 @@ export function createRoutes(readinessCheck: ReadinessCheck) {
   const expensiveEndpointLimiter = rateLimiter({
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+    onRejected: () => metrics.incrementRateLimitRejections(),
   });
   routes.use("/repos/connect", expensiveEndpointLimiter);
   routes.use("/repos/search/*", expensiveEndpointLimiter);

@@ -34,6 +34,7 @@ import type {
   IndexingJobStage,
   IndexingJobStore,
 } from "./indexingJobStore.js";
+import type { IndexingMetricStatus } from "../../../observability/metrics.js";
 
 export interface IndexingPipelineStageProgress {
   stage: IndexingJobStage;
@@ -66,6 +67,7 @@ export interface ProcessNextIndexingJobInput {
   repositoryStore?: IndexingJobRepositoryStore;
   executeIndexingPipeline?: ExecuteIndexingPipeline;
   logger?: IndexingJobWorkerLogger;
+  metrics?: { incrementIndexing(status: IndexingMetricStatus): void };
 }
 
 export interface IndexingJobWorkerLogger {
@@ -275,6 +277,7 @@ export async function processNextIndexingJob(
     repositoryStore = indexingJobRepositoryStore,
     executeIndexingPipeline = executeRepositoryIndexingPipeline,
     logger = silentWorkerLogger,
+    metrics,
   } = input;
 
   const claimed = await jobStore.claimNextJob(workerId);
@@ -302,6 +305,7 @@ export async function processNextIndexingJob(
       throw new Error("Indexing job could not transition to running");
     }
     logger.info("indexing_job_started", jobLogFields(claimed, workerId));
+    metrics?.incrementIndexing("started");
 
     const reportStage = async (progress: IndexingPipelineStageProgress) => {
       currentStage = progress.stage;
@@ -330,6 +334,7 @@ export async function processNextIndexingJob(
       throw new Error("Indexing job could not be marked succeeded");
     }
     logger.info("indexing_job_succeeded", jobLogFields(claimed, workerId));
+    metrics?.incrementIndexing("completed");
 
     stagesCompleted.push("complete");
     return {
@@ -356,6 +361,7 @@ export async function processNextIndexingJob(
       failureCode: failure.code,
       retryable: failure.retryable,
     });
+    metrics?.incrementIndexing("failed");
     return {
       processed: true,
       jobId: claimed.jobId,

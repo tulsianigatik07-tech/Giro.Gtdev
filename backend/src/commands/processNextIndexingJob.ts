@@ -16,6 +16,7 @@ import {
   type IndexingJobWorkerLogger,
 } from "../services/indexing/jobs/indexingJobWorker.js";
 import { runtimeIndexingJobStore } from "../services/indexing/jobs/runtimeIndexingJobStore.js";
+import { runtimeMetrics, type IndexingMetricStatus } from "../observability/metrics.js";
 
 const COMMAND_NAME = "indexing:work-once" as const;
 const DEFAULT_WORKER_ID = "manual-worker";
@@ -38,6 +39,7 @@ export interface RunProcessNextIndexingJobCommandInput {
   executeIndexingPipeline?: ExecuteIndexingPipeline;
   writeOutput: (output: string) => void;
   logger?: IndexingJobWorkerLogger;
+  metrics?: { incrementIndexing(status: IndexingMetricStatus): void };
 }
 
 function safeFailure(failure: IndexingJobFailure | null): IndexingJobFailure | null {
@@ -111,6 +113,7 @@ export async function runProcessNextIndexingJobCommand(
         repositoryStore: input.repositoryStore,
         executeIndexingPipeline: input.executeIndexingPipeline,
         logger: input.logger,
+        metrics: input.metrics,
       });
       result = {
         command: COMMAND_NAME,
@@ -145,6 +148,7 @@ async function runExecutable(): Promise<void> {
         repositoryStore: indexingJobRepositoryStore,
         writeOutput,
         logger: stderrLogger,
+        metrics: runtimeMetrics,
       }),
     writeOutput: (output) => console.log(output),
     interruptedOutput: JSON.stringify(

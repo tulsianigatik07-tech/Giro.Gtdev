@@ -12,6 +12,7 @@ export interface RateLimiterOptions {
   skip?: RateLimitSkipCallback;
   message?: string;
   now?: () => number;
+  onRejected?: () => void;
 }
 
 type RateLimitEntry = {
@@ -94,6 +95,7 @@ export function rateLimiter(options: RateLimiterOptions): MiddlewareHandler {
     c.header("Retry-After", String(retryAfter));
 
     if (entry.count > options.maxRequests) {
+      options.onRejected?.();
       return fail(c, { code: "rate_limit_exceeded", message }, 429);
     }
 
