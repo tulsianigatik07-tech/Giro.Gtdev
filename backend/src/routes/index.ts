@@ -17,6 +17,7 @@ import { env } from "../config/env.js";
 import { rateLimiter } from "../middleware/rateLimiter.js";
 import type { MetricsRegistry } from "../observability/metrics.js";
 import { createMetricsRoute } from "./metrics.js";
+import { createRequestTimeoutMiddleware } from "../middleware/requestTimeout.js";
 
 export function createRoutes(readinessCheck: ReadinessCheck, metrics: MetricsRegistry) {
   const routes = new Hono();
@@ -36,6 +37,18 @@ export function createRoutes(readinessCheck: ReadinessCheck, metrics: MetricsReg
   routes.use("/sessions/*", authMiddleware());
   routes.use("/architecture/*", authMiddleware());
   routes.use("/indexing/*", authMiddleware());
+
+  const expensiveEndpointDeadline = createRequestTimeoutMiddleware({
+    timeoutMs: env.REQUEST_TIMEOUT_MS,
+    onTimeout: () => metrics.incrementTimeout("request"),
+  });
+  routes.use("/repos/connect", expensiveEndpointDeadline);
+  routes.use("/repos/search/*", expensiveEndpointDeadline);
+  routes.use("/context/*", expensiveEndpointDeadline);
+  routes.use("/search/*", expensiveEndpointDeadline);
+  routes.use("/chat/*", expensiveEndpointDeadline);
+  routes.use("/retrieval/*", expensiveEndpointDeadline);
+  routes.use("/sessions/:id/ask", expensiveEndpointDeadline);
 
   const expensiveEndpointLimiter = rateLimiter({
     windowMs: env.RATE_LIMIT_WINDOW_MS,

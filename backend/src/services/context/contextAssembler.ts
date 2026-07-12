@@ -25,8 +25,9 @@ export interface AssembledContext {
 export async function buildContext(
   query: string,
   maxCharacters: number = DEFAULT_MAX_CHARS,
+  options: { signal?: AbortSignal } = {},
 ): Promise<AssembledContext> {
-  const raw = await semanticSearch(query, SEARCH_LIMIT);
+  const raw = await semanticSearch(query, SEARCH_LIMIT, options);
   const ranked = rankResults(raw);
   const deduped = dedupeResults(ranked);
   const compressed = compressContext(deduped, maxCharacters);

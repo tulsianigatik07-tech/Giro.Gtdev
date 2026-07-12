@@ -4,6 +4,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { stream } from "hono/streaming";
 import { runRepositoryChat } from "../services/ai/chat.js";
+import { getRequestDeadline } from "../middleware/requestTimeout.js";
+import { isDeadlineExceeded } from "../runtime/deadline.js";
 
 const ChatBody = z.object({
   query: z.string().min(1, "Query must not be empty"),
@@ -22,7 +24,9 @@ chatRouter.post("/", async (c) => {
   }
 
   try {
-    const result = await runRepositoryChat(parsed.data.query);
+    const result = await runRepositoryChat(parsed.data.query, {
+      signal: getRequestDeadline(c)?.signal,
+    });
 
     c.header("Content-Type", "text/plain; charset=utf-8");
     c.header("x-total-chunks", String(result.contextStats.totalChunks));
@@ -38,6 +42,7 @@ chatRouter.post("/", async (c) => {
       }
     });
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     return c.json(
       {
         success: false,

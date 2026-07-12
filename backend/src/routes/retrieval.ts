@@ -12,6 +12,8 @@ import {
   RepositoryOwnerSchema,
   SearchQuerySchema,
 } from "../validation/repositorySchemas.js";
+import { getRequestDeadline } from "../middleware/requestTimeout.js";
+import { isDeadlineExceeded } from "../runtime/deadline.js";
 
 type Variables = { requestId: string };
 
@@ -40,9 +42,10 @@ retrievalRouter.post("/hybrid", async (c) => {
   }
 
   try {
-    const result = await hybridSearch(parsed.data);
+    const result = await hybridSearch(parsed.data, { signal: getRequestDeadline(c)?.signal });
     return ok(c, result);
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     const message = err instanceof Error ? err.message : "unknown error";
     logger.error("hybrid_search_route_failed", {
       requestId: c.get("requestId"),

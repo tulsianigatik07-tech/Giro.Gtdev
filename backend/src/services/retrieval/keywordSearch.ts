@@ -3,6 +3,8 @@
 import { supabase } from "../../lib/supabase.js";
 import { logger } from "../../lib/logger.js";
 import type { RetrievalResult } from "./types.js";
+import { env } from "../../config/env.js";
+import { createDeadline, isDeadlineExceeded } from "../../runtime/deadline.js";
 
 interface ChunkRow {
   repository: string;
@@ -18,6 +20,7 @@ export async function keywordSearch(
   owner: string,
   repo: string,
   limit: number = 20,
+  options: { signal?: AbortSignal } = {},
 ): Promise<RetrievalResult[]> {
   const repository = `${owner}/${repo}`;
   const tokens = query
@@ -33,21 +36,27 @@ export async function keywordSearch(
     .join(",");
 
   let rows: ChunkRow[];
+  const deadline = createDeadline(env.DATABASE_REQUEST_TIMEOUT_MS, { parentSignal: options.signal });
   try {
     const { data, error } = await supabase
       .from("repository_chunks")
       .select("repository,file_path,language,content,start_line,end_line")
       .eq("repository", repository)
       .or(orFilter)
-      .limit(limit * 3);
+      .limit(limit * 3)
+      .abortSignal(deadline.signal);
+    if (deadline.signal.aborted) throw deadline.signal.reason;
     if (error) throw new Error(error.message);
     rows = (data ?? []) as ChunkRow[];
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     logger.error("keyword_search_failed", {
       repository,
       message: err instanceof Error ? err.message : "unknown",
     });
     return [];
+  } finally {
+    deadline.dispose();
   }
 
   const phrase = query.toLowerCase().trim();

@@ -34,7 +34,10 @@ import type {
   IndexingJobStage,
   IndexingJobStore,
 } from "./indexingJobStore.js";
-import type { IndexingMetricStatus } from "../../../observability/metrics.js";
+import type { IndexingMetricStatus, TimeoutMetricCategory } from "../../../observability/metrics.js";
+import { env } from "../../../config/env.js";
+import { createDeadline } from "../../../runtime/deadline.js";
+import { isDeadlineExceeded } from "../../../runtime/deadline.js";
 
 export interface IndexingPipelineStageProgress {
   stage: IndexingJobStage;
@@ -44,6 +47,7 @@ export interface IndexingPipelineStageProgress {
 export interface IndexingPipelineInput {
   job: IndexingJob;
   reportStage: (progress: IndexingPipelineStageProgress) => Promise<void>;
+  signal?: AbortSignal;
 }
 
 export interface IndexingPipelineResult {
@@ -67,7 +71,10 @@ export interface ProcessNextIndexingJobInput {
   repositoryStore?: IndexingJobRepositoryStore;
   executeIndexingPipeline?: ExecuteIndexingPipeline;
   logger?: IndexingJobWorkerLogger;
-  metrics?: { incrementIndexing(status: IndexingMetricStatus): void };
+  metrics?: {
+    incrementIndexing(status: IndexingMetricStatus): void;
+    incrementTimeout?(category: TimeoutMetricCategory): void;
+  };
 }
 
 export interface IndexingJobWorkerLogger {
@@ -205,7 +212,13 @@ export async function executeRepositoryIndexingPipeline(
   const repoId = job.repositoryId;
 
   await reportStage({ stage: "clone", progress: 10 });
-  const { clonePath } = await cloneRepo(owner, repo);
+  const cloneDeadline = createDeadline(env.REPOSITORY_CLONE_TIMEOUT_MS, { parentSignal: input.signal });
+  let clonePath: string;
+  try {
+    ({ clonePath } = await cloneRepo(owner, repo, { deadline: cloneDeadline }));
+  } finally {
+    cloneDeadline.dispose();
+  }
 
   await reportStage({ stage: "scan", progress: 25 });
   const stats = await scanRepo(clonePath);
@@ -241,7 +254,7 @@ export async function executeRepositoryIndexingPipeline(
   });
 
   await reportStage({ stage: "embed", progress: 90 });
-  const context = await buildRepositoryContext(clonePath, repoId);
+  const context = await buildRepositoryContext(clonePath, repoId, { signal: input.signal });
 
   await reportStage({ stage: "finalize", progress: 95 });
   const cleanupPlan = buildIndexCleanupPlanFromIndexingPlan(indexingPlan);
@@ -346,6 +359,19 @@ export async function processNextIndexingJob(
       failure: null,
     };
   } catch (error) {
+    if (isDeadlineExceeded(error)) {
+      const timedOutStage = currentStage as IndexingJobStage | null;
+      const category = timedOutStage === "clone"
+        ? "clone"
+        : timedOutStage === "embed"
+          ? "embedding"
+          : "indexing";
+      metrics?.incrementTimeout?.(category);
+      logger.error("indexing_stage_timeout", {
+        ...jobLogFields(claimed, workerId),
+        stage: timedOutStage,
+      });
+    }
     const failure = normalizeIndexingJobFailure(error, {
       repositoryId: claimed.repositoryId,
       stage: currentStage,

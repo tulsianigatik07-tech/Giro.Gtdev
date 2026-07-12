@@ -11,6 +11,7 @@ import type {
   HybridSearchResponse,
   RetrievalResult,
 } from "./types.js";
+import { isDeadlineExceeded } from "../../runtime/deadline.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -26,6 +27,7 @@ export function resolveHybridFetchLimit(limit?: number): number {
 
 export async function hybridSearch(
   request: HybridSearchRequest,
+  options: { signal?: AbortSignal } = {},
 ): Promise<HybridSearchResponse> {
   const { query, owner, repo } = request;
   const repository = `${owner}/${repo}`;
@@ -33,12 +35,16 @@ export async function hybridSearch(
   const fetchLimit = resolveHybridFetchLimit(request.limit);
 
   const [semanticSettled, keywordSettled, symbolSettled] = await Promise.allSettled([
-    semanticSearch(query, fetchLimit),
-    keywordSearch(query, owner, repo, fetchLimit),
+    semanticSearch(query, fetchLimit, options),
+    keywordSearch(query, owner, repo, fetchLimit, options),
     symbolSearch(query, owner, repo, fetchLimit),
   ]);
 
   let semantic: RetrievalResult[] = [];
+
+  for (const settled of [semanticSettled, keywordSettled]) {
+    if (settled.status === "rejected" && isDeadlineExceeded(settled.reason)) throw settled.reason;
+  }
 
   if (semanticSettled.status === "fulfilled") {
     semantic = semanticSettled.value

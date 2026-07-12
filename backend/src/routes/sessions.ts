@@ -15,6 +15,8 @@ import {
 import { requireSessionAccess } from "../services/sessions/sessionOwnershipGuard.js";
 import { requireSessionRepositoryOwnership } from "../services/sessions/sessionRepositoryGuard.js";
 import { answerSessionQuestion } from "../services/sessions/questionService.js";
+import { getRequestDeadline } from "../middleware/requestTimeout.js";
+import { isDeadlineExceeded } from "../runtime/deadline.js";
 import {
   QuestionTextSchema,
   RepositoryNameSchema,
@@ -259,7 +261,9 @@ sessionsRouter.post("/:id/ask", async (c) => {
       return fail(c, { code: repoAccess.code, message: repoAccess.message }, repoAccess.status);
     }
 
-    const result = await answerSessionQuestion(id, parsed.data.question);
+    const result = await answerSessionQuestion(id, parsed.data.question, {
+      signal: getRequestDeadline(c)?.signal,
+    });
 
     if (result === "session_not_found") {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
@@ -267,6 +271,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
 
     return ok(c, result);
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     const message = err instanceof Error ? err.message : "Ask failed";
 
     logger.error("session_ask_failed", {

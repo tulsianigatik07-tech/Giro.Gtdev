@@ -13,6 +13,7 @@ const DEFAULT_DURATION_BUCKETS_SECONDS = [
 ] as const;
 
 export type IndexingMetricStatus = "started" | "completed" | "failed";
+export type TimeoutMetricCategory = "request" | "ai" | "embedding" | "database" | "clone" | "indexing";
 
 export interface MetricsRegistryOptions {
   durationBucketsSeconds?: readonly number[];
@@ -67,6 +68,7 @@ export class MetricsRegistry {
   private inFlight = 0;
   private rateLimitRejections = 0;
   private readiness = 0;
+  private readonly timeouts = new Map<TimeoutMetricCategory, number>();
 
   constructor(options: MetricsRegistryOptions = {}) {
     this.durationBucketsSeconds = Object.freeze(validateBuckets(
@@ -126,6 +128,10 @@ export class MetricsRegistry {
     this.readiness = ready ? 1 : 0;
   }
 
+  incrementTimeout(category: TimeoutMetricCategory): void {
+    this.timeouts.set(category, (this.timeouts.get(category) ?? 0) + 1);
+  }
+
   render(): string {
     const lines = [
       "# HELP giro_http_requests_total Total HTTP requests.",
@@ -173,7 +179,12 @@ export class MetricsRegistry {
       "# HELP giro_health_readiness Application readiness state (1 ready, 0 not ready).",
       "# TYPE giro_health_readiness gauge",
       `giro_health_readiness ${this.readiness}`,
+      "# HELP giro_timeouts_total Deadline and upstream timeout events.",
+      "# TYPE giro_timeouts_total counter",
     );
+    for (const category of ["request", "ai", "embedding", "database", "clone", "indexing"] as const) {
+      lines.push(`giro_timeouts_total{category="${category}"} ${this.timeouts.get(category) ?? 0}`);
+    }
     return `${lines.join("\n")}\n`;
   }
 }

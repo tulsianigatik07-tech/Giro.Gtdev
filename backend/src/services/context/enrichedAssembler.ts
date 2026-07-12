@@ -21,6 +21,7 @@ import type {
   EnrichedAssembledContext,
   EnrichedContextChunk,
 } from "./contextTypes.js";
+import { isDeadlineExceeded } from "../../runtime/deadline.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
@@ -79,6 +80,7 @@ function dedupe(chunks: EnrichedContextChunk[]): {
 
 export async function assembleEnrichedContext(
   request: EnrichedAssemblyRequest,
+  options: { signal?: AbortSignal } = {},
 ): Promise<EnrichedAssembledContext> {
   const maxChars = request.maxChars ?? 16_000;
   const limit = request.limit ?? 25;
@@ -97,9 +99,10 @@ export async function assembleEnrichedContext(
       owner: request.owner,
       repo: request.repo,
       limit: limit * 2,
-    });
+    }, options);
     hybridResults = res.results;
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     logger.warn("enriched_hybrid_failed", {
       repository,
       message: err instanceof Error ? err.message : "unknown",

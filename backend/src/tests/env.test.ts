@@ -93,6 +93,28 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.SHUTDOWN_TIMEOUT_MS, 10_000);
   assert.equal(result.RATE_LIMIT_WINDOW_MS, 60_000);
   assert.equal(result.RATE_LIMIT_MAX_REQUESTS, 100);
+  assert.equal(result.REQUEST_TIMEOUT_MS, 30_000);
+  assert.equal(result.AI_REQUEST_TIMEOUT_MS, 30_000);
+  assert.equal(result.EMBEDDING_REQUEST_TIMEOUT_MS, 30_000);
+  assert.equal(result.DATABASE_REQUEST_TIMEOUT_MS, 10_000);
+  assert.equal(result.REPOSITORY_CLONE_TIMEOUT_MS, 120_000);
+});
+
+test("timeout configuration is bounded", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    REQUEST_TIMEOUT_MS: "1000",
+    AI_REQUEST_TIMEOUT_MS: "120000",
+    EMBEDDING_REQUEST_TIMEOUT_MS: "5000",
+    DATABASE_REQUEST_TIMEOUT_MS: "500",
+    REPOSITORY_CLONE_TIMEOUT_MS: "600000",
+  });
+  assert.equal(result.REQUEST_TIMEOUT_MS, 1_000);
+  assert.equal(result.DATABASE_REQUEST_TIMEOUT_MS, 500);
+  assert.equal(result.REPOSITORY_CLONE_TIMEOUT_MS, 600_000);
+  assert.throws(() => validateEnv({ ...REQUIRED, REQUEST_TIMEOUT_MS: "999" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, DATABASE_REQUEST_TIMEOUT_MS: "60001" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, REPOSITORY_CLONE_TIMEOUT_MS: "4000" }));
 });
 
 test("rate limit configuration accepts positive integers", () => {

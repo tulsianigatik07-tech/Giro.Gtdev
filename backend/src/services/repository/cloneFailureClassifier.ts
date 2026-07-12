@@ -48,7 +48,8 @@ function classifyCloneFailure(message: string): CloneFailureKind {
   if (
     normalized.includes("timeout") ||
     normalized.includes("timed out") ||
-    normalized.includes("operation timed out")
+    normalized.includes("operation timed out") ||
+    normalized.includes("deadline exceeded")
   ) {
     return "clone_timeout";
   }

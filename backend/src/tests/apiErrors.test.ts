@@ -37,6 +37,8 @@ const EXPECTED_DEFAULTS: Array<{
   { code: "openai_unavailable", status: 503, category: "external", retryable: true },
   { code: "supabase_unavailable", status: 503, category: "external", retryable: true },
   { code: "rate_limited", status: 429, category: "rate_limit", retryable: true },
+  { code: "rate_limit_exceeded", status: 429, category: "rate_limit", retryable: true },
+  { code: "request_timeout", status: 504, category: "timeout", retryable: true },
   { code: "payload_too_large", status: 413, category: "validation", retryable: false },
   { code: "internal_error", status: 500, category: "internal", retryable: false },
 ];

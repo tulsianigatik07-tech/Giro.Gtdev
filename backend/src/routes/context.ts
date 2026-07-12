@@ -15,6 +15,8 @@ import {
   RepositoryOwnerSchema,
   SearchQuerySchema,
 } from "../validation/repositorySchemas.js";
+import { getRequestDeadline } from "../middleware/requestTimeout.js";
+import { isDeadlineExceeded } from "../runtime/deadline.js";
 
 const STORAGE_PATH_GUARD = ".storage/repos";
 
@@ -58,9 +60,10 @@ contextRouter.post("/build", async (c) => {
 
   const requestId = c.get("requestId");
   try {
-    const data = await buildRepositoryContext(clonePath, repository);
+    const data = await buildRepositoryContext(clonePath, repository, { signal: getRequestDeadline(c)?.signal });
     return c.json({ success: true, requestId, data });
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     return c.json(
       {
         success: false,
@@ -85,9 +88,13 @@ contextRouter.post("/assemble", async (c) => {
 
   const { query, owner, repo, maxChars, limit } = parsed.data;
   try {
-    const result = await assembleEnrichedContext({ query, owner, repo, maxChars, limit });
+    const result = await assembleEnrichedContext(
+      { query, owner, repo, maxChars, limit },
+      { signal: getRequestDeadline(c)?.signal },
+    );
     return ok(c, result);
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     const message = err instanceof Error ? err.message : "Context assembly failed";
     if (message.includes("not connected")) {
       return fail(

@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { semanticSearch } from "../services/embeddings/search.js";
+import { getRequestDeadline } from "../middleware/requestTimeout.js";
+import { isDeadlineExceeded } from "../runtime/deadline.js";
 
 const SearchBody = z.object({
   query: z.string().min(1, "Query must not be empty"),
@@ -21,9 +23,10 @@ searchRouter.post("/context", async (c) => {
 
   const requestId = c.get("requestId");
   try {
-    const results = await semanticSearch(parsed.data.query, parsed.data.limit);
+    const results = await semanticSearch(parsed.data.query, parsed.data.limit, { signal: getRequestDeadline(c)?.signal });
     return c.json({ success: true, requestId, count: results.length, results });
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     return c.json(
       {
         success: false,

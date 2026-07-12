@@ -17,6 +17,7 @@ export type ApiErrorCode =
   | "supabase_unavailable"
   | "rate_limited"
   | "rate_limit_exceeded"
+  | "request_timeout"
   | "payload_too_large"
   | "internal_error";
 
@@ -30,6 +31,7 @@ export type ApiErrorCategory =
   | "retrieval"
   | "external"
   | "rate_limit"
+  | "timeout"
   | "internal";
 
 export type ApiErrorStatus =
@@ -43,7 +45,8 @@ export type ApiErrorStatus =
   | 429
   | 500
   | 502
-  | 503;
+  | 503
+  | 504;
 
 export interface StandardApiError {
   code: ApiErrorCode;
@@ -86,6 +89,7 @@ const ERROR_DEFAULTS: Record<ApiErrorCode, ApiErrorDefaults> = {
   supabase_unavailable: { status: 503, category: "external", retryable: true },
   rate_limited: { status: 429, category: "rate_limit", retryable: true },
   rate_limit_exceeded: { status: 429, category: "rate_limit", retryable: true },
+  request_timeout: { status: 504, category: "timeout", retryable: true },
   payload_too_large: { status: 413, category: "validation", retryable: false },
   internal_error: { status: 500, category: "internal", retryable: false },
 };

@@ -7,6 +7,7 @@ import { rateLimiter } from "../middleware/rateLimiter.js";
 import { MetricsRegistry } from "../observability/metrics.js";
 import { MemoryIndexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
 import { processNextIndexingJob } from "../services/indexing/jobs/indexingJobWorker.js";
+import { DeadlineExceededError } from "../runtime/deadline.js";
 
 test("public metrics endpoint uses Prometheus content type and valid exposition", async () => {
   const metrics = new MetricsRegistry();
@@ -144,6 +145,38 @@ test("indexing lifecycle counter records started, completed, and failed", async 
   assert.match(output, /giro_repository_indexing_total\{status="started"\} 2/);
   assert.match(output, /giro_repository_indexing_total\{status="completed"\} 1/);
   assert.match(output, /giro_repository_indexing_total\{status="failed"\} 1/);
+});
+
+test("indexing deadline failure is retryable, never succeeds, and increments one timeout category", async () => {
+  const metrics = new MetricsRegistry();
+  const store = new MemoryIndexingJobStore();
+  const job = await store.createJob({
+    repositoryId: "acme/timeout",
+    ownerUserId: "user-1",
+    repositoryOwner: "acme",
+    repositoryName: "timeout",
+    repositoryUrl: "https://github.com/acme/timeout",
+    branch: "main",
+  });
+  const events: string[] = [];
+  const report = await processNextIndexingJob({
+    workerId: "worker-1",
+    jobStore: store,
+    repositoryStore: {
+      markIndexing: () => undefined,
+      markIndexed: () => { throw new Error("must not succeed"); },
+      markFailed: () => undefined,
+    },
+    metrics,
+    logger: { info: () => undefined, error: (event) => events.push(event) },
+    executeIndexingPipeline: async () => { throw new DeadlineExceededError(); },
+  });
+  assert.equal(report.status, "failed");
+  assert.equal((await store.getJob(job.jobId))?.status, "failed");
+  assert.equal(report.failure?.retryable, true);
+  assert.deepEqual(events, ["indexing_stage_timeout", "indexing_job_failed"]);
+  assert.match(metrics.render(), /giro_timeouts_total\{category="clone"\} 1/);
+  assert.match(metrics.render(), /giro_timeouts_total\{category="indexing"\} 0/);
 });
 
 test("labels use route templates and never include request data", async () => {

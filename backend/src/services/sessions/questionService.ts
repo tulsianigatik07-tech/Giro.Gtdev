@@ -20,6 +20,7 @@ import { repoClonePath } from "../repository/clone.js";
 import { scanRepo } from "../repository/scanner.js";
 import { analyzeRepository } from "../repository/analyzer.js";
 import { logger } from "../../lib/logger.js";
+import { isDeadlineExceeded } from "../../runtime/deadline.js";
 
 type QuestionResult = AskResult | "session_not_found";
 
@@ -41,7 +42,9 @@ function toRelativePath(filePath: string): string {
 export async function answerSessionQuestion(
   sessionId: string,
   question: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<QuestionResult> {
+  options.signal?.throwIfAborted();
   const session = getSessionById(sessionId);
 
   if (!session) {
@@ -68,6 +71,7 @@ export async function answerSessionQuestion(
     summary.primaryLanguage = analysis.primaryLanguage;
     summary.entrypoints = analysis.entrypoints;
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     logger.warn("repo_summary_unavailable", {
       sessionId,
       owner,
@@ -84,6 +88,7 @@ export async function answerSessionQuestion(
     summary.centralModules = graph.insights.centralModules;
     usedDependencyGraph = true;
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     logger.warn("dependency_graph_unavailable", {
       sessionId,
       owner,
@@ -123,8 +128,9 @@ export async function answerSessionQuestion(
       repo,
       maxChars: 16000,
       limit: 25,
-    });
+    }, options);
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     logger.error("enriched_context_failed", {
       sessionId,
       owner,
@@ -148,6 +154,7 @@ export async function answerSessionQuestion(
       limit: 10,
     });
   } catch (err) {
+    if (isDeadlineExceeded(err)) throw err;
     logger.warn("file_search_failed", {
       sessionId,
       owner,
@@ -160,6 +167,7 @@ export async function answerSessionQuestion(
     maxChunks: 8,
     maxEstimatedTokens: 3500,
   });
+  options.signal?.throwIfAborted();
 
   const retrievalCandidates = mapChunksToCandidates(
     budgetResult.selected.map((item) => ({
