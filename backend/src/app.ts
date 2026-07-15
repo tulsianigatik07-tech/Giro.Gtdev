@@ -17,9 +17,13 @@ import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexin
 import { createRuntimeReadinessCheck } from "./services/health/runtimeReadiness.js";
 import { createMetricsMiddleware } from "./middleware/metricsMiddleware.js";
 import { runtimeMetrics, type MetricsRegistry } from "./observability/metrics.js";
+import { logger } from "./lib/logger.js";
+import { IndexingProgressPublisher } from "./services/indexing/events/indexingProgressPublisher.js";
+import { runtimeIndexingProgressPublisher } from "./services/indexing/events/runtimeIndexingProgressPublisher.js";
 
 type Variables = RequestContextVariables & {
   indexingJobStore: IndexingJobStore;
+  indexingProgressPublisher: IndexingProgressPublisher;
 };
 
 export interface CreateAppOptions {
@@ -28,11 +32,17 @@ export interface CreateAppOptions {
   isShuttingDown?: () => boolean;
   requestContext?: RequestContextOptions;
   metrics?: MetricsRegistry;
+  indexingProgressPublisher?: IndexingProgressPublisher;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
   const indexingJobStore = options.indexingJobStore ?? runtimeIndexingJobStore;
   const metrics = options.metrics ?? runtimeMetrics;
+  const indexingProgressPublisher = options.indexingProgressPublisher ?? (
+    indexingJobStore === runtimeIndexingJobStore && metrics === runtimeMetrics
+      ? runtimeIndexingProgressPublisher
+      : new IndexingProgressPublisher({ jobStore: indexingJobStore, metrics, logger })
+  );
   const readinessCheck =
     options.readinessCheck ??
     createRuntimeReadinessCheck({
@@ -46,6 +56,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("*", createMetricsMiddleware(metrics));
   app.use("*", async (c, next) => {
     c.set("indexingJobStore", indexingJobStore);
+    c.set("indexingProgressPublisher", indexingProgressPublisher);
     await next();
   });
   app.use(

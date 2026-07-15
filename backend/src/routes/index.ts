@@ -18,6 +18,7 @@ import { rateLimiter } from "../middleware/rateLimiter.js";
 import type { MetricsRegistry } from "../observability/metrics.js";
 import { createMetricsRoute } from "./metrics.js";
 import { createRequestTimeoutMiddleware } from "../middleware/requestTimeout.js";
+import repositoryIndexingEventsRouter from "./repositoryIndexingEvents.js";
 
 export function createRoutes(readinessCheck: ReadinessCheck, metrics: MetricsRegistry) {
   const routes = new Hono();
@@ -37,6 +38,7 @@ export function createRoutes(readinessCheck: ReadinessCheck, metrics: MetricsReg
   routes.use("/sessions/*", authMiddleware());
   routes.use("/architecture/*", authMiddleware());
   routes.use("/indexing/*", authMiddleware());
+  routes.use("/repositories/*", authMiddleware());
 
   const expensiveEndpointDeadline = createRequestTimeoutMiddleware({
     timeoutMs: env.REQUEST_TIMEOUT_MS,
@@ -72,6 +74,7 @@ export function createRoutes(readinessCheck: ReadinessCheck, metrics: MetricsReg
   routes.route("/sessions", sessionsRouter);
   routes.route("/architecture", architectureRouter);
   routes.route("/indexing", indexingRouter);
+  routes.route("/repositories", repositoryIndexingEventsRouter);
 
   return routes;
 }

@@ -40,6 +40,10 @@ import { createDeadline } from "../../../runtime/deadline.js";
 import { isDeadlineExceeded } from "../../../runtime/deadline.js";
 import type { DependencyCircuitBreakers } from "../../../runtime/dependencyCircuitBreakers.js";
 
+export interface IndexingJobProgressPublisher {
+  publish(job: IndexingJob): void | Promise<void>;
+}
+
 export interface IndexingPipelineStageProgress {
   stage: IndexingJobStage;
   progress: number;
@@ -81,6 +85,7 @@ export interface ProcessNextIndexingJobInput {
     incrementRetry?(category: RetryMetricCategory, result: RetryMetricResult, attempt: number): void;
   };
   circuitBreakers?: DependencyCircuitBreakers;
+  progressPublisher?: IndexingJobProgressPublisher;
 }
 
 export interface IndexingJobWorkerLogger {
@@ -100,6 +105,20 @@ function jobLogFields(job: IndexingJob, workerId: string) {
     workerId,
     ...(job.createdByRequestId ? { requestId: job.createdByRequestId } : {}),
   };
+}
+
+async function publishProgressSafely(
+  publisher: IndexingJobProgressPublisher | undefined,
+  job: IndexingJob,
+  logger: IndexingJobWorkerLogger,
+  workerId: string,
+): Promise<void> {
+  if (!publisher) return;
+  try {
+    await publisher.publish(job);
+  } catch {
+    logger.error("indexing_progress_publish_failed", jobLogFields(job, workerId));
+  }
 }
 
 export interface IndexingJobExecutionReport {
@@ -311,6 +330,7 @@ export async function processNextIndexingJob(
     logger = silentWorkerLogger,
     metrics,
     circuitBreakers,
+    progressPublisher,
   } = input;
 
   const claimed = await jobStore.claimNextJob(workerId);
@@ -339,6 +359,7 @@ export async function processNextIndexingJob(
     }
     logger.info("indexing_job_started", jobLogFields(claimed, workerId));
     metrics?.incrementIndexing("started");
+    await publishProgressSafely(progressPublisher, running, logger, workerId);
 
     const reportStage = async (progress: IndexingPipelineStageProgress) => {
       currentStage = progress.stage;
@@ -352,6 +373,7 @@ export async function processNextIndexingJob(
       if (!updated) {
         throw new Error("Indexing job progress update failed");
       }
+      await publishProgressSafely(progressPublisher, updated, logger, workerId);
       stagesCompleted.push(progress.stage);
     };
 
@@ -373,6 +395,7 @@ export async function processNextIndexingJob(
     }
     logger.info("indexing_job_succeeded", jobLogFields(claimed, workerId));
     metrics?.incrementIndexing("completed");
+    await publishProgressSafely(progressPublisher, succeeded, logger, workerId);
 
     stagesCompleted.push("complete");
     return {
@@ -406,13 +429,16 @@ export async function processNextIndexingJob(
     } catch {
       // Preserve the original indexing failure in the job/report.
     }
-    await jobStore.markFailed(claimed.jobId, failure);
+    const failed = await jobStore.markFailed(claimed.jobId, failure);
     logger.error("indexing_job_failed", {
       ...jobLogFields(claimed, workerId),
       failureCode: failure.code,
       retryable: failure.retryable,
     });
     metrics?.incrementIndexing("failed");
+    if (failed) {
+      await publishProgressSafely(progressPublisher, failed, logger, workerId);
+    }
     return {
       processed: true,
       jobId: claimed.jobId,

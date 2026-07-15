@@ -50,11 +50,13 @@ import {
   listIndexedRepositories,
 } from "../services/repository/indexingService.js";
 import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
+import type { IndexingProgressPublisher } from "../services/indexing/events/indexingProgressPublisher.js";
 
 type Variables = {
   requestId: string;
   authenticatedUser: AuthenticatedUser;
   indexingJobStore: IndexingJobStore;
+  indexingProgressPublisher: IndexingProgressPublisher;
 };
 
 export const repositoriesRoute = new Hono<{ Variables: Variables }>();
@@ -137,6 +139,7 @@ repositoriesRoute.post("/connect", async (c) => {
     branch: parsed.data.cloneOptions?.branch ?? null,
     createdByRequestId: c.get("requestId"),
   });
+  await c.get("indexingProgressPublisher").publish(job);
   setRequestLogContext(c, { repositoryId: repoId, jobId: job.jobId });
   setRepositoryIndexing(owner, repo);
 

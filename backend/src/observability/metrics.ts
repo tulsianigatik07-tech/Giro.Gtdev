@@ -77,6 +77,12 @@ export class MetricsRegistry {
   private readonly circuitStates = new Map<CircuitDependency, CircuitState>();
   private readonly circuitTransitions = new Map<string, { dependency: CircuitDependency; from: CircuitState; to: CircuitState; value: number }>();
   private readonly circuitRejections = new Map<CircuitDependency, number>();
+  private activeSseClients = 0;
+  private publishedProgressEvents = 0;
+  private readonly sseStreams = new Map<"completed" | "failed", number>([
+    ["completed", 0],
+    ["failed", 0],
+  ]);
 
   constructor(options: MetricsRegistryOptions = {}) {
     this.durationBucketsSeconds = Object.freeze(validateBuckets(
@@ -163,6 +169,22 @@ export class MetricsRegistry {
     this.circuitRejections.set(dependency, (this.circuitRejections.get(dependency) ?? 0) + 1);
   }
 
+  incrementActiveSseClients(): void {
+    this.activeSseClients += 1;
+  }
+
+  decrementActiveSseClients(): void {
+    this.activeSseClients = Math.max(0, this.activeSseClients - 1);
+  }
+
+  incrementPublishedProgressEvents(): void {
+    this.publishedProgressEvents += 1;
+  }
+
+  incrementSseStreams(outcome: "completed" | "failed"): void {
+    this.sseStreams.set(outcome, (this.sseStreams.get(outcome) ?? 0) + 1);
+  }
+
   render(): string {
     const lines = [
       "# HELP giro_http_requests_total Total HTTP requests.",
@@ -246,6 +268,19 @@ export class MetricsRegistry {
     );
     for (const dependency of ["ai", "embedding", "database", "clone"] as const) {
       lines.push(`giro_circuit_rejections_total{dependency="${dependency}"} ${this.circuitRejections.get(dependency) ?? 0}`);
+    }
+    lines.push(
+      "# HELP giro_indexing_sse_clients_active Current indexing SSE client connections.",
+      "# TYPE giro_indexing_sse_clients_active gauge",
+      `giro_indexing_sse_clients_active ${this.activeSseClients}`,
+      "# HELP giro_indexing_progress_events_total Indexing progress events published.",
+      "# TYPE giro_indexing_progress_events_total counter",
+      `giro_indexing_progress_events_total ${this.publishedProgressEvents}`,
+      "# HELP giro_indexing_sse_streams_total Indexing SSE streams closed by terminal outcome.",
+      "# TYPE giro_indexing_sse_streams_total counter",
+    );
+    for (const outcome of ["completed", "failed"] as const) {
+      lines.push(`giro_indexing_sse_streams_total{outcome="${outcome}"} ${this.sseStreams.get(outcome) ?? 0}`);
     }
     return `${lines.join("\n")}\n`;
   }
