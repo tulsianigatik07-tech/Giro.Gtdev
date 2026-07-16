@@ -13,12 +13,14 @@ export interface AssembledContext {
   totalChunks: number;
   estimatedTokens: number;
   context: Array<{
+    repository: string;
     filePath: string;
     language: string;
     similarity: number;
     content: string;
     startLine: number;
     endLine: number;
+    chunkId?: string;
   }>;
 }
 
@@ -39,12 +41,14 @@ export async function buildContext(
     totalChunks: compressed.length,
     estimatedTokens: Math.ceil(totalContent / 4),
     context: compressed.map((c) => ({
+      repository: c.repository,
       filePath: c.filePath,
       language: c.language,
       similarity: c.similarity,
       content: c.content,
       startLine: c.startLine,
       endLine: c.endLine,
+      chunkId: c.chunkId,
     })),
   };
 }

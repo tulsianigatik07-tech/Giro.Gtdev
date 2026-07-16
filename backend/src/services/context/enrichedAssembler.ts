@@ -32,6 +32,11 @@ import {
 } from "../retrieval/citations.js";
 import { getRepositorySummary } from "../repositorySummary/runtimeRepositorySummary.js";
 import { recordRuntimeStitchBudgetDrops } from "../retrieval/stitching/runtimeChunkStitcher.js";
+import {
+  enrichedChunksToConfidenceCandidates,
+  toPublicRetrievalConfidence,
+} from "../retrieval/confidence/retrievalConfidence.js";
+import { evaluateRuntimeRetrievalConfidence } from "../retrieval/confidence/runtimeRetrievalConfidence.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
@@ -262,6 +267,9 @@ export async function assembleEnrichedContext(
     symbol: r.symbol,
     repositoryVersion,
     citationRetrievalType: "hybrid",
+    primaryQueryMatch: r.primaryQueryMatch,
+    queryExpansionMatch: r.queryExpansionMatch,
+    stitchedNeighborCount: r.stitchedNeighborCount,
   }));
 
   const fileChunks: EnrichedContextChunk[] = fileResults.map((r) => ({
@@ -350,6 +358,19 @@ export async function assembleEnrichedContext(
     repositoryVersion,
     hybridCitations,
   );
+  const confidenceBudgetDropCount = Math.max(
+    0,
+    rankedChunks.length - finalChunks.filter((chunk) =>
+      chunk.filePath !== "__repository_summary__"
+    ).length,
+  );
+
+  const retrievalConfidence = evaluateRuntimeRetrievalConfidence({
+    candidates: enrichedChunksToConfidenceCandidates(repository, finalChunks),
+    citations,
+    budgetDropCount: confidenceBudgetDropCount,
+    duplicateSuppressionCount: removedCount + reranked.statistics.duplicateChunksRemoved,
+  });
 
   // Confidence metadata derived from the finalized chunk set (no mutation).
   const confidenceMeta = buildConfidenceMetadata(finalChunks);
@@ -402,6 +423,8 @@ export async function assembleEnrichedContext(
     estimatedTokens,
     context: finalChunks,
     citations,
+    confidence: toPublicRetrievalConfidence(retrievalConfidence),
+    _confidenceBudgetDropCount: confidenceBudgetDropCount,
     stats: {
       hybridResults: hybridResults.length,
       fileSearchResults: fileResults.length,

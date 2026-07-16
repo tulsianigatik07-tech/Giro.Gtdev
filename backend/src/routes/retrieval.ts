@@ -48,7 +48,15 @@ retrievalRouter.post("/hybrid", async (c) => {
       signal: getRequestDeadline(c)?.signal,
       cache: c.get("retrievalCache"),
     });
-    return ok(c, result);
+    return ok(c, {
+      ...result,
+      results: result.results.map(({
+        primaryQueryMatch: _primaryQueryMatch,
+        queryExpansionMatch: _queryExpansionMatch,
+        stitchedNeighborCount: _stitchedNeighborCount,
+        ...retrievalResult
+      }) => retrievalResult),
+    });
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     const message = err instanceof Error ? err.message : "unknown error";

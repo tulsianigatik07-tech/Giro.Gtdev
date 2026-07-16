@@ -99,7 +99,16 @@ contextRouter.post("/assemble", async (c) => {
         cache: c.get("retrievalCache"),
       },
     );
-    return ok(c, result);
+    const { _confidenceBudgetDropCount, ...publicResult } = result;
+    return ok(c, {
+      ...publicResult,
+      context: result.context.map(({
+        primaryQueryMatch: _primaryQueryMatch,
+        queryExpansionMatch: _queryExpansionMatch,
+        stitchedNeighborCount: _stitchedNeighborCount,
+        ...chunk
+      }) => chunk),
+    });
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     const message = err instanceof Error ? err.message : "Context assembly failed";

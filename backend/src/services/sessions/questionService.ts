@@ -6,7 +6,11 @@ import {
   addMessageToSession,
   replaceSelectedContext,
 } from "./sessionService.js";
-import { assembleAnswer } from "./answerAssembler.js";
+import {
+  buildAnswerCitations,
+  buildAnswerSources,
+  buildGroundedAnswer,
+} from "./answerAssembler.js";
 import type { AskResult, RepositorySummaryView } from "./answerTypes.js";
 import type { SelectedContextChunk } from "./types.js";
 import { assembleEnrichedContext } from "../context/enrichedAssembler.js";
@@ -23,6 +27,31 @@ import { logger } from "../../lib/logger.js";
 import { isDeadlineExceeded } from "../../runtime/deadline.js";
 import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../retrieval/cache/retrievalCache.js";
+import {
+  enrichedChunksToConfidenceCandidates,
+  toPublicRetrievalConfidence,
+} from "../retrieval/confidence/retrievalConfidence.js";
+import {
+  evaluateRuntimeRetrievalConfidence,
+  recordRuntimeAnswerSuppressed,
+} from "../retrieval/confidence/runtimeRetrievalConfidence.js";
+import type { RetrievalConfidenceResult } from "../retrieval/confidence/confidenceTypes.js";
+
+export const INSUFFICIENT_REPOSITORY_EVIDENCE_MESSAGE =
+  "I could not find enough repository evidence to answer this reliably.";
+export const LOW_REPOSITORY_EVIDENCE_WARNING =
+  "Evidence is limited, so treat this answer as provisional.";
+
+export function applySessionConfidenceBehavior(
+  groundedAnswer: string,
+  confidence: RetrievalConfidenceResult,
+): string {
+  if (!confidence.answerable) return INSUFFICIENT_REPOSITORY_EVIDENCE_MESSAGE;
+  if (confidence.level === "low") {
+    return `${LOW_REPOSITORY_EVIDENCE_WARNING}\n\n${groundedAnswer}`;
+  }
+  return groundedAnswer;
+}
 
 type QuestionResult = AskResult | "session_not_found";
 
@@ -193,12 +222,28 @@ export async function answerSessionQuestion(
     repositoryId: `${owner}/${repo}`,
   });
 
-  const { answer, sources, citations } = assembleAnswer(
-    question,
-    { ...enrichedContext, context: budgetResult.selected },
-    fileResults.results,
-    summary,
-  );
+  const finalContext = { ...enrichedContext, context: budgetResult.selected };
+  const sources = buildAnswerSources(question, budgetResult.selected, fileResults.results);
+  const citations = buildAnswerCitations(finalContext);
+  const confidenceResult = evaluateRuntimeRetrievalConfidence({
+    candidates: enrichedChunksToConfidenceCandidates(
+      `${owner}/${repo}`,
+      budgetResult.selected,
+    ),
+    citations,
+    budgetDropCount:
+      (enrichedContext._confidenceBudgetDropCount ?? 0) + budgetResult.dropped.length,
+    duplicateSuppressionCount:
+      enrichedContext.stats.deduplicatedCount +
+      (enrichedContext.stats.rerank?.duplicateChunksRemoved ?? 0),
+  });
+  const groundedAnswer = confidenceResult.answerable
+    ? buildGroundedAnswer(question, finalContext, summary, sources)
+    : "";
+  const answer = applySessionConfidenceBehavior(groundedAnswer, confidenceResult);
+  if (!confidenceResult.answerable) {
+    recordRuntimeAnswerSuppressed(confidenceResult);
+  }
 
   try {
     const round3 = (n: number): number => Math.round(n * 1000) / 1000;
@@ -279,6 +324,7 @@ export async function answerSessionQuestion(
       files: retrievalExecution.files,
     },
     retrieval: buildRetrievalMetadata(enrichedContext.stats),
+    confidence: toPublicRetrievalConfidence(confidenceResult),
   };
 
   logger.info("session_question_answered", {

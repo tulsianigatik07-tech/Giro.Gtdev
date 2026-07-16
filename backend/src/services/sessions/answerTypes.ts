@@ -1,6 +1,7 @@
 // Types for the deterministic answer synthesis layer.
 
 import type { Citation } from "../retrieval/citations.js";
+import type { PublicRetrievalConfidence } from "../retrieval/confidence/confidenceTypes.js";
 
 export interface AnswerSource {
   path: string;
@@ -20,6 +21,7 @@ export interface AskMetadata {
     fileSearch: number;
   };
   estimatedContextTokens: number;
+  confidence?: PublicRetrievalConfidence;
 }
 
 export interface AskResult {

@@ -18,7 +18,7 @@ function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
 
-function buildSources(
+export function buildAnswerSources(
   question: string,
   chunks: EnrichedContextChunk[],
   fileResults: FileSearchResult[],
@@ -50,7 +50,7 @@ function buildSources(
     .slice(0, MAX_SOURCES);
 }
 
-function buildAnswer(
+export function buildGroundedAnswer(
   question: string,
   context: EnrichedAssembledContext,
   summary: RepositorySummaryView,
@@ -86,17 +86,13 @@ function buildAnswer(
   return sections.join("\n\n");
 }
 
-export function assembleAnswer(
-  question: string,
+export function buildAnswerCitations(
   context: EnrichedAssembledContext,
-  fileResults: FileSearchResult[],
-  summary: RepositorySummaryView,
-): { answer: string; sources: AnswerSource[]; citations: Citation[] } {
+): Citation[] {
   const chunks = context.context;
-  const sources = buildSources(question, chunks, fileResults);
   const repositoryVersion = context.citations?.[0]?.repositoryVersion ?? "unversioned";
   const carriedCitations = context.citations ?? [];
-  const citations = buildCitations(
+  return buildCitations(
     chunks.flatMap((chunk) => {
       const relativePath = repositoryRelativePath(chunk.filePath, context.repository);
       const preserved = carriedCitations.filter((citation) =>
@@ -134,6 +130,17 @@ export function assembleAnswer(
     }),
     { surface: "session" },
   );
-  const answer = buildAnswer(question, context, summary, sources);
+}
+
+export function assembleAnswer(
+  question: string,
+  context: EnrichedAssembledContext,
+  fileResults: FileSearchResult[],
+  summary: RepositorySummaryView,
+): { answer: string; sources: AnswerSource[]; citations: Citation[] } {
+  const chunks = context.context;
+  const sources = buildAnswerSources(question, chunks, fileResults);
+  const citations = buildAnswerCitations(context);
+  const answer = buildGroundedAnswer(question, context, summary, sources);
   return { answer, sources, citations };
 }

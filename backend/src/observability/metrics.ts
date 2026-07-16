@@ -1,4 +1,8 @@
 import type { CircuitDependency, CircuitState } from "../runtime/circuitBreaker.js";
+import type {
+  RetrievalConfidenceLevel,
+  RetrievalConfidenceReasonCode,
+} from "../services/retrieval/confidence/confidenceTypes.js";
 
 const DEFAULT_DURATION_BUCKETS_SECONDS = [
   0.005,
@@ -96,6 +100,12 @@ export class MetricsRegistry {
   private queryExpansions = 0;
   private queryExpansionTerms = 0;
   private queryExpansionCacheHits = 0;
+  private rankingOperations = 0;
+  private rankingCandidates = 0;
+  private rankingDurationMs = 0;
+  private readonly retrievalConfidence = new Map<RetrievalConfidenceLevel, number>();
+  private readonly retrievalAnswerability = new Map<"true" | "false", number>();
+  private readonly retrievalInsufficientEvidence = new Map<RetrievalConfidenceReasonCode, number>();
   private symbolGraphNodes = 0;
   private symbolGraphEdges = 0;
   private symbolExpansions = 0;
@@ -255,6 +265,34 @@ export class MetricsRegistry {
 
   incrementQueryExpansionCacheHits(count = 1): void {
     this.queryExpansionCacheHits += Math.max(0, Math.trunc(count));
+  }
+
+  incrementRankingOperations(count = 1): void {
+    this.rankingOperations += Math.max(0, Math.trunc(count));
+  }
+
+  incrementRankingCandidates(count = 1): void {
+    this.rankingCandidates += Math.max(0, Math.trunc(count));
+  }
+
+  observeRankingDurationMs(milliseconds: number): void {
+    this.rankingDurationMs = Math.min(60_000, Math.max(0, milliseconds));
+  }
+
+  incrementRetrievalConfidence(level: RetrievalConfidenceLevel): void {
+    this.retrievalConfidence.set(level, (this.retrievalConfidence.get(level) ?? 0) + 1);
+  }
+
+  incrementRetrievalAnswerability(answerable: boolean): void {
+    const label = answerable ? "true" : "false";
+    this.retrievalAnswerability.set(label, (this.retrievalAnswerability.get(label) ?? 0) + 1);
+  }
+
+  incrementRetrievalInsufficientEvidence(reason: RetrievalConfidenceReasonCode): void {
+    this.retrievalInsufficientEvidence.set(
+      reason,
+      (this.retrievalInsufficientEvidence.get(reason) ?? 0) + 1,
+    );
   }
 
   setSymbolGraphSize(nodes: number, edges: number): void {
@@ -419,6 +457,30 @@ export class MetricsRegistry {
       "# HELP giro_query_expansion_cache_hits_total Query expansion cache hits.",
       "# TYPE giro_query_expansion_cache_hits_total counter",
       `giro_query_expansion_cache_hits_total ${this.queryExpansionCacheHits}`,
+      "# HELP giro_ranking_operations_total Weighted hybrid ranking operations.",
+      "# TYPE giro_ranking_operations_total counter",
+      `giro_ranking_operations_total ${this.rankingOperations}`,
+      "# HELP giro_ranking_candidates_total Candidates processed by weighted ranking.",
+      "# TYPE giro_ranking_candidates_total counter",
+      `giro_ranking_candidates_total ${this.rankingCandidates}`,
+      "# HELP giro_ranking_duration_ms Last weighted ranking duration in milliseconds.",
+      "# TYPE giro_ranking_duration_ms gauge",
+      `giro_ranking_duration_ms ${this.rankingDurationMs}`,
+      "# HELP giro_retrieval_confidence_total Final retrieval confidence evaluations.",
+      "# TYPE giro_retrieval_confidence_total counter",
+      ...(["high", "medium", "low", "insufficient"] as const).map((level) =>
+        `giro_retrieval_confidence_total{level="${level}"} ${this.retrievalConfidence.get(level) ?? 0}`
+      ),
+      "# HELP giro_retrieval_answerability_total Final retrieval answerability decisions.",
+      "# TYPE giro_retrieval_answerability_total counter",
+      ...(["true", "false"] as const).map((answerable) =>
+        `giro_retrieval_answerability_total{answerable="${answerable}"} ${this.retrievalAnswerability.get(answerable) ?? 0}`
+      ),
+      "# HELP giro_retrieval_insufficient_evidence_total Fixed reasons for unanswerable retrieval evidence.",
+      "# TYPE giro_retrieval_insufficient_evidence_total counter",
+      ...[...this.retrievalInsufficientEvidence.entries()].map(([reason, value]) =>
+        `giro_retrieval_insufficient_evidence_total{reason="${reason}"} ${value}`
+      ),
       "# HELP giro_symbol_graph_nodes Repository symbol graph nodes.",
       "# TYPE giro_symbol_graph_nodes gauge",
       `giro_symbol_graph_nodes ${this.symbolGraphNodes}`,

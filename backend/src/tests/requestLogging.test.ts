@@ -59,7 +59,7 @@ test("existing response-envelope request ID matches the correlation header", asy
   assert.equal(response.headers.get("X-Request-ID"), "envelope-request-id");
 });
 
-test("CORS exposes request correlation and rate limit headers", async () => {
+test("CORS exposes request correlation, rate limit, and additive confidence headers", async () => {
   const { app } = loggingApp();
   const response = await app.request("/health/live", {
     headers: { Origin: "http://localhost:3000" },
@@ -67,7 +67,7 @@ test("CORS exposes request correlation and rate limit headers", async () => {
 
   assert.equal(
     response.headers.get("access-control-expose-headers"),
-    "X-Request-ID,X-RateLimit-Limit,X-RateLimit-Remaining,Retry-After",
+    "X-Request-ID,X-RateLimit-Limit,X-RateLimit-Remaining,Retry-After,X-Retrieval-Confidence",
   );
 });
 

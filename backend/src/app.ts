@@ -91,6 +91,7 @@ export function createApp(options: CreateAppOptions = {}) {
         "X-RateLimit-Limit",
         "X-RateLimit-Remaining",
         "Retry-After",
+        "X-Retrieval-Confidence",
       ],
       credentials: true,
     }),

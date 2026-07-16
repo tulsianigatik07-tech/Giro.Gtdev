@@ -5,7 +5,6 @@ import { semanticSearch } from "../embeddings/search.js";
 import { analyzeRepoDependencies } from "../graph/index.js";
 import { keywordSearch } from "./keywordSearch.js";
 import { symbolSearch } from "./symbolSearch.js";
-import { mergeAndRerank } from "./reranker.js";
 import type {
   HybridSearchRequest,
   HybridSearchResponse,
@@ -19,6 +18,12 @@ import { buildCitations, type CitationCandidate } from "./citations.js";
 import { stitchRuntimeChunks } from "./stitching/runtimeChunkStitcher.js";
 import { expandRuntimeQuery } from "./queryExpansion/runtimeQueryExpansion.js";
 import type { QueryExpansionResult } from "./queryExpansion/queryExpansionTypes.js";
+import {
+  rankRuntimeHybridCandidates,
+  recordRuntimeRankingCacheHit,
+  runtimeRankingWeights,
+  type RuntimeRankingCandidate,
+} from "./ranking/runtimeWeightedRanker.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -149,17 +154,17 @@ export async function executeHybridSearch(
         content: result.content,
         startLine: result.startLine,
         endLine: result.endLine,
-        score: result.similarity * expansion.expandedScoreMultiplier,
+        score: result.similarity,
         source: "semantic" as const,
-        signals: { semantic: result.similarity * expansion.expandedScoreMultiplier },
+        signals: { semantic: result.similarity },
         chunkId: result.chunkId,
       }))
     : [];
   const expandedKeyword = expandedKeywordSettled.status === "fulfilled"
-    ? applyQueryExpansionPenalty(expandedKeywordSettled.value, expansion.expandedScoreMultiplier)
+    ? expandedKeywordSettled.value
     : [];
   const expandedSymbol = expandedSymbolSettled.status === "fulfilled"
-    ? applyQueryExpansionPenalty(expandedSymbolSettled.value, expansion.expandedScoreMultiplier)
+    ? expandedSymbolSettled.value
     : [];
 
   let graphNodes: Map<string, number> | null = null;
@@ -180,41 +185,47 @@ export async function executeHybridSearch(
     });
   }
 
-  const combined = [
-    ...semantic,
-    ...keyword,
-    ...symbol,
-    ...expandedSemantic,
-    ...expandedKeyword,
-    ...expandedSymbol,
+  const combined: RuntimeRankingCandidate[] = [
+    ...semantic.map((result) => ({ result, isExpanded: false })),
+    ...keyword.map((result) => ({ result, isExpanded: false })),
+    ...symbol.map((result) => ({ result, isExpanded: false })),
+    ...expandedSemantic.map((result) => ({ result, isExpanded: true })),
+    ...expandedKeyword.map((result) => ({ result, isExpanded: true })),
+    ...expandedSymbol.map((result) => ({ result, isExpanded: true })),
   ];
 
   const graphBoosted = graphNodes
     ? new Set(
         combined
-          .filter((result) => graphNodes?.has(result.filePath))
-          .map((result) => result.filePath),
+          .filter((candidate) => graphNodes?.has(candidate.result.filePath))
+          .map((candidate) => candidate.result.filePath),
       ).size
     : 0;
 
-  const rankedPool = mergeAndRerank(
-    combined,
-    graphNodes,
-    combined.length,
-  );
-  const primaryChunkCount = Math.min(effectiveLimit, rankedPool.length);
-  const stitchingInputs = rankedPool.map((result) => ({
+  const ranking = rankRuntimeHybridCandidates({
     repositoryId: repository,
-    filePath: result.filePath,
+    repositoryVersion: options.repositoryVersion ?? "unversioned",
+    candidates: combined,
+    graphNodes,
+    expandedScoreMultiplier: expansion.expandedScoreMultiplier,
+    limit: combined.length,
+  });
+  const rankedPool = ranking.ranked;
+  const primaryChunkCount = Math.min(effectiveLimit, rankedPool.length);
+  const stitchingInputs = rankedPool.map((rankedCandidate) => ({
+    repositoryId: repository,
+    filePath: rankedCandidate.result.filePath,
     repositoryVersion: options.repositoryVersion ?? "unversioned",
     retrievalOperation: "hybrid",
-    content: result.content,
-    startLine: result.startLine,
-    endLine: result.endLine,
-    score: result.score,
-    symbol: result.symbol,
+    content: rankedCandidate.result.content,
+    startLine: rankedCandidate.result.startLine,
+    endLine: rankedCandidate.result.endLine,
+    score: rankedCandidate.result.score,
+    symbol: rankedCandidate.result.symbol,
     citations: [] as CitationCandidate[],
-    result,
+    result: rankedCandidate.result,
+    primaryQueryMatch: rankedCandidate.trace.expansionPenalty === 0,
+    queryExpansionMatch: rankedCandidate.trace.expansionPenalty > 0,
   }));
   const stitched = stitchRuntimeChunks(stitchingInputs, { primaryChunkCount });
   const results = stitched.chunks.map((block) => {
@@ -224,6 +235,13 @@ export async function executeHybridSearch(
       content: block.content,
       startLine: block.startLine,
       endLine: block.endLine,
+      primaryQueryMatch: block.contributors.some((contributor) =>
+        (contributor as (typeof stitchingInputs)[number]).primaryQueryMatch
+      ),
+      queryExpansionMatch: block.contributors.some((contributor) =>
+        (contributor as (typeof stitchingInputs)[number]).queryExpansionMatch
+      ),
+      stitchedNeighborCount: Math.max(0, block.contributors.length - 1),
     };
   });
   const citations = buildCitations(
@@ -282,6 +300,7 @@ export async function hybridSearch(
     repositoryVersion,
     query: request.query,
   });
+  let retrievalLoaded = false;
   const cached = await cache.getOrLoad(
     {
       repositoryId,
@@ -298,10 +317,12 @@ export async function hybridSearch(
           terms: expansion.terms.map((term) => term.term),
           scoreMultiplier: expansion.expandedScoreMultiplier,
         },
+        rankingWeights: runtimeRankingWeights,
       },
       repositoryVersion,
     },
     (signal, context) => {
+      retrievalLoaded = true;
       const currentExpansion = context.repositoryVersion === expansion.repositoryVersion
         ? expansion
         : expandRuntimeQuery({
@@ -317,6 +338,7 @@ export async function hybridSearch(
     },
     { signal: options.signal },
   );
+  if (!retrievalLoaded) recordRuntimeRankingCacheHit(cached.results.length);
   const query = request.query;
   const repository = `${request.owner}/${request.repo}`;
   if (cached.query === query && cached.repository === repository) return cached;

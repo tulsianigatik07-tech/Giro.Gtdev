@@ -37,6 +37,20 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.RETRIEVAL_STITCH_LINE_GAP, 0);
   assert.equal(result.QUERY_EXPANSION_MAX_TERMS, 8);
   assert.equal(result.QUERY_EXPANSION_SCORE_PENALTY, 0.85);
+  assert.equal(result.RANK_SEMANTIC_WEIGHT, 0.35);
+  assert.equal(result.RANK_KEYWORD_WEIGHT, 0.18);
+  assert.equal(result.RANK_SYMBOL_WEIGHT, 0.15);
+  assert.equal(result.RANK_GRAPH_WEIGHT, 0.08);
+  assert.equal(result.RANK_SUMMARY_WEIGHT, 0.07);
+  assert.equal(result.RANK_ENTRYPOINT_WEIGHT, 0.06);
+  assert.equal(result.RANK_STITCH_BONUS, 0.04);
+  assert.equal(result.RANK_DIVERSITY_BONUS, 0.04);
+  assert.equal(result.RANK_DUPLICATE_PENALTY, 0.08);
+  assert.equal(result.RETRIEVAL_CONFIDENCE_HIGH_THRESHOLD, 0.8);
+  assert.equal(result.RETRIEVAL_CONFIDENCE_MEDIUM_THRESHOLD, 0.6);
+  assert.equal(result.RETRIEVAL_CONFIDENCE_LOW_THRESHOLD, 0.35);
+  assert.equal(result.RETRIEVAL_MIN_CITATION_COVERAGE, 0.5);
+  assert.equal(result.RETRIEVAL_MIN_ANSWERABLE_SCORE, 0.35);
   assert.equal(Object.isFrozen(result), true);
 });
 
@@ -243,6 +257,45 @@ test("query expansion configuration is bounded", () => {
   assert.throws(() => validateEnv({ ...REQUIRED, QUERY_EXPANSION_MAX_TERMS: "51" }));
   assert.throws(() => validateEnv({ ...REQUIRED, QUERY_EXPANSION_SCORE_PENALTY: "0.09" }));
   assert.throws(() => validateEnv({ ...REQUIRED, QUERY_EXPANSION_SCORE_PENALTY: "1.01" }));
+});
+
+test("weighted ranking configuration is bounded", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    RANK_SEMANTIC_WEIGHT: "0",
+    RANK_KEYWORD_WEIGHT: "1",
+    RANK_DUPLICATE_PENALTY: "0.25",
+  });
+  assert.equal(result.RANK_SEMANTIC_WEIGHT, 0);
+  assert.equal(result.RANK_KEYWORD_WEIGHT, 1);
+  assert.equal(result.RANK_DUPLICATE_PENALTY, 0.25);
+  assert.throws(() => validateEnv({ ...REQUIRED, RANK_GRAPH_WEIGHT: "-0.01" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RANK_STITCH_BONUS: "1.01" }));
+});
+
+test("retrieval confidence configuration is bounded and ordered", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    RETRIEVAL_CONFIDENCE_HIGH_THRESHOLD: "0.9",
+    RETRIEVAL_CONFIDENCE_MEDIUM_THRESHOLD: "0.7",
+    RETRIEVAL_CONFIDENCE_LOW_THRESHOLD: "0.4",
+    RETRIEVAL_MIN_CITATION_COVERAGE: "0.6",
+    RETRIEVAL_MIN_ANSWERABLE_SCORE: "0.4",
+  });
+  assert.equal(result.RETRIEVAL_CONFIDENCE_HIGH_THRESHOLD, 0.9);
+  assert.equal(result.RETRIEVAL_CONFIDENCE_MEDIUM_THRESHOLD, 0.7);
+  assert.equal(result.RETRIEVAL_CONFIDENCE_LOW_THRESHOLD, 0.4);
+  assert.equal(result.RETRIEVAL_MIN_CITATION_COVERAGE, 0.6);
+  assert.equal(result.RETRIEVAL_MIN_ANSWERABLE_SCORE, 0.4);
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    RETRIEVAL_CONFIDENCE_HIGH_THRESHOLD: "0.5",
+    RETRIEVAL_CONFIDENCE_MEDIUM_THRESHOLD: "0.6",
+  }));
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    RETRIEVAL_MIN_CITATION_COVERAGE: "1.01",
+  }));
 });
 
 test("anon key remains a valid fallback when service role is absent", () => {

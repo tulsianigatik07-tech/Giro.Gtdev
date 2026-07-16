@@ -37,6 +37,9 @@ chatRouter.post("/", async (c) => {
       "x-citations",
       JSON.stringify(result.citations.slice(0, 10)),
     );
+    if (result.confidence) {
+      c.header("x-retrieval-confidence", JSON.stringify(result.confidence));
+    }
 
     return stream(c, async (s) => {
       for await (const chunk of result.stream) {

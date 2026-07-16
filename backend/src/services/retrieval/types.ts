@@ -21,6 +21,10 @@ export interface RetrievalResult {
   signals: RetrievalSignals;
   chunkId?: string;
   symbol?: string;
+  /** Internal evidence provenance; API routes remove these fields. */
+  primaryQueryMatch?: boolean;
+  queryExpansionMatch?: boolean;
+  stitchedNeighborCount?: number;
 }
 
 export interface HybridSearchRequest {

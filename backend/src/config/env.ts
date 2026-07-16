@@ -39,6 +39,20 @@ const EnvSchema = z
     RETRIEVAL_STITCH_LINE_GAP: z.coerce.number().int().min(0).max(1_000).default(0),
     QUERY_EXPANSION_MAX_TERMS: z.coerce.number().int().min(0).max(50).default(8),
     QUERY_EXPANSION_SCORE_PENALTY: z.coerce.number().min(0.1).max(1).default(0.85),
+    RANK_SEMANTIC_WEIGHT: z.coerce.number().min(0).max(1).default(0.35),
+    RANK_KEYWORD_WEIGHT: z.coerce.number().min(0).max(1).default(0.18),
+    RANK_SYMBOL_WEIGHT: z.coerce.number().min(0).max(1).default(0.15),
+    RANK_GRAPH_WEIGHT: z.coerce.number().min(0).max(1).default(0.08),
+    RANK_SUMMARY_WEIGHT: z.coerce.number().min(0).max(1).default(0.07),
+    RANK_ENTRYPOINT_WEIGHT: z.coerce.number().min(0).max(1).default(0.06),
+    RANK_STITCH_BONUS: z.coerce.number().min(0).max(1).default(0.04),
+    RANK_DIVERSITY_BONUS: z.coerce.number().min(0).max(1).default(0.04),
+    RANK_DUPLICATE_PENALTY: z.coerce.number().min(0).max(1).default(0.08),
+    RETRIEVAL_CONFIDENCE_HIGH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.80),
+    RETRIEVAL_CONFIDENCE_MEDIUM_THRESHOLD: z.coerce.number().min(0).max(1).default(0.60),
+    RETRIEVAL_CONFIDENCE_LOW_THRESHOLD: z.coerce.number().min(0).max(1).default(0.35),
+    RETRIEVAL_MIN_CITATION_COVERAGE: z.coerce.number().min(0).max(1).default(0.50),
+    RETRIEVAL_MIN_ANSWERABLE_SCORE: z.coerce.number().min(0).max(1).default(0.35),
     SHUTDOWN_TIMEOUT_MS: z.coerce
       .number()
       .int()
@@ -96,6 +110,18 @@ const EnvSchema = z
           message: "Circuit failure threshold must not exceed minimum samples.",
         });
       }
+    }
+    if (!(
+      value.RETRIEVAL_CONFIDENCE_HIGH_THRESHOLD >=
+        value.RETRIEVAL_CONFIDENCE_MEDIUM_THRESHOLD &&
+      value.RETRIEVAL_CONFIDENCE_MEDIUM_THRESHOLD >=
+        value.RETRIEVAL_CONFIDENCE_LOW_THRESHOLD
+    )) {
+      context.addIssue({
+        code: "custom",
+        path: ["RETRIEVAL_CONFIDENCE_HIGH_THRESHOLD"],
+        message: "Confidence thresholds must be ordered high >= medium >= low.",
+      });
     }
   });
 

@@ -10,6 +10,7 @@ import type { RetrievalDiversity } from "../retrieval/retrievalDiversity.js";
 import type { RetrievalBlindSpots } from "../retrieval/retrievalBlindSpots.js";
 import type { RetrievalQualityScore } from "../retrieval/retrievalQualityScore.js";
 import type { Citation, CitationRetrievalType } from "../retrieval/citations.js";
+import type { PublicRetrievalConfidence } from "../retrieval/confidence/confidenceTypes.js";
 
 export interface EnrichedContextChunk {
   filePath: string;
@@ -31,6 +32,9 @@ export interface EnrichedContextChunk {
   symbol?: string;
   repositoryVersion?: string;
   citationRetrievalType?: CitationRetrievalType;
+  primaryQueryMatch?: boolean;
+  queryExpansionMatch?: boolean;
+  stitchedNeighborCount?: number;
 }
 
 export interface EnrichedAssembledContext {
@@ -40,6 +44,9 @@ export interface EnrichedAssembledContext {
   estimatedTokens: number;
   context: EnrichedContextChunk[];
   citations?: Citation[];
+  confidence?: PublicRetrievalConfidence;
+  /** Internal carry-forward for post-token-budget confidence evaluation. */
+  _confidenceBudgetDropCount?: number;
   stats: {
     hybridResults: number;
     fileSearchResults: number;
