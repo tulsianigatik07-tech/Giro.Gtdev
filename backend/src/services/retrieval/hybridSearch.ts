@@ -17,6 +17,8 @@ import { runtimeRetrievalCache } from "./cache/runtimeRetrievalCache.js";
 import type { RetrievalCache } from "./cache/retrievalCache.js";
 import { buildCitations, type CitationCandidate } from "./citations.js";
 import { stitchRuntimeChunks } from "./stitching/runtimeChunkStitcher.js";
+import { expandRuntimeQuery } from "./queryExpansion/runtimeQueryExpansion.js";
+import type { QueryExpansionResult } from "./queryExpansion/queryExpansionTypes.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -36,24 +38,73 @@ export interface HybridSearchOptions {
   execute?: typeof executeHybridSearch;
 }
 
+export interface ExecuteHybridSearchOptions {
+  signal?: AbortSignal;
+  repositoryVersion?: string;
+  queryExpansion?: QueryExpansionResult;
+}
+
+export function applyQueryExpansionPenalty(
+  results: readonly RetrievalResult[],
+  scoreMultiplier: number,
+): RetrievalResult[] {
+  return results.map((result) => ({
+    ...result,
+    score: result.score * scoreMultiplier,
+    signals: Object.fromEntries(
+      Object.entries(result.signals).map(([key, value]) => [
+        key,
+        value === undefined ? value : value * scoreMultiplier,
+      ]),
+    ),
+  }));
+}
+
 export async function executeHybridSearch(
   request: HybridSearchRequest,
-  options: { signal?: AbortSignal; repositoryVersion?: string } = {},
+  options: ExecuteHybridSearchOptions = {},
 ): Promise<HybridSearchResponse> {
   const { query, owner, repo } = request;
   const repository = `${owner}/${repo}`;
   const effectiveLimit = resolveHybridSearchLimit(request.limit);
   const fetchLimit = resolveHybridFetchLimit(request.limit);
+  const expansion = options.queryExpansion ?? expandRuntimeQuery({
+    repositoryId: repository,
+    repositoryVersion: options.repositoryVersion ?? "unversioned",
+    query,
+  });
+  const expandedQuery = expansion.expandedQuery;
 
-  const [semanticSettled, keywordSettled, symbolSettled] = await Promise.allSettled([
+  const [
+    semanticSettled,
+    keywordSettled,
+    symbolSettled,
+    expandedSemanticSettled,
+    expandedKeywordSettled,
+    expandedSymbolSettled,
+  ] = await Promise.allSettled([
     semanticSearch(query, fetchLimit, options),
     keywordSearch(query, owner, repo, fetchLimit, options),
     symbolSearch(query, owner, repo, fetchLimit),
+    expandedQuery
+      ? semanticSearch(expandedQuery, fetchLimit, options)
+      : Promise.resolve([]),
+    expandedQuery
+      ? keywordSearch(expandedQuery, owner, repo, fetchLimit, options)
+      : Promise.resolve([]),
+    expandedQuery
+      ? symbolSearch(expandedQuery, owner, repo, fetchLimit)
+      : Promise.resolve([]),
   ]);
 
   let semantic: RetrievalResult[] = [];
 
-  for (const settled of [semanticSettled, keywordSettled]) {
+  for (const settled of [
+    semanticSettled,
+    keywordSettled,
+    expandedSemanticSettled,
+    expandedKeywordSettled,
+  ]) {
     if (
       settled.status === "rejected" &&
       (isDeadlineExceeded(settled.reason) || isDependencyUnavailable(settled.reason))
@@ -88,6 +139,29 @@ export async function executeHybridSearch(
   const symbol =
     symbolSettled.status === "fulfilled" ? symbolSettled.value : [];
 
+  const expandedSemantic: RetrievalResult[] = expandedSemanticSettled.status === "fulfilled"
+    ? expandedSemanticSettled.value
+      .filter((result) => result.repository === repository)
+      .map((result) => ({
+        repository: result.repository,
+        filePath: result.filePath,
+        language: result.language,
+        content: result.content,
+        startLine: result.startLine,
+        endLine: result.endLine,
+        score: result.similarity * expansion.expandedScoreMultiplier,
+        source: "semantic" as const,
+        signals: { semantic: result.similarity * expansion.expandedScoreMultiplier },
+        chunkId: result.chunkId,
+      }))
+    : [];
+  const expandedKeyword = expandedKeywordSettled.status === "fulfilled"
+    ? applyQueryExpansionPenalty(expandedKeywordSettled.value, expansion.expandedScoreMultiplier)
+    : [];
+  const expandedSymbol = expandedSymbolSettled.status === "fulfilled"
+    ? applyQueryExpansionPenalty(expandedSymbolSettled.value, expansion.expandedScoreMultiplier)
+    : [];
+
   let graphNodes: Map<string, number> | null = null;
 
   try {
@@ -106,7 +180,14 @@ export async function executeHybridSearch(
     });
   }
 
-  const combined = [...semantic, ...keyword, ...symbol];
+  const combined = [
+    ...semantic,
+    ...keyword,
+    ...symbol,
+    ...expandedSemantic,
+    ...expandedKeyword,
+    ...expandedSymbol,
+  ];
 
   const graphBoosted = graphNodes
     ? new Set(
@@ -166,9 +247,9 @@ export async function executeHybridSearch(
 
   logger.info("hybrid_search_complete", {
     repository,
-    semanticResults: semantic.length,
-    keywordResults: keyword.length,
-    symbolResults: symbol.length,
+    semanticResults: semantic.length + expandedSemantic.length,
+    keywordResults: keyword.length + expandedKeyword.length,
+    symbolResults: symbol.length + expandedSymbol.length,
     graphBoosted,
     returned: results.length,
   });
@@ -179,9 +260,9 @@ export async function executeHybridSearch(
     results,
     citations,
     stats: {
-      semanticResults: semantic.length,
-      keywordResults: keyword.length,
-      symbolResults: symbol.length,
+      semanticResults: semantic.length + expandedSemantic.length,
+      keywordResults: keyword.length + expandedKeyword.length,
+      symbolResults: symbol.length + expandedSymbol.length,
       graphBoosted,
       returned: results.length,
     },
@@ -194,9 +275,16 @@ export async function hybridSearch(
 ): Promise<HybridSearchResponse> {
   const effectiveLimit = resolveHybridSearchLimit(request.limit);
   const cache = options.cache ?? runtimeRetrievalCache;
+  const repositoryId = `${request.owner}/${request.repo}`;
+  const repositoryVersion = await cache.repositoryVersion(repositoryId, options.signal);
+  const expansion = expandRuntimeQuery({
+    repositoryId,
+    repositoryVersion,
+    query: request.query,
+  });
   const cached = await cache.getOrLoad(
     {
-      repositoryId: `${request.owner}/${request.repo}`,
+      repositoryId,
       query: request.query,
       mode: "hybrid",
       limits: {
@@ -205,12 +293,28 @@ export async function hybridSearch(
         fetch: resolveHybridFetchLimit(request.limit),
       },
       selectedContext: null,
-      options: {},
+      options: {
+        queryExpansion: {
+          terms: expansion.terms.map((term) => term.term),
+          scoreMultiplier: expansion.expandedScoreMultiplier,
+        },
+      },
+      repositoryVersion,
     },
-    (signal, context) => (options.execute ?? executeHybridSearch)(request, {
-      signal,
-      repositoryVersion: context.repositoryVersion,
-    }),
+    (signal, context) => {
+      const currentExpansion = context.repositoryVersion === expansion.repositoryVersion
+        ? expansion
+        : expandRuntimeQuery({
+            repositoryId,
+            repositoryVersion: context.repositoryVersion,
+            query: request.query,
+          });
+      return (options.execute ?? executeHybridSearch)(request, {
+        signal,
+        repositoryVersion: context.repositoryVersion,
+        queryExpansion: currentExpansion,
+      });
+    },
     { signal: options.signal },
   );
   const query = request.query;

@@ -93,6 +93,9 @@ export class MetricsRegistry {
   private chunkStitches = 0;
   private chunksMerged = 0;
   private stitchBudgetDrops = 0;
+  private queryExpansions = 0;
+  private queryExpansionTerms = 0;
+  private queryExpansionCacheHits = 0;
   private symbolGraphNodes = 0;
   private symbolGraphEdges = 0;
   private symbolExpansions = 0;
@@ -240,6 +243,18 @@ export class MetricsRegistry {
 
   incrementStitchBudgetDrops(count = 1): void {
     this.stitchBudgetDrops += Math.max(0, Math.trunc(count));
+  }
+
+  incrementQueryExpansions(count = 1): void {
+    this.queryExpansions += Math.max(0, Math.trunc(count));
+  }
+
+  incrementQueryExpansionTerms(count = 1): void {
+    this.queryExpansionTerms += Math.max(0, Math.trunc(count));
+  }
+
+  incrementQueryExpansionCacheHits(count = 1): void {
+    this.queryExpansionCacheHits += Math.max(0, Math.trunc(count));
   }
 
   setSymbolGraphSize(nodes: number, edges: number): void {
@@ -395,6 +410,15 @@ export class MetricsRegistry {
       "# HELP giro_stitch_budget_drops_total Stitched blocks dropped by context budgets.",
       "# TYPE giro_stitch_budget_drops_total counter",
       `giro_stitch_budget_drops_total ${this.stitchBudgetDrops}`,
+      "# HELP giro_query_expansions_total Repository-aware query expansions computed.",
+      "# TYPE giro_query_expansions_total counter",
+      `giro_query_expansions_total ${this.queryExpansions}`,
+      "# HELP giro_query_expansion_terms_total Expanded retrieval terms generated.",
+      "# TYPE giro_query_expansion_terms_total counter",
+      `giro_query_expansion_terms_total ${this.queryExpansionTerms}`,
+      "# HELP giro_query_expansion_cache_hits_total Query expansion cache hits.",
+      "# TYPE giro_query_expansion_cache_hits_total counter",
+      `giro_query_expansion_cache_hits_total ${this.queryExpansionCacheHits}`,
       "# HELP giro_symbol_graph_nodes Repository symbol graph nodes.",
       "# TYPE giro_symbol_graph_nodes gauge",
       `giro_symbol_graph_nodes ${this.symbolGraphNodes}`,

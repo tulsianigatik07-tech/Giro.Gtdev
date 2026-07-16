@@ -37,6 +37,8 @@ const EnvSchema = z
     RETRIEVAL_CACHE_TTL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
     RETRIEVAL_CACHE_MAX_ENTRIES: z.coerce.number().int().min(1).max(10_000).default(500),
     RETRIEVAL_STITCH_LINE_GAP: z.coerce.number().int().min(0).max(1_000).default(0),
+    QUERY_EXPANSION_MAX_TERMS: z.coerce.number().int().min(0).max(50).default(8),
+    QUERY_EXPANSION_SCORE_PENALTY: z.coerce.number().min(0.1).max(1).default(0.85),
     SHUTDOWN_TIMEOUT_MS: z.coerce
       .number()
       .int()

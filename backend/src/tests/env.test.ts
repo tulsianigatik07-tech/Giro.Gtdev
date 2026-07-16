@@ -35,6 +35,8 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.RETRIEVAL_CACHE_TTL_MS, 60_000);
   assert.equal(result.RETRIEVAL_CACHE_MAX_ENTRIES, 500);
   assert.equal(result.RETRIEVAL_STITCH_LINE_GAP, 0);
+  assert.equal(result.QUERY_EXPANSION_MAX_TERMS, 8);
+  assert.equal(result.QUERY_EXPANSION_SCORE_PENALTY, 0.85);
   assert.equal(Object.isFrozen(result), true);
 });
 
@@ -228,6 +230,19 @@ test("adjacent chunk line-gap configuration is bounded", () => {
   assert.equal(validateEnv({ ...REQUIRED, RETRIEVAL_STITCH_LINE_GAP: "8" }).RETRIEVAL_STITCH_LINE_GAP, 8);
   assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_STITCH_LINE_GAP: "-1" }));
   assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_STITCH_LINE_GAP: "1001" }));
+});
+
+test("query expansion configuration is bounded", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    QUERY_EXPANSION_MAX_TERMS: "12",
+    QUERY_EXPANSION_SCORE_PENALTY: "0.7",
+  });
+  assert.equal(result.QUERY_EXPANSION_MAX_TERMS, 12);
+  assert.equal(result.QUERY_EXPANSION_SCORE_PENALTY, 0.7);
+  assert.throws(() => validateEnv({ ...REQUIRED, QUERY_EXPANSION_MAX_TERMS: "51" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, QUERY_EXPANSION_SCORE_PENALTY: "0.09" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, QUERY_EXPANSION_SCORE_PENALTY: "1.01" }));
 });
 
 test("anon key remains a valid fallback when service role is absent", () => {
