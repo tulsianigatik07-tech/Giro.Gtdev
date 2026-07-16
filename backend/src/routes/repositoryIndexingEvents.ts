@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { createApiError, createValidationError } from "../lib/apiErrors.js";
-import { fail } from "../lib/response.js";
+import { fail, ok } from "../lib/response.js";
 import { setRequestLogContext } from "../middleware/requestContext.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { IndexingProgressPublisher } from "../services/indexing/events/indexingProgressPublisher.js";
 import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
 import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { getRepositorySummary } from "../services/repositorySummary/runtimeRepositorySummary.js";
 import { RepositoryIdSchema } from "../validation/repositorySchemas.js";
 
 type Variables = {
@@ -15,6 +16,47 @@ type Variables = {
 };
 
 const repositoryIndexingEventsRoute = new Hono<{ Variables: Variables }>();
+
+repositoryIndexingEventsRoute.get("/:repositoryId/summary", async (c) => {
+  const parsed = RepositoryIdSchema.safeParse(c.req.param("repositoryId"));
+  if (!parsed.success) {
+    return fail(c, createValidationError(parsed.error.flatten()), 400);
+  }
+  const repositoryId = parsed.data;
+  setRequestLogContext(c, { repositoryId });
+
+  const user = getAuthenticatedUser(c);
+  if (!user) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+  const access = requireRepositoryAccess({ repoId: repositoryId, userId: user.userId });
+  if (!access.ok) {
+    return fail(c, { code: access.code, message: access.message }, access.status);
+  }
+
+  let repositoryVersion: string | undefined;
+  try {
+    const latestJob = await c.get("indexingJobStore").getLatestRepositoryJob(repositoryId);
+    if (latestJob?.status === "succeeded") {
+      repositoryVersion = `${latestJob.jobId}:${latestJob.attempt}`;
+      setRequestLogContext(c, { repositoryId, jobId: latestJob.jobId });
+    }
+  } catch {
+    return fail(c, createApiError("internal_error", "Unable to load indexing job"), 500);
+  }
+
+  const summary = getRepositorySummary(repositoryId, { repositoryVersion }) ??
+    getRepositorySummary(repositoryId);
+  if (!summary) {
+    return fail(
+      c,
+      createApiError("repo_not_connected", "Repository summary is not available"),
+      404,
+    );
+  }
+
+  return ok(c, { summary });
+});
 
 repositoryIndexingEventsRoute.get("/:repositoryId/indexing/events", async (c) => {
   const parsed = RepositoryIdSchema.safeParse(c.req.param("repositoryId"));

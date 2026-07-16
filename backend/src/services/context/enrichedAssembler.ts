@@ -26,9 +26,11 @@ import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../retrieval/cache/retrievalCache.js";
 import { runtimeRetrievalCache } from "../retrieval/cache/runtimeRetrievalCache.js";
 import { buildCitations } from "../retrieval/citations.js";
+import { getRepositorySummary } from "../repositorySummary/runtimeRepositorySummary.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
+const SUMMARY_CONTEXT_MAX_CHARS = 2_000;
 
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
@@ -61,7 +63,7 @@ export function buildContextCitations(
       retrievalType: chunk.citationRetrievalType ?? chunk.source,
       score: chunk.score,
       symbol: chunk.symbol,
-      repositoryVersion,
+      repositoryVersion: chunk.repositoryVersion ?? repositoryVersion,
     })),
     { surface: "context" },
   );
@@ -108,6 +110,54 @@ function dedupe(chunks: EnrichedContextChunk[]): {
   return { merged: [...byKey.values()], removedCount };
 }
 
+export function buildRepositorySummaryContextChunk(
+  repository: string,
+  repositoryVersion: string,
+): EnrichedContextChunk | null {
+  const summary = getRepositorySummary(repository, { repositoryVersion }) ??
+    getRepositorySummary(repository);
+  if (!summary) return null;
+
+  const compact = {
+    repositoryId: summary.repositoryId,
+    purpose: summary.purpose,
+    languages: summary.languages.map((entry) => entry.name),
+    frameworks: summary.frameworks.map((entry) => entry.name),
+    packageManagers: summary.packageManagers.map((entry) => entry.name),
+    applications: summary.applications.slice(0, 8),
+    services: summary.services.slice(0, 8),
+    modules: summary.modules.slice(0, 12),
+    entrypoints: summary.entrypoints,
+    apiSurface: summary.apiSurface.slice(0, 10),
+    dataStores: summary.dataStores.slice(0, 8),
+    authentication: summary.authentication.slice(0, 8),
+    retrieval: summary.retrieval.slice(0, 8),
+    indexing: summary.indexing.slice(0, 8),
+    testing: summary.testing.slice(0, 8),
+    build: summary.build,
+    deployment: summary.deployment,
+    dependencyOverview: summary.dependencyOverview,
+  };
+  const content = `Repository architecture summary:\n${JSON.stringify(compact)}`;
+  return {
+    filePath: "__repository_summary__",
+    language: "text",
+    content: content.length <= SUMMARY_CONTEXT_MAX_CHARS
+      ? content
+      : content.slice(0, SUMMARY_CONTEXT_MAX_CHARS),
+    startLine: 1,
+    endLine: 1,
+    score: 1,
+    source: "graph",
+    signals: { graph: 1 },
+    reason: "Repository architecture summary",
+    chunkId: `${repository}:architecture-summary:${summary.repositoryVersion}`,
+    symbol: "RepositorySummary",
+    repositoryVersion: summary.repositoryVersion,
+    citationRetrievalType: "graph",
+  };
+}
+
 export async function assembleEnrichedContext(
   request: EnrichedAssemblyRequest,
   options: { signal?: AbortSignal; cache?: RetrievalCache } = {},
@@ -115,6 +165,7 @@ export async function assembleEnrichedContext(
   const maxChars = request.maxChars ?? 16_000;
   const limit = request.limit ?? 25;
   const repository = `${request.owner}/${request.repo}`;
+  const cache = options.cache ?? runtimeRetrievalCache;
 
   // A genuinely missing repository is a 404 condition, distinct from a
   // partial source failure (which degrades gracefully below).
@@ -123,16 +174,17 @@ export async function assembleEnrichedContext(
   }
 
   let hybridResults: Awaited<ReturnType<typeof hybridSearch>>["results"] = [];
-  let repositoryVersion: string | undefined;
+  let repositoryVersion = await cache.repositoryVersion(repository, options.signal);
+  const summaryChunk = buildRepositorySummaryContextChunk(repository, repositoryVersion);
   try {
     const res = await hybridSearch({
       query: request.query,
       owner: request.owner,
       repo: request.repo,
       limit: limit * 2,
-    }, { signal: options.signal, cache: options.cache });
+    }, { signal: options.signal, cache });
     hybridResults = res.results;
-    repositoryVersion = res.citations?.[0]?.repositoryVersion;
+    repositoryVersion = res.citations?.[0]?.repositoryVersion ?? repositoryVersion;
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     logger.warn("enriched_hybrid_failed", {
@@ -202,6 +254,10 @@ export async function assembleEnrichedContext(
   // Character budget enforcement with optional trim.
   const finalChunks: EnrichedContextChunk[] = [];
   let usedChars = 0;
+  if (summaryChunk && summaryChunk.content.length <= maxChars) {
+    finalChunks.push(summaryChunk);
+    usedChars += summaryChunk.content.length;
+  }
   for (const chunk of rankedChunks) {
     const remaining = maxChars - usedChars;
     if (remaining <= 0) break;
@@ -235,8 +291,6 @@ export async function assembleEnrichedContext(
   const totalContentLength = finalChunks.reduce((s, c) => s + c.content.length, 0);
   const estimatedTokens = Math.ceil(totalContentLength / 4);
 
-  repositoryVersion ??= await (options.cache ?? runtimeRetrievalCache)
-    .repositoryVersion(repository, options.signal);
   const citations = buildContextCitations(
     repository,
     finalChunks,

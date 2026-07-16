@@ -6,6 +6,7 @@ import { extractRepoSymbols } from "../../graph/symbolExtractor.js";
 import { applyGraphUpdate } from "../../repository/graphUpdateExecutor.js";
 import { buildRepositorySymbolGraph } from "../../repositoryGraph/graphBuilder.js";
 import { saveRepositorySymbolGraph } from "../../repositoryGraph/runtimeRepositoryGraph.js";
+import { generateRepositorySummary } from "../../repositorySummary/repositorySummary.js";
 import {
   getRepositoryFileSnapshot,
   saveRepositoryFileSnapshot,
@@ -297,6 +298,15 @@ export async function executeRepositoryIndexingPipeline(
     nodes: symbolGraph.nodes.length,
     edges: symbolGraph.edges.length,
   });
+  generateRepositorySummary({
+    repositoryId: repoId,
+    repositoryVersion,
+    generatedAt: new Date().toISOString(),
+    scan: stats,
+    analysis,
+    symbolMaps,
+    dependencyGraph: graph,
+  }, { logger: graphLogger });
 
   await reportStage({ stage: "chunk", progress: 80 });
   await executeIndexingPlan({

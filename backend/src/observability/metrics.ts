@@ -94,6 +94,9 @@ export class MetricsRegistry {
   private symbolGraphEdges = 0;
   private symbolExpansions = 0;
   private symbolExpansionBudgetDrops = 0;
+  private repositorySummaries = 0;
+  private repositorySummaryGenerationMs = 0;
+  private repositorySummaryCacheHits = 0;
 
   constructor(options: MetricsRegistryOptions = {}) {
     this.durationBucketsSeconds = Object.freeze(validateBuckets(
@@ -237,6 +240,18 @@ export class MetricsRegistry {
     this.symbolExpansionBudgetDrops += Math.max(0, Math.trunc(count));
   }
 
+  incrementRepositorySummary(): void {
+    this.repositorySummaries += 1;
+  }
+
+  observeRepositorySummaryGenerationMs(milliseconds: number): void {
+    this.repositorySummaryGenerationMs = Math.max(0, Math.trunc(milliseconds));
+  }
+
+  incrementRepositorySummaryCacheHit(): void {
+    this.repositorySummaryCacheHits += 1;
+  }
+
   render(): string {
     const lines = [
       "# HELP giro_http_requests_total Total HTTP requests.",
@@ -368,6 +383,15 @@ export class MetricsRegistry {
       "# HELP giro_symbol_expansion_budget_drops_total Symbol graph expansions dropped by context budget.",
       "# TYPE giro_symbol_expansion_budget_drops_total counter",
       `giro_symbol_expansion_budget_drops_total ${this.symbolExpansionBudgetDrops}`,
+      "# HELP giro_repository_summaries_total Repository architecture summaries generated.",
+      "# TYPE giro_repository_summaries_total counter",
+      `giro_repository_summaries_total ${this.repositorySummaries}`,
+      "# HELP giro_repository_summary_generation_ms Last repository architecture summary generation duration in milliseconds.",
+      "# TYPE giro_repository_summary_generation_ms gauge",
+      `giro_repository_summary_generation_ms ${this.repositorySummaryGenerationMs}`,
+      "# HELP giro_repository_summary_cache_hits_total Repository architecture summary cache hits.",
+      "# TYPE giro_repository_summary_cache_hits_total counter",
+      `giro_repository_summary_cache_hits_total ${this.repositorySummaryCacheHits}`,
     );
     return `${lines.join("\n")}\n`;
   }
