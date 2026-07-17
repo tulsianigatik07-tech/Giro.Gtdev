@@ -6,7 +6,6 @@ import { repositoriesApi } from "@/services/api/repositories";
 
 export const repositoryKeys = {
   all: ["repositories"] as const,
-  dashboard: (owner: string, repo: string) => ["repository", owner, repo, "dashboard"] as const,
   summary: (owner: string, repo: string) => ["repository", owner, repo, "summary"] as const,
 };
 
@@ -21,25 +20,32 @@ export function useRepositories() {
 
 export function useRepository(owner: string, repo: string) {
   const { token } = useAuth();
-  const dashboard = useQuery({
-    queryKey: repositoryKeys.dashboard(owner, repo),
-    queryFn: () => repositoriesApi.dashboard(token as string, owner, repo),
-    enabled: Boolean(token && owner && repo),
-  });
   const summary = useQuery({
     queryKey: repositoryKeys.summary(owner, repo),
     queryFn: () => repositoriesApi.summary(token as string, owner, repo),
     enabled: Boolean(token && owner && repo),
     retry: false,
   });
-  return { dashboard, summary };
+  return summary;
 }
 
 export function useConnectRepository() {
   const { token } = useAuth();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (repoUrl: string) => repositoriesApi.connect(token as string, repoUrl),
+    mutationFn: async (repoUrl: string) => {
+      const parsed = new URL(repoUrl);
+      const [owner = "", repoWithSuffix = ""] = parsed.pathname.split("/").filter(Boolean);
+      const repo = repoWithSuffix.replace(/\.git$/, "");
+      const current = await repositoriesApi.list(token as string);
+      const existing = current.repositories.find(
+        (item) => item.owner === owner && item.repo === repo && item.status === "indexed",
+      );
+      if (existing) {
+        return { repositoryId: `${owner}/${repo}`, status: "already_indexed" as const };
+      }
+      return repositoriesApi.connect(token as string, repoUrl);
+    },
     onSuccess: () => client.invalidateQueries({ queryKey: repositoryKeys.all }),
   });
 }

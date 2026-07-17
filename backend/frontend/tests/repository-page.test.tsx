@@ -8,16 +8,8 @@ vi.mock("@/hooks/use-sessions", () => ({ useCreateSession: () => ({ mutateAsync:
 vi.mock("@/hooks/use-repositories", () => ({
   useRepositories: () => ({ data: { repositories: [repository], count: 1 } }),
   useRepository: () => ({
-    dashboard: {
-      isLoading: false,
-      isError: false,
-      data: {
-        repository: "acme/platform",
-        status: { health: { status: "healthy" } },
-        metrics: { files: 42, chunks: 120, symbols: 88, graphNodes: 57, graphEdges: 93 },
-      },
-    },
-    summary: {
+    isLoading: false,
+    isError: false,
       data: {
         summary: {
           repositoryVersion: "job-1:1",
@@ -26,6 +18,7 @@ vi.mock("@/hooks/use-repositories", () => ({
           frameworks: [{ name: "Hono" }],
           apiSurface: [{ name: "sessions" }],
           entrypoints: [{ name: "server", path: "src/index.ts", kind: "server" }],
+          packageManagers: undefined,
           dependencyOverview: {
             centralModules: ["retrieval"],
             totalNodes: 57,
@@ -35,7 +28,7 @@ vi.mock("@/hooks/use-repositories", () => ({
           },
         },
       },
-    },
+    refetch: vi.fn(),
   }),
 }));
 
@@ -47,5 +40,11 @@ describe("repository page", () => {
     expect(screen.getByText("TypeScript")).toBeInTheDocument();
     expect(screen.getByText("src/index.ts")).toBeInTheDocument();
     expect(screen.getByText("job-1:1")).toBeInTheDocument();
+  });
+
+  it("gracefully renders a summary with optional sections omitted", () => {
+    render(<RepositoryOverview owner="acme" repo="platform" />);
+    expect(screen.getAllByText("Not detected").length).toBeGreaterThan(0);
+    expect(screen.getByText("A repository intelligence platform")).toBeInTheDocument();
   });
 });

@@ -19,13 +19,14 @@ describe("grounded answer evidence", () => {
     fireEvent.click(screen.getByRole("button", { name: /^1 src\/auth\/login.ts/i }));
     expect(screen.getByText("export function authenticate() {}")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Copy path src/auth/login.ts" }));
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("src/auth/login.ts");
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("src/auth/login.ts:10-24");
   });
 
   it("does not invent a citation preview", () => {
     render(<CitationList citations={[citation]} />);
     fireEvent.click(screen.getByRole("button", { name: /^1 src\/auth\/login.ts/i }));
-    expect(screen.getByText(/preview was not included/i)).toBeInTheDocument();
+    expect(screen.queryByRole("code")).not.toBeInTheDocument();
+    expect(screen.queryByText(/preview was not included/i)).not.toBeInTheDocument();
     expect(vi.mocked(navigator.clipboard.writeText)).not.toHaveBeenCalledWith("invented");
   });
 });

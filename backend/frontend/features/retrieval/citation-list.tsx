@@ -23,7 +23,10 @@ function CitationItem({ citation, index, preview }: { citation: GroundedCitation
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   async function copyPath() {
-    await navigator.clipboard.writeText(citation.relativeFilePath);
+    const lines = citation.startLine === citation.endLine
+      ? `:${citation.startLine}`
+      : `:${citation.startLine}-${citation.endLine}`;
+    await navigator.clipboard.writeText(`${citation.relativeFilePath}${lines}`);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }
@@ -39,7 +42,7 @@ function CitationItem({ citation, index, preview }: { citation: GroundedCitation
         <Button variant="ghost" size="icon" aria-label={`Copy path ${citation.relativeFilePath}`} onClick={() => void copyPath()}>{copied ? <Check className="size-3.5 text-primary" /> : <Clipboard className="size-3.5" />}</Button>
         <Button variant="ghost" size="icon" aria-label="GitHub link unavailable" disabled title="GitHub source links are not exposed by the backend"><ExternalLink className="size-3.5" /></Button>
       </div>
-      {open ? <div className="border-t border-border"><div className="flex flex-wrap gap-1.5 px-3 py-2"><Badge className="text-muted-foreground">{citation.language}</Badge><Badge className="text-muted-foreground">{citation.retrievalType}</Badge><Badge className="text-muted-foreground">score {citation.score.toFixed(3)}</Badge><Badge className="max-w-52 truncate text-muted-foreground">version {citation.repositoryVersion}</Badge></div>{preview ? <pre className="max-h-64 overflow-auto border-t border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"><code>{preview}</code></pre> : <p className="border-t border-border p-3 text-xs text-muted-foreground">A source preview was not included in the final context response.</p>}</div> : null}
+      {open ? <div className="border-t border-border"><div className="flex flex-wrap gap-1.5 px-3 py-2"><Badge className="text-muted-foreground">{citation.language}</Badge><Badge className="text-muted-foreground">{citation.retrievalType}</Badge><Badge className="text-muted-foreground">score {citation.score.toFixed(3)}</Badge><Badge className="max-w-52 truncate text-muted-foreground">version {citation.repositoryVersion}</Badge></div>{preview ? <pre className="max-h-64 overflow-auto border-t border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"><code>{preview}</code></pre> : null}</div> : null}
     </div>
   );
 }

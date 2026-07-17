@@ -2,9 +2,12 @@ import { apiRequest } from "./client";
 import type {
   ConnectRepositoryResult,
   IndexedRepository,
-  RepositoryDashboard,
   RepositorySummary,
 } from "@/types/api";
+
+export function encodeRepositoryId(owner: string, repo: string): string {
+  return encodeURIComponent(`${owner}/${repo}`);
+}
 
 export const repositoriesApi = {
   list(token: string) {
@@ -20,15 +23,9 @@ export const repositoriesApi = {
       body: JSON.stringify({ repoUrl }),
     });
   },
-  dashboard(token: string, owner: string, repo: string) {
-    return apiRequest<RepositoryDashboard>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dashboard`, {
-      method: "GET",
-      token,
-    });
-  },
   summary(token: string, owner: string, repo: string) {
     return apiRequest<{ summary: RepositorySummary }>(
-      `/repositories/${encodeURIComponent(`${owner}/${repo}`)}/summary`,
+      `/repositories/${encodeRepositoryId(owner, repo)}/summary`,
       { method: "GET", token },
     );
   },

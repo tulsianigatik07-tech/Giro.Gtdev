@@ -10,6 +10,9 @@ export function useIndexingProgress(repositoryId: string, initial?: IndexingProg
   const [progress, setProgress] = useState<IndexingProgress | undefined>(initial);
   const [connected, setConnected] = useState(false);
   const [disconnected, setDisconnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [streamError, setStreamError] = useState<Error | null>(null);
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     if (!token || !repositoryId) return;
@@ -18,12 +21,35 @@ export function useIndexingProgress(repositoryId: string, initial?: IndexingProg
       onProgress: (event) => {
         setProgress(event);
         setDisconnected(false);
+        setReconnecting(false);
+        setStreamError(null);
       },
-      onConnectionChange: setConnected,
-      onError: () => setDisconnected(true),
+      onConnectionChange: (value) => {
+        setConnected(value);
+        if (value) setReconnecting(false);
+      },
+      onReconnect: () => {
+        setDisconnected(true);
+        setReconnecting(true);
+      },
+      onError: (error) => {
+        setDisconnected(true);
+        setStreamError(error);
+      },
     }, controller.signal);
     return () => controller.abort();
-  }, [repositoryId, token]);
+  }, [generation, repositoryId, token]);
 
-  return { progress, connected, disconnected };
+  return {
+    progress,
+    connected,
+    disconnected,
+    reconnecting,
+    streamError,
+    retry: () => {
+      setStreamError(null);
+      setDisconnected(false);
+      setGeneration((value) => value + 1);
+    },
+  };
 }

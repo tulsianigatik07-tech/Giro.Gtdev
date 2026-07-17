@@ -16,6 +16,8 @@ import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
 import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
+import { getAuthenticatedUser } from "../services/auth/authContext.js";
+import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
 
 type Variables = { requestId: string; retrievalCache: RetrievalCache };
 
@@ -41,6 +43,18 @@ retrievalRouter.post("/hybrid", async (c) => {
       createValidationError(parsed.error.flatten()),
       400,
     );
+  }
+
+  const user = getAuthenticatedUser(c);
+  if (!user) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+  const access = requireRepositoryAccess({
+    repoId: `${parsed.data.owner}/${parsed.data.repo}`,
+    userId: user.userId,
+  });
+  if (!access.ok) {
+    return fail(c, { code: access.code, message: access.message }, access.status);
   }
 
   try {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,8 +31,9 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   const [retrieval, setRetrieval] = useState<HybridRetrievalResult | null>(null);
   const [retrievalLoading, setRetrievalLoading] = useState(false);
   const [retrievalError, setRetrievalError] = useState<string | null>(null);
-  const [askError, setAskError] = useState<string | null>(null);
+  const [askError, setAskError] = useState<unknown>(null);
   const [desktop, setDesktop] = useState(false);
+  const askInFlight = useRef(false);
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 1024px)");
@@ -43,7 +44,8 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   }, []);
 
   async function ask(question: string) {
-    if (!token || !session.data || asking) return;
+    if (!token || !session.data || askInFlight.current) return;
+    askInFlight.current = true;
     setAsking(true);
     setPendingQuestion(question);
     setAskError(null);
@@ -61,8 +63,9 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
       await session.refetch();
       setPendingQuestion(null);
     } catch (error) {
-      setAskError(getApiErrorMessage(error));
+      setAskError(error);
     } finally {
+      askInFlight.current = false;
       setAsking(false);
       await inspection;
     }
@@ -70,20 +73,33 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
 
   async function newSession() {
     if (!session.data) return;
-    const created = await create.mutateAsync({ owner: session.data.owner, repo: session.data.repo, title: `${session.data.repo} exploration` });
-    router.push(`/chat/${created.id}`);
+    try {
+      const created = await create.mutateAsync({ owner: session.data.owner, repo: session.data.repo, title: `${session.data.repo} exploration` });
+      router.push(`/chat/${created.id}`);
+    } catch {
+      // The mutation error is shown in conversation history.
+    }
   }
 
   if (session.isLoading) return <div className="grid h-full grid-cols-[220px_1fr_320px] gap-px bg-border"><Skeleton /><Skeleton /><Skeleton /></div>;
   if (session.isError || !session.data) return <div className="p-6"><ErrorState error={session.error} retry={() => void session.refetch()} /></div>;
-  const repositorySessions = sessions.data?.sessions.filter((item) => item.owner === session.data.owner && item.repo === session.data.repo) ?? [session.data];
+  const repositorySessions = sessions.data?.sessions.filter((item) => item.owner === session.data.owner && item.repo === session.data.repo) ?? [{
+    id: session.data.id,
+    userId: session.data.userId,
+    owner: session.data.owner,
+    repo: session.data.repo,
+    title: session.data.title,
+    createdAt: session.data.createdAt,
+    updatedAt: session.data.updatedAt,
+    messageCount: session.data.messages.length,
+  }];
   const chat = <ChatPanel session={session.data} latestAnswer={latestAnswer} pendingQuestion={pendingQuestion} asking={asking} error={askError} onAsk={(question) => void ask(question)} />;
   const inspector = <RetrievalInspector retrieval={retrieval} loading={retrievalLoading} error={retrievalError} />;
 
   if (!desktop) return <div className="h-full min-h-0">{chat}{inspectorOpen ? <div className="fixed inset-x-0 bottom-0 top-28 z-30 border-t border-border shadow-2xl">{inspector}</div> : null}</div>;
   return (
     <PanelGroup direction="horizontal" className="h-full">
-      <Panel defaultSize={18} minSize={14} maxSize={25} collapsible><ConversationHistory sessions={repositorySessions} activeId={sessionId} onCreate={() => void newSession()} creating={create.isPending} /></Panel>
+      <Panel defaultSize={18} minSize={14} maxSize={25} collapsible><ConversationHistory sessions={repositorySessions} activeId={sessionId} onCreate={() => void newSession()} creating={create.isPending} createError={create.error} /></Panel>
       <PanelResizeHandle className="w-px bg-border transition-colors hover:bg-primary/50 focus-visible:bg-primary" />
       <Panel minSize={40}>{chat}</Panel>
       {inspectorOpen ? <><PanelResizeHandle className="w-px bg-border transition-colors hover:bg-primary/50 focus-visible:bg-primary" /><Panel defaultSize={27} minSize={20} maxSize={40} collapsible>{inspector}</Panel></> : null}

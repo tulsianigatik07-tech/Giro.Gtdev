@@ -6,6 +6,7 @@ import { Check, Circle, LoaderCircle, RefreshCcw, TriangleAlert, WifiOff } from 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
 import { clamp } from "@/lib/utils";
 import { useIndexingProgress } from "@/hooks/use-indexing-progress";
 import type { IndexingStage } from "@/types/api";
@@ -18,7 +19,7 @@ const stages: Array<{ id: IndexingStage; label: string }> = [
 
 export function IndexingProgressView({ owner, repo, jobId }: { owner: string; repo: string; jobId?: string }) {
   const router = useRouter();
-  const { progress, connected, disconnected } = useIndexingProgress(`${owner}/${repo}`);
+  const { progress, connected, disconnected, reconnecting, streamError, retry } = useIndexingProgress(`${owner}/${repo}`);
   const current = progress?.stage ?? "queued";
   const currentIndex = stages.findIndex((stage) => stage.id === current);
   const failed = current === "failed";
@@ -31,7 +32,7 @@ export function IndexingProgressView({ owner, repo, jobId }: { owner: string; re
 
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-8 lg:pt-16">
-      <div className="flex items-center gap-2"><Badge className={connected ? "border-primary/30 bg-primary/10 text-primary" : "text-muted-foreground"}>{connected ? "Live" : "Connecting"}</Badge>{disconnected ? <span className="flex items-center gap-1.5 text-xs text-amber-300"><WifiOff className="size-3" />Reconnecting automatically</span> : null}</div>
+      <div className="flex items-center gap-2"><Badge className={connected ? "border-primary/30 bg-primary/10 text-primary" : "text-muted-foreground"}>{connected ? "Live" : reconnecting ? "Reconnecting" : "Connecting"}</Badge>{disconnected ? <span className="flex items-center gap-1.5 text-xs text-amber-300"><WifiOff className="size-3" />{reconnecting ? "Reconnecting automatically" : "Progress stream disconnected"}</span> : null}</div>
       <h1 className="mt-5 font-display text-5xl italic tracking-tight">Indexing {owner}/{repo}</h1>
       <p className="mt-3 text-sm text-muted-foreground">Building repository intelligence. You can safely leave this screen and return.</p>
       <Card className="mt-8 overflow-hidden">
@@ -44,6 +45,7 @@ export function IndexingProgressView({ owner, repo, jobId }: { owner: string; re
           })}
         </ol>
       </Card>
+      {streamError && !reconnecting && !failed ? <div className="mt-4"><ErrorState error={streamError} retry={retry} compact /></div> : null}
       {failed ? <div role="alert" className="mt-4 flex items-start gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-4"><TriangleAlert className="mt-0.5 size-4 text-red-300" /><div className="flex-1"><p className="text-sm font-medium text-red-200">{progress?.message ?? "Indexing could not be completed."}</p><p className="mt-1 text-xs text-red-200/70">Return to repository connection to retry through the supported workflow.</p></div><Button variant="secondary" size="sm" onClick={() => router.push("/repositories/connect")}><RefreshCcw className="size-3.5" />Retry</Button></div> : null}
     </div>
   );

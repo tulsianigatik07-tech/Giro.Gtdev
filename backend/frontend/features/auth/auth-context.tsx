@@ -27,15 +27,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.replace("/login");
   }, [router]);
 
+  const handleUnauthorized = useCallback(() => {
+    sessionStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+    const destination = pathname !== "/login"
+      ? `${pathname}${window.location.search}`
+      : null;
+    router.replace(destination ? `/login?next=${encodeURIComponent(destination)}` : "/login");
+  }, [pathname, router]);
+
   useEffect(() => {
     setToken(sessionStorage.getItem(TOKEN_KEY));
     setReady(true);
   }, []);
 
   useEffect(() => {
-    window.addEventListener("giro:unauthorized", signOut);
-    return () => window.removeEventListener("giro:unauthorized", signOut);
-  }, [signOut]);
+    window.addEventListener("giro:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("giro:unauthorized", handleUnauthorized);
+  }, [handleUnauthorized]);
 
   useEffect(() => {
     if (!ready) return;
@@ -48,7 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await sessionsApi.list(clean);
     sessionStorage.setItem(TOKEN_KEY, clean);
     setToken(clean);
-    router.replace("/dashboard");
+    const requested = new URLSearchParams(window.location.search).get("next");
+    const destination = requested?.startsWith("/") && !requested.startsWith("//")
+      ? requested
+      : "/dashboard";
+    router.replace(destination);
   }, [router]);
 
   const value = useMemo(() => ({ token, ready, signIn, signOut }), [ready, signIn, signOut, token]);
@@ -65,8 +78,9 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const { ready, token } = useAuth();
   if (!ready || !token) {
     return (
-      <div className="grid min-h-screen place-items-center bg-background" aria-label="Loading authentication">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-primary motion-reduce:animate-none" />
+      <div className="mx-auto w-full max-w-6xl space-y-4 p-6" aria-label="Loading authentication">
+        <div className="h-12 w-56 animate-pulse rounded-lg bg-foreground/[0.05] motion-reduce:animate-none" />
+        <div className="h-64 animate-pulse rounded-xl bg-foreground/[0.04] motion-reduce:animate-none" />
       </div>
     );
   }

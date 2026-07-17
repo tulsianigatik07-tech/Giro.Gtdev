@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Clock3, LayoutDashboard, LogOut, MessageSquare, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/error-state";
 import { useAuth } from "@/features/auth/auth-context";
 import { useDeleteSession, useSessions } from "@/hooks/use-sessions";
 import { cn } from "@/lib/utils";
@@ -24,8 +25,12 @@ export function Sidebar() {
   const { sidebarOpen, setSidebarOpen } = useUiStore();
 
   async function deleteSession(id: string) {
-    await remove.mutateAsync(id);
-    if (pathname === `/chat/${id}`) router.push("/dashboard");
+    try {
+      await remove.mutateAsync(id);
+      if (pathname === `/chat/${id}`) router.push("/dashboard");
+    } catch {
+      // The mutation error is rendered below with its request ID.
+    }
   }
 
   return (
@@ -53,6 +58,7 @@ export function Sidebar() {
               </div>
             ))}
             {!isLoading && data?.sessions.length === 0 ? <p className="px-2 py-4 text-xs leading-relaxed text-muted-foreground">Sessions appear here after you open a repository.</p> : null}
+            {remove.isError ? <ErrorState error={remove.error} compact /> : null}
           </div>
         </div>
         <div className="border-t border-border p-3">

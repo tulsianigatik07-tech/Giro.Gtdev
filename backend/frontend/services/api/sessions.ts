@@ -1,9 +1,9 @@
 import { apiRequest } from "./client";
-import type { AskResult, Session } from "@/types/api";
+import type { AskResult, Session, SessionSummary } from "@/types/api";
 
 export const sessionsApi = {
   list(token: string) {
-    return apiRequest<{ sessions: Session[]; count: number }>("/sessions", { method: "GET", token });
+    return apiRequest<{ sessions: SessionSummary[]; count: number }>("/sessions", { method: "GET", token });
   },
   get(token: string, sessionId: string) {
     return apiRequest<Session>(`/sessions/${encodeURIComponent(sessionId)}`, { method: "GET", token });

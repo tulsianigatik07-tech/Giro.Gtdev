@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowUp, Bot, Clock3, LoaderCircle, PanelRight, RotateCcw, User } from "lucide-react";
+import { ArrowUp, Bot, Clock3, LoaderCircle, PanelRight, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { CitationList } from "@/features/retrieval/citation-list";
 import { ConfidenceBadge } from "@/features/retrieval/confidence-badge";
 import { formatDuration } from "@/lib/utils";
@@ -20,7 +21,7 @@ export function ChatPanel({ session, latestAnswer, pendingQuestion, asking, erro
   latestAnswer: LatestAnswer | null;
   pendingQuestion: string | null;
   asking: boolean;
-  error: string | null;
+  error: unknown;
   onAsk(question: string): void;
 }) {
   const [question, setQuestion] = useState("");
@@ -53,7 +54,7 @@ export function ChatPanel({ session, latestAnswer, pendingQuestion, asking, erro
           })}
             {pendingQuestion && !session.messages.some((message) => message.role === "user" && message.content === pendingQuestion) ? <MessageBlock role="user" content={pendingQuestion} /> : null}
             {asking ? <div className="flex gap-3"><Avatar role="assistant" /><div className="flex items-center gap-2 pt-1 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />Retrieving repository evidence…</div></div> : null}
-            {error ? <div role="alert" className="ml-10 rounded-md border border-red-500/20 bg-red-500/5 p-3"><p className="text-sm text-red-200">{error}</p>{pendingQuestion ? <Button variant="ghost" size="sm" className="mt-2" onClick={() => onAsk(pendingQuestion)}><RotateCcw className="size-3.5" />Retry</Button> : null}</div> : null}
+            {error ? <div className="ml-10"><ErrorState error={error} compact retry={pendingQuestion ? () => onAsk(pendingQuestion) : undefined} /></div> : null}
           </div>
         </div>
       </div>
@@ -66,5 +67,6 @@ function Avatar({ role }: { role: "user" | "assistant" }) { return <span classNa
 function MessageBlock({ role, content, children }: { role: "user" | "assistant"; content: string; children?: React.ReactNode }) { return <article className="flex gap-3"><Avatar role={role} /><div className="min-w-0 flex-1">{role === "assistant" ? <MarkdownMessage>{content}</MarkdownMessage> : <p className="pt-0.5 text-sm leading-7 text-foreground">{content}</p>}{children}</div></article>; }
 function AnswerMetadata({ answer, session }: { answer: LatestAnswer; session: Session }) {
   const version = answer.result.citations[0]?.repositoryVersion;
-  return <div className="mt-5 space-y-4 border-t border-border pt-4">{answer.result.metadata.confidence ? <ConfidenceBadge confidence={answer.result.metadata.confidence} /> : null}<div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-muted-foreground"><span className="flex items-center gap-1.5"><Clock3 className="size-3" />{formatDuration(answer.durationMs)}</span><span>{answer.result.metadata.estimatedContextTokens.toLocaleString()} context tokens</span><span>{answer.result.metadata.retrievedFiles} files</span>{version ? <span className="max-w-52 truncate font-mono">version {version}</span> : null}</div><div><h3 className="mb-2 text-xs font-medium">Citations ({answer.result.citations.length})</h3><CitationList citations={answer.result.citations} context={session.selectedContext} /></div></div>;
+  const confidence = answer.result.metadata.confidence;
+  return <div className="mt-5 space-y-4 border-t border-border pt-4">{confidence ? <ConfidenceBadge confidence={confidence} /> : null}{confidence?.level === "low" ? <p role="status" className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">Limited repository evidence supports this answer. Verify the cited files before relying on it.</p> : null}<div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-muted-foreground"><span className="flex items-center gap-1.5"><Clock3 className="size-3" />{formatDuration(answer.durationMs)}</span><span>{answer.result.metadata.estimatedContextTokens.toLocaleString()} context tokens</span><span>{answer.result.metadata.retrievedFiles} files</span>{version ? <span className="max-w-52 truncate font-mono">version {version}</span> : null}</div><div><h3 className="mb-2 text-xs font-medium">Citations ({answer.result.citations.length})</h3><CitationList citations={answer.result.citations} context={session.selectedContext} /></div></div>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Github, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,18 +25,27 @@ export function ConnectRepositoryForm() {
   const connect = useConnectRepository();
   const [url, setUrl] = useState("");
   const [validation, setValidation] = useState<string | null>(null);
+  const submissionInFlight = useRef(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const issue = validateGitHubUrl(url);
     setValidation(issue);
-    if (issue) return;
+    if (issue || submissionInFlight.current) return;
+    submissionInFlight.current = true;
     try {
       const result = await connect.mutateAsync(url.trim());
       const [owner, repo] = result.repositoryId.split("/");
-      router.push(`/repositories/${encodeURIComponent(owner ?? "")}/${encodeURIComponent(repo ?? "")}/indexing?jobId=${encodeURIComponent(result.jobId)}`);
+      const repositoryPath = `/repositories/${encodeURIComponent(owner ?? "")}/${encodeURIComponent(repo ?? "")}`;
+      if (result.status === "already_indexed") {
+        router.push(repositoryPath);
+        return;
+      }
+      router.push(`${repositoryPath}/indexing?jobId=${encodeURIComponent(result.jobId ?? "")}`);
     } catch {
       // The mutation error is rendered below.
+    } finally {
+      submissionInFlight.current = false;
     }
   }
 

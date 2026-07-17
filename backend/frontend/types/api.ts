@@ -65,21 +65,26 @@ export interface RepositorySummary {
   repositoryVersion: string;
   generatedAt: string;
   purpose: string;
-  languages: RepositorySummaryItem[];
-  frameworks: RepositorySummaryItem[];
-  packageManagers: RepositorySummaryItem[];
-  applications: RepositorySummaryItem[];
-  libraries: RepositorySummaryItem[];
-  services: RepositorySummaryItem[];
-  modules: RepositorySummaryItem[];
-  entrypoints: RepositorySummaryItem[];
-  importantDirectories: RepositorySummaryItem[];
-  configFiles: RepositorySummaryItem[];
-  apiSurface: RepositorySummaryItem[];
-  backgroundWorkers: RepositorySummaryItem[];
-  dataStores: RepositorySummaryItem[];
-  authentication: RepositorySummaryItem[];
-  dependencyOverview: {
+  languages?: RepositorySummaryItem[];
+  frameworks?: RepositorySummaryItem[];
+  packageManagers?: RepositorySummaryItem[];
+  applications?: RepositorySummaryItem[];
+  libraries?: RepositorySummaryItem[];
+  services?: RepositorySummaryItem[];
+  modules?: RepositorySummaryItem[];
+  entrypoints?: RepositorySummaryItem[];
+  importantDirectories?: RepositorySummaryItem[];
+  configFiles?: RepositorySummaryItem[];
+  apiSurface?: RepositorySummaryItem[];
+  backgroundWorkers?: RepositorySummaryItem[];
+  dataStores?: RepositorySummaryItem[];
+  authentication?: RepositorySummaryItem[];
+  retrieval?: RepositorySummaryItem[];
+  indexing?: RepositorySummaryItem[];
+  testing?: RepositorySummaryItem[];
+  build?: RepositorySummaryItem[];
+  deployment?: RepositorySummaryItem[];
+  dependencyOverview?: {
     totalNodes: number;
     totalEdges: number;
     centralModules: string[];
@@ -90,8 +95,8 @@ export interface RepositorySummary {
 
 export interface ConnectRepositoryResult {
   repositoryId: string;
-  jobId: string;
-  status: "queued";
+  jobId?: string;
+  status: "queued" | "already_indexed";
 }
 
 export type IndexingJobStatus =
@@ -188,6 +193,17 @@ export interface Session {
   updatedAt: string;
   messages: SessionMessage[];
   selectedContext: SelectedContextChunk[];
+}
+
+export interface SessionSummary {
+  id: string;
+  userId: string;
+  owner: string;
+  repo: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
 }
 
 export type ConfidenceLevel = "high" | "medium" | "low" | "insufficient";

@@ -32,4 +32,26 @@ describe("repository connection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect and index" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/repositories/acme/platform/indexing?jobId=job-1"));
   });
+
+  it("opens an already indexed healthy repository without an indexing redirect", async () => {
+    mutateAsync.mockResolvedValue({ repositoryId: "acme/platform", status: "already_indexed" });
+    render(<ConnectRepositoryForm />);
+    fireEvent.change(screen.getByLabelText("GitHub repository URL"), { target: { value: "https://github.com/acme/platform" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect and index" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/repositories/acme/platform"));
+  });
+
+  it("prevents duplicate connection submissions while the first is pending", async () => {
+    let finish!: (value: unknown) => void;
+    mutateAsync.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    render(<ConnectRepositoryForm />);
+    fireEvent.change(screen.getByLabelText("GitHub repository URL"), { target: { value: "https://github.com/acme/platform" } });
+    const form = screen.getByRole("button", { name: "Connect and index" }).closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    fireEvent.submit(form as HTMLFormElement);
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+    finish({ repositoryId: "acme/platform", jobId: "job-1", status: "queued" });
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/repositories/acme/platform/indexing?jobId=job-1"));
+  });
 });
