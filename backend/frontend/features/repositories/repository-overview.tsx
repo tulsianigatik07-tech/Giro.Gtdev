@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, FileCode2, LoaderCircle, MessageSquare, Play, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/card";
@@ -17,13 +16,21 @@ import { useCreateSession, useSessions } from "@/hooks/use-sessions";
 import { formatDate } from "@/lib/utils";
 import type { RepositorySummaryItem } from "@/types/api";
 
+const REPOSITORY_TAB_IDS = ["summary", "architecture", "files", "symbols", "dependencies", "sessions", "settings"] as const;
+type RepositoryTab = (typeof REPOSITORY_TAB_IDS)[number];
+
+function repositoryTab(value: string | null): RepositoryTab {
+  return REPOSITORY_TAB_IDS.find((tab) => tab === value) ?? "summary";
+}
+
 export function RepositoryOverview({ owner, repo }: { owner: string; repo: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const summary = useRepository(owner, repo);
   const repositories = useRepositories();
   const create = useCreateSession();
   const sessions = useSessions();
-  const [activeTab, setActiveTab] = useState("summary");
+  const activeTab = repositoryTab(searchParams.get("tab"));
   const indexed = repositories.data?.repositories.find((item) => item.owner === owner && item.repo === repo);
   const repositoryStatus = getRepositoryStatus(indexed?.status);
   const details = summary.data?.summary;
@@ -71,7 +78,16 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
     group("Circular dependencies", details?.dependencyOverview?.circularDependencies?.map((cycle) => cycle.join(" → ")) ?? []),
   ].filter(hasItems);
   const repositorySessions = sessions.data?.sessions.filter((session) => session.owner === owner && session.repo === repo) ?? [];
-  const tabs = ["summary", "architecture", "files", "symbols", "dependencies", "sessions", "settings"].map((id) => ({ id, label: id[0]?.toUpperCase() + id.slice(1), panelId: `repository-${id}-panel` }));
+  const tabs = REPOSITORY_TAB_IDS.map((id) => ({ id, label: id[0]?.toUpperCase() + id.slice(1), panelId: `repository-${id}-panel` }));
+
+  function selectTab(tab: string) {
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    nextSearchParams.set("tab", repositoryTab(tab));
+    router.push(
+      `/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}?${nextSearchParams.toString()}`,
+      { scroll: false },
+    );
+  }
 
   return (
     <div className="layout-standard layout-gutter py-10 max-[820px]:py-8">
@@ -94,7 +110,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
       {create.isError ? <div className="mt-4"><ErrorState error={create.error} compact /></div> : null}
       {summary.isError ? <div className="mt-4"><ErrorState error={summary.error} retry={() => void summary.refetch()} compact /></div> : null}
 
-      <div className="mt-7"><Tabs label="Repository sections" items={tabs} value={activeTab} onValueChange={setActiveTab} /></div>
+      <div className="mt-7"><Tabs label="Repository sections" items={tabs} value={activeTab} onValueChange={selectTab} /></div>
 
       <div id={`repository-${activeTab}-panel`} role="tabpanel" className="mt-7">
         {activeTab === "summary" ? <div className="grid gap-7 desktop:grid-cols-[minmax(0,760px)_320px]">
