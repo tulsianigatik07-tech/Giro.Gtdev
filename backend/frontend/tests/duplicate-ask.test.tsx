@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatWorkspace } from "@/features/chat/chat-workspace";
 import { citation, session } from "./fixtures";
 
@@ -12,8 +12,15 @@ const inspect = vi.fn().mockResolvedValue({
   stats: { semanticResults: 0, keywordResults: 0, symbolResults: 0, graphBoosted: 0, returned: 0 },
 });
 const refetch = vi.fn().mockResolvedValue(undefined);
+const routerPush = vi.fn();
+const routerReplace = vi.fn();
+let currentSearchParams = "";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => `/chat/${session.id}`,
+  useRouter: () => ({ push: routerPush, replace: routerReplace }),
+  useSearchParams: () => new URLSearchParams(currentSearchParams),
+}));
 vi.mock("@/features/auth/auth-context", () => ({ useAuth: () => ({ token: "token" }) }));
 vi.mock("@/hooks/use-sessions", () => ({
   sessionKeys: { all: ["sessions"] },
@@ -30,6 +37,13 @@ vi.mock("@/services/api/sessions", () => ({ sessionsApi: { ask: (...args: unknow
 vi.mock("@/services/api/retrieval", () => ({ retrievalApi: { inspect: (...args: unknown[]) => inspect(...args) } }));
 
 describe("session ask integration", () => {
+  beforeEach(() => {
+    ask.mockReset();
+    routerPush.mockReset();
+    routerReplace.mockReset();
+    currentSearchParams = "";
+  });
+
   it("prevents duplicate ask requests while the first request is in flight", async () => {
     inspect.mockResolvedValue({
       query: "Where does the application start?",
@@ -65,5 +79,29 @@ describe("session ask integration", () => {
       metadata: { retrievedFiles: 1, usedSummary: false, usedDependencyGraph: false, retrievalSourceCounts: { semantic: 1, keyword: 0, symbol: 0, graph: 0, fileSearch: 0 }, estimatedContextTokens: 100 },
     });
     await waitFor(() => expect(refetch).toHaveBeenCalled());
+  });
+
+  it("adopts a URL draft, preserves from, and removes draft without asking", async () => {
+    const from = "/repositories/acme/platform?tab=architecture";
+    currentSearchParams = new URLSearchParams({
+      draft: "Explain how execution begins at src/index.ts.",
+      from,
+    }).toString();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(<QueryClientProvider client={client}><ChatWorkspace sessionId={session.id} /></QueryClientProvider>);
+
+    expect(screen.getByLabelText("Ask a repository question")).toHaveValue("Explain how execution begins at src/index.ts.");
+    expect(ask).not.toHaveBeenCalled();
+    expect(routerReplace).toHaveBeenCalledTimes(1);
+    expect(routerReplace).toHaveBeenCalledWith(
+      `/chat/${session.id}?${new URLSearchParams({ from }).toString()}`,
+      { scroll: false },
+    );
+
+    view.unmount();
+    currentSearchParams = new URLSearchParams({ from }).toString();
+    render(<QueryClientProvider client={client}><ChatWorkspace sessionId={session.id} /></QueryClientProvider>);
+    expect(screen.getByLabelText("Ask a repository question")).toHaveValue("");
+    expect(ask).not.toHaveBeenCalled();
   });
 });

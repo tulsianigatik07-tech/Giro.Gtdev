@@ -63,7 +63,7 @@ export function AskGiroDialog({
         inFlight.current = false;
         return;
       }
-      if (openRef.current) router.push(chatHandoffUrl(session.id, target));
+      if (openRef.current) router.push(chatHandoffUrl(session.id, owner, repo, target));
       return;
     }
 
@@ -73,7 +73,7 @@ export function AskGiroDialog({
         repo,
         title: askGiroSessionTitle(target),
       });
-      if (openRef.current) router.push(chatHandoffUrl(session.id, target));
+      if (openRef.current) router.push(chatHandoffUrl(session.id, owner, repo, target));
     } catch {
       inFlight.current = false;
     }
@@ -137,23 +137,45 @@ export function askGiroSessionTitle(target: AskGiroTarget): string {
   return target.result.symbol ?? target.result.filePath;
 }
 
-export function chatHandoffUrl(sessionId: string, target: AskGiroTarget): string {
-  const params = new URLSearchParams();
+export function askGiroDraft(target: AskGiroTarget): string {
+  if (target.kind === "indexed-evidence") {
+    if (target.result.symbol) return `Explain how ${target.result.symbol} in ${target.result.filePath} works.`;
+    return `Explain the code in ${target.result.filePath}, lines ${target.result.startLine}-${target.result.endLine}.`;
+  }
+
+  if (target.item.category === "entrypoints" && target.item.path) {
+    return `Explain how execution begins at ${target.item.path}.`;
+  }
+  if (["centralModules", "dependencyHotspots", "circularDependencies"].includes(target.item.category)) {
+    return `Explain why ${target.item.name} is important.`;
+  }
+  if (target.item.path) return `Explain how ${target.item.name} in ${target.item.path} works.`;
+  return `Explain why ${target.item.name} is important.`;
+}
+
+export function chatHandoffUrl(sessionId: string, owner: string, repo: string, target: AskGiroTarget): string {
+  const originParams = new URLSearchParams();
+  const repositoryPath = `/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  let originPath = repositoryPath;
   if (target.kind === "repository-item") {
     if (target.location.kind === "explorer") {
-      params.set("source", "repository-explorer");
-      params.set("tab", target.location.tab);
-      params.set("category", target.item.category);
-      params.set("item", target.item.key);
+      originParams.set("tab", target.location.tab);
+      originParams.set("category", target.item.category);
+      originParams.set("item", target.item.key);
     } else {
-      params.set("source", "repository-search");
-      params.set("q", target.location.query);
-      params.set("result", target.location.resultKey);
+      originPath = `${repositoryPath}/search`;
+      originParams.set("q", target.location.query);
+      originParams.set("result", target.location.resultKey);
     }
   } else {
-    params.set("source", "repository-search");
-    params.set("q", target.query);
-    params.set("result", target.resultKey);
+    originPath = `${repositoryPath}/search`;
+    originParams.set("q", target.query);
+    originParams.set("result", target.resultKey);
   }
+  const originQuery = originParams.toString();
+  const params = new URLSearchParams({
+    draft: askGiroDraft(target),
+    from: `${originPath}${originQuery ? `?${originQuery}` : ""}`,
+  });
   return `/chat/${encodeURIComponent(sessionId)}?${params.toString()}`;
 }

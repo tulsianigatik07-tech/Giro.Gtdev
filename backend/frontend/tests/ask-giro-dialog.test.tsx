@@ -3,6 +3,7 @@ import { useState } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AskGiroDialog,
+  askGiroDraft,
   askGiroSessionTitle,
   chatHandoffUrl,
   type AskGiroTarget,
@@ -120,7 +121,7 @@ describe("Ask Giro session chooser", () => {
 
     expect(mocks.create.mutateAsync).not.toHaveBeenCalled();
     expect(mocks.routerPush).toHaveBeenCalledTimes(1);
-    expect(mocks.routerPush).toHaveBeenCalledWith(chatHandoffUrl(session.id, target));
+    expect(mocks.routerPush).toHaveBeenCalledWith(chatHandoffUrl(session.id, "acme", "platform", target));
   });
 
   it("creates one repository-scoped session and navigates once after success", async () => {
@@ -137,7 +138,7 @@ describe("Ask Giro session chooser", () => {
     expect(mocks.routerPush).not.toHaveBeenCalled();
     await act(async () => resolveCreate(session));
     expect(mocks.routerPush).toHaveBeenCalledTimes(1);
-    expect(mocks.routerPush).toHaveBeenCalledWith(chatHandoffUrl(session.id, target));
+    expect(mocks.routerPush).toHaveBeenCalledWith(chatHandoffUrl(session.id, "acme", "platform", target));
   });
 
   it("keeps the dialog open and announces a session creation failure", async () => {
@@ -174,11 +175,30 @@ describe("Ask Giro session chooser", () => {
       },
     };
 
-    const url = chatHandoffUrl("session-2", evidenceTarget);
+    const url = chatHandoffUrl("session-2", "acme", "platform", evidenceTarget);
     expect(askGiroSessionTitle(evidenceTarget)).toBe("authenticate");
-    expect(url).toContain("source=repository-search");
-    expect(url).toContain("q=authentication");
-    expect(url).toContain("result=evidence%3Aauth-chunk");
+    expect(url).toContain("draft=Explain+how+authenticate+in+src%2Fauth.ts+works.");
+    expect(url).toContain("from=%2Frepositories%2Facme%2Fplatform%2Fsearch%3Fq%3Dauthentication%26result%3Devidence%253Aauth-chunk");
     expect(url).not.toContain("sensitive");
+  });
+
+  it("generates drafts only from selected item fields", () => {
+    expect(askGiroDraft(target)).toBe("Explain how execution begins at src/index.ts.");
+    expect(askGiroDraft({
+      kind: "indexed-evidence",
+      query: "startup",
+      resultKey: "evidence:start",
+      result: {
+        repository: "acme/platform",
+        filePath: "src/start.ts",
+        language: "typescript",
+        content: "bootstrap();",
+        startLine: 12,
+        endLine: 18,
+        score: 0.7,
+        source: "semantic",
+        signals: { semantic: 0.7 },
+      },
+    })).toBe("Explain the code in src/start.ts, lines 12-18.");
   });
 });

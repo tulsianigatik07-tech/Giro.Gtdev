@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Panel, PanelGroup } from "react-resizable-panels";
 import { useQueryClient } from "@tanstack/react-query";
 import { List, PanelRight } from "lucide-react";
@@ -26,6 +26,10 @@ import { ConversationHistory } from "./conversation-history";
 
 export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchParamString = searchParams.toString();
+  const draftParameter = searchParams.get("draft");
   const client = useQueryClient();
   const { token } = useAuth();
   const session = useSession(sessionId);
@@ -41,6 +45,8 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   const chatView = useUiStore((state) => state.chatView);
   const setChatView = useUiStore((state) => state.setChatView);
   const [asking, setAsking] = useState(false);
+  const [composerQuestion, setComposerQuestion] = useState("");
+  const [draftFocusPending, setDraftFocusPending] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [latestAnswer, setLatestAnswer] = useState<LatestAnswer | null>(null);
   const [retrieval, setRetrieval] = useState<HybridRetrievalResult | null>(null);
@@ -50,6 +56,19 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   const [layout, setLayout] = useState<"wide" | "split" | "tablet" | "mobile">("mobile");
   const [selectedEvidencePath, setSelectedEvidencePath] = useState<string | null>(null);
   const askInFlight = useRef(false);
+  const adoptedDraftRef = useRef<string | null>(null);
+  const initialDraft = draftParameter && adoptedDraftRef.current !== draftParameter ? draftParameter : undefined;
+
+  const removeAdoptedDraft = useCallback(() => {
+    if (!draftParameter || adoptedDraftRef.current === draftParameter) return;
+    adoptedDraftRef.current = draftParameter;
+    setDraftFocusPending(true);
+    const nextSearchParams = new URLSearchParams(searchParamString);
+    nextSearchParams.delete("draft");
+    const suffix = nextSearchParams.toString();
+    router.replace(`${pathname}${suffix ? `?${suffix}` : ""}`, { scroll: false });
+  }, [draftParameter, pathname, router, searchParamString]);
+  const clearDraftFocus = useCallback(() => setDraftFocusPending(false), []);
 
   useEffect(() => {
     const update = () => setLayout(window.innerWidth >= 1400 ? "wide" : window.innerWidth >= 1081 ? "split" : window.innerWidth >= 821 ? "tablet" : "mobile");
@@ -113,7 +132,7 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   const indexedRepository = repositories.data?.repositories.find((item) => item.owner === session.data.owner && item.repo === session.data.repo);
   const repositoryStatus = getRepositoryStatus(indexedRepository?.status);
   const blockedReason = repositories.isLoading ? "Checking repository readiness…" : repositoryStatus.ready ? undefined : `${repositoryStatus.label} repository. Repository intelligence must be ready before asking questions.`;
-  const chat = <ChatPanel session={session.data} summary={repositorySummary.data?.summary} latestAnswer={latestAnswer} pendingQuestion={pendingQuestion} asking={asking} error={askError} blockedReason={blockedReason} selectedEvidencePath={selectedEvidencePath} onSelectEvidence={setSelectedEvidencePath} onAsk={(question) => void ask(question)} />;
+  const chat = <ChatPanel session={session.data} summary={repositorySummary.data?.summary} latestAnswer={latestAnswer} pendingQuestion={pendingQuestion} asking={asking} error={askError} blockedReason={blockedReason} initialDraft={initialDraft} composerValue={composerQuestion} focusComposer={draftFocusPending} selectedEvidencePath={selectedEvidencePath} onSelectEvidence={setSelectedEvidencePath} onComposerChange={setComposerQuestion} onComposerFocused={clearDraftFocus} onDraftAdopted={removeAdoptedDraft} onAsk={(question) => void ask(question)} />;
   const inspector = <RetrievalInspector retrieval={retrieval} loading={retrievalLoading} error={retrievalError} selectedPath={selectedEvidencePath} onSelectPath={setSelectedEvidencePath} onClose={() => { setInspectorOpen(false); if (layout === "mobile") setChatView("conversation"); }} />;
   async function deleteSession(id: string) {
     await remove.mutateAsync(id);

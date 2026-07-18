@@ -28,6 +28,34 @@ describe("chat page", () => {
     expect(screen.getByText(/Repository intelligence must be ready/)).toBeInTheDocument();
   });
 
+  it("adopts a repository draft once without submitting it", () => {
+    const onAsk = vi.fn();
+    const onDraftAdopted = vi.fn();
+    const props = { session, latestAnswer: null, pendingQuestion: null, asking: false, error: null, initialDraft: "Explain how authenticate works.", onDraftAdopted, onAsk };
+    const view = render(<ChatPanel {...props} />);
+    const composer = screen.getByLabelText("Ask a repository question");
+    expect(composer).toHaveValue("Explain how authenticate works.");
+    expect(composer).toHaveFocus();
+    expect(screen.getByRole("status")).toHaveTextContent("Repository draft inserted into the composer.");
+    expect(onDraftAdopted).toHaveBeenCalledTimes(1);
+    expect(onAsk).not.toHaveBeenCalled();
+
+    view.rerender(<ChatPanel {...props} />);
+    expect(onDraftAdopted).toHaveBeenCalledTimes(1);
+    expect(composer).toHaveValue("Explain how authenticate works.");
+  });
+
+  it("never overwrites text already entered in the composer", () => {
+    const onDraftAdopted = vi.fn();
+    const baseProps = { session, latestAnswer: null, pendingQuestion: null, asking: false, error: null, onAsk: vi.fn() };
+    const view = render(<ChatPanel {...baseProps} />);
+    const composer = screen.getByLabelText("Ask a repository question");
+    fireEvent.change(composer, { target: { value: "My existing question" } });
+    view.rerender(<ChatPanel {...baseProps} initialDraft="Repository handoff draft" onDraftAdopted={onDraftAdopted} />);
+    expect(composer).toHaveValue("My existing question");
+    expect(onDraftAdopted).not.toHaveBeenCalled();
+  });
+
   it("renders historical assistant messages when confidence metadata is absent", () => {
     const historical = { ...session, messages: [{ id: "a-old", role: "assistant" as const, content: "Historical grounded answer.", citations: [citation], createdAt: "2026-07-16T00:00:00Z" }] };
     render(<ChatPanel session={historical} latestAnswer={null} pendingQuestion={null} asking={false} error={null} onAsk={vi.fn()} />);

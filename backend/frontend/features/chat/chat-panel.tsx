@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowDown, ArrowUp, Clock3, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
@@ -17,7 +17,7 @@ export interface LatestAnswer {
   durationMs: number;
 }
 
-export function ChatPanel({ session, summary, latestAnswer, pendingQuestion, asking, error, blockedReason, selectedEvidencePath, onSelectEvidence, onAsk }: {
+export function ChatPanel({ session, summary, latestAnswer, pendingQuestion, asking, error, blockedReason, initialDraft, composerValue, focusComposer, selectedEvidencePath, onSelectEvidence, onComposerChange, onComposerFocused, onDraftAdopted, onAsk }: {
   session: Session;
   summary?: RepositorySummary;
   latestAnswer: LatestAnswer | null;
@@ -25,16 +25,53 @@ export function ChatPanel({ session, summary, latestAnswer, pendingQuestion, ask
   asking: boolean;
   error: unknown;
   blockedReason?: string;
+  initialDraft?: string;
+  composerValue?: string;
+  focusComposer?: boolean;
   selectedEvidencePath?: string | null;
   onSelectEvidence?(path: string): void;
+  onComposerChange?(value: string): void;
+  onComposerFocused?(): void;
+  onDraftAdopted?(): void;
   onAsk(question: string): void;
 }) {
-  const [question, setQuestion] = useState("");
+  const [internalQuestion, setInternalQuestion] = useState("");
+  const question = composerValue ?? internalQuestion;
+  const [draftAnnouncement, setDraftAnnouncement] = useState("");
   const [showJump, setShowJump] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const questionRef = useRef(question);
+  const handledDraftRef = useRef<string | null>(null);
   const stickToBottom = useRef(true);
   const latestAssistantIndex = session.messages.map((message) => message.role).lastIndexOf("assistant");
   const prompts = useMemo(() => repositoryPrompts(session.repo, summary), [session.repo, summary]);
+
+  useEffect(() => {
+    questionRef.current = question;
+  }, [question]);
+
+  useEffect(() => {
+    if (!focusComposer) return;
+    textareaRef.current?.focus();
+    onComposerFocused?.();
+  }, [focusComposer, onComposerFocused]);
+
+  const updateQuestion = useCallback((value: string) => {
+    questionRef.current = value;
+    if (onComposerChange) onComposerChange(value);
+    else setInternalQuestion(value);
+  }, [onComposerChange]);
+
+  useEffect(() => {
+    if (!initialDraft || handledDraftRef.current === initialDraft) return;
+    handledDraftRef.current = initialDraft;
+    if (questionRef.current) return;
+    updateQuestion(initialDraft);
+    setDraftAnnouncement("Repository draft inserted into the composer.");
+    textareaRef.current?.focus();
+    onDraftAdopted?.();
+  }, [initialDraft, onDraftAdopted, updateQuestion]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -48,7 +85,7 @@ export function ChatPanel({ session, summary, latestAnswer, pendingQuestion, ask
     event.preventDefault();
     const clean = question.trim();
     if (!clean || asking) return;
-    setQuestion("");
+    updateQuestion("");
     onAsk(clean);
   }
 
@@ -77,7 +114,8 @@ export function ChatPanel({ session, summary, latestAnswer, pendingQuestion, ask
       </div>
       {showJump ? <Button variant="secondary" size="sm" className="absolute bottom-28 left-1/2 z-10 -translate-x-1/2 shadow-raised motion-reduce:transform-none" onClick={jumpToLatest}><ArrowDown className="size-3.5" />Jump to latest</Button> : null}
       <div className="shrink-0 bg-background px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
-        <form onSubmit={submit} className="layout-reading rounded-panel border border-border bg-panel p-3 shadow-raised transition-[border-color,box-shadow] duration-[150ms] focus-within:border-border-focus focus-within:ring-2 focus-within:ring-border-focus focus-within:ring-offset-2 focus-within:ring-offset-background"><label htmlFor="chat-question" className="sr-only">Ask a repository question</label><div className="flex items-end gap-2"><Textarea id="chat-question" rows={1} value={question} disabled={Boolean(blockedReason)} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={blockedReason ?? "Ask about this repository…"} className="max-h-24 min-h-10 flex-1 resize-none border-0 bg-transparent px-1 py-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" /><Button variant="accent" type="submit" size="icon-sm" disabled={asking || Boolean(blockedReason) || !question.trim()} aria-label="Send question"><ArrowUp className="size-4" /></Button></div><div className="mt-2 flex items-center justify-between gap-3 type-metadata text-muted-foreground"><span className="truncate">{blockedReason ?? `${session.owner}/${session.repo}`}</span>{!blockedReason ? <span className="shrink-0">SHIFT+ENTER NEW LINE</span> : null}</div></form>
+        <p role="status" aria-live="polite" className="sr-only">{draftAnnouncement}</p>
+        <form onSubmit={submit} className="layout-reading rounded-panel border border-border bg-panel p-3 shadow-raised transition-[border-color,box-shadow] duration-[150ms] focus-within:border-border-focus focus-within:ring-2 focus-within:ring-border-focus focus-within:ring-offset-2 focus-within:ring-offset-background"><label htmlFor="chat-question" className="sr-only">Ask a repository question</label><div className="flex items-end gap-2"><Textarea ref={textareaRef} id="chat-question" rows={1} value={question} disabled={Boolean(blockedReason)} onChange={(event) => updateQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={blockedReason ?? "Ask about this repository…"} className="max-h-24 min-h-10 flex-1 resize-none border-0 bg-transparent px-1 py-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" /><Button variant="accent" type="submit" size="icon-sm" disabled={asking || Boolean(blockedReason) || !question.trim()} aria-label="Send question"><ArrowUp className="size-4" /></Button></div><div className="mt-2 flex items-center justify-between gap-3 type-metadata text-muted-foreground"><span className="truncate">{blockedReason ?? `${session.owner}/${session.repo}`}</span>{!blockedReason ? <span className="shrink-0">SHIFT+ENTER NEW LINE</span> : null}</div></form>
       </div>
     </section>
   );
