@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RepositoryOverview } from "@/features/repositories/repository-overview";
+import { repositoryExplorerItemKey } from "@/lib/repository-explorer";
 import { repository } from "./fixtures";
 
 const routerPush = vi.fn();
@@ -54,7 +55,7 @@ describe("repository page", () => {
     expect(screen.getAllByRole("tab")).toHaveLength(7);
     expect(screen.getByText("A repository intelligence platform")).toBeInTheDocument();
     expect(screen.getByText(/job-1:1/)).toBeInTheDocument();
-    expect(screen.getByText("TypeScript")).toBeInTheDocument();
+    expect(screen.getAllByText("TypeScript")).not.toHaveLength(0);
     expect(screen.getByText("src/index.ts")).toBeInTheDocument();
   });
 
@@ -86,5 +87,17 @@ describe("repository page", () => {
       "/repositories/acme/platform?view=compact&tab=symbols",
       { scroll: false },
     );
+  });
+
+  it("restores an explorer item from category and item URL parameters", () => {
+    const entrypoint = { name: "server", path: "src/index.ts", kind: "server" };
+    currentSearchParams = new URLSearchParams({
+      tab: "architecture",
+      category: "entrypoints",
+      item: repositoryExplorerItemKey("entrypoints", entrypoint),
+    }).toString();
+    render(<RepositoryOverview owner="acme" repo="platform" />);
+    expect(screen.getByRole("option", { name: "Entry points: server, src/index.ts" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("server details")).toHaveTextContent("src/index.ts");
   });
 });
