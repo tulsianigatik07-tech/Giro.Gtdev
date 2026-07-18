@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { FileCode2 } from "lucide-react";
 import { ListRow } from "@/components/ui/data-display";
 import { cn } from "@/lib/utils";
@@ -9,14 +9,23 @@ export function RepositoryExplorerList({
   selectedKey,
   onSelect,
   label,
+  restoreFocus = false,
 }: {
   categories: RepositoryExplorerCategory[];
   selectedKey?: string;
   onSelect(item: RepositoryExplorerItem): void;
   label: string;
+  restoreFocus?: boolean;
 }) {
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const items = categories.flatMap((category) => category.items);
+  const focusKey = selectedKey ?? items[0]?.key;
+
+  useEffect(() => {
+    if (!restoreFocus || !selectedKey) return;
+    const selectedIndex = items.findIndex((item) => item.key === selectedKey);
+    if (selectedIndex >= 0) buttons.current[selectedIndex]?.focus();
+  }, [items, restoreFocus, selectedKey]);
 
   function moveSelection(currentItem: RepositoryExplorerItem, destination: "previous" | "next" | "first" | "last") {
     const currentIndex = items.findIndex((item) => item.key === currentItem.key);
@@ -52,7 +61,7 @@ export function RepositoryExplorerList({
                     role="option"
                     aria-selected={selected}
                     aria-label={`${item.categoryLabel}: ${item.name}${item.path ? `, ${item.path}` : ""}`}
-                    tabIndex={selected ? 0 : -1}
+                    tabIndex={item.key === focusKey ? 0 : -1}
                     onClick={() => onSelect(item)}
                     onKeyDown={(event) => {
                       if (event.key === "ArrowUp") { event.preventDefault(); moveSelection(item, "previous"); }

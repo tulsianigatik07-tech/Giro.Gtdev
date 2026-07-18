@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -10,15 +11,31 @@ import { ErrorState } from "@/components/ui/error-state";
 import { SearchInput } from "@/components/ui/form-controls";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { LoadingState } from "@/components/ui/data-display";
+import {
+  filterIndexedEvidence,
+  indexedEvidenceResultKey,
+  normalizeEvidenceFilter,
+  RepositorySearchResults,
+  repositoryIntelligenceResultKey,
+  type EvidenceFilter,
+} from "@/features/repositories/repository-search-results";
 import { MAX_REPOSITORY_SEARCH_QUERY_LENGTH, useRepositorySearch } from "@/hooks/use-repository-search";
+import { repositoryKeys } from "@/hooks/use-repositories";
+import { extractRepositorySearchCategories, type RepositoryExplorerItem } from "@/lib/repository-explorer";
+import type { RepositorySummary, RetrievalResult } from "@/types/api";
 
 export function RepositorySearch({ owner, repo }: { owner: string; repo: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const submittedQuery = searchParams.get("q") ?? "";
   const [draft, setDraft] = useState(submittedQuery);
   const search = useRepositorySearch(owner, repo, submittedQuery);
   const repositoryPath = `/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const cachedSummary = queryClient.getQueryData<{ summary: RepositorySummary }>(repositoryKeys.summary(owner, repo))?.summary;
+  const intelligence = extractRepositorySearchCategories(cachedSummary, search.query);
+  const evidenceFilter = normalizeEvidenceFilter(searchParams.get("kind"));
+  const evidence = filterIndexedEvidence(search.data?.results ?? [], evidenceFilter);
 
   useEffect(() => setDraft(submittedQuery), [submittedQuery]);
 
@@ -28,8 +45,30 @@ export function RepositorySearch({ owner, repo }: { owner: string; repo: string 
     const normalizedDraft = draft.trim();
     if (normalizedDraft) nextSearchParams.set("q", normalizedDraft);
     else nextSearchParams.delete("q");
+    nextSearchParams.delete("result");
     const suffix = nextSearchParams.toString();
     router.push(`${repositoryPath}/search${suffix ? `?${suffix}` : ""}`, { scroll: false });
+  }
+
+  function updateResult(result: string) {
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    nextSearchParams.set("result", result);
+    router.push(`${repositoryPath}/search?${nextSearchParams.toString()}`, { scroll: false });
+  }
+
+  function updateFilter(filter: EvidenceFilter) {
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    nextSearchParams.set("kind", filter);
+    nextSearchParams.delete("result");
+    router.push(`${repositoryPath}/search?${nextSearchParams.toString()}`, { scroll: false });
+  }
+
+  function selectIntelligence(item: RepositoryExplorerItem) {
+    updateResult(repositoryIntelligenceResultKey(item));
+  }
+
+  function selectEvidence(item: RetrievalResult) {
+    updateResult(indexedEvidenceResultKey(item));
   }
 
   const reconnect = search.repositoryStatus.label === "Failed" || search.repositoryStatus.label === "Disconnected";
@@ -63,7 +102,7 @@ export function RepositorySearch({ owner, repo }: { owner: string; repo: string 
         {!search.checkingReadiness && search.error ? <ErrorState error={search.error} retry={search.retry ? () => void search.retry?.() : undefined} /> : null}
         {!search.checkingReadiness && !search.error && !search.ready ? <InlineAlert tone={search.repositoryStatus.label === "Failed" ? "danger" : "warning"}><div className="flex flex-wrap items-center gap-3"><div className="min-w-0 flex-1"><p className="type-compact-strong">{search.repositoryStatus.label} repository</p><p className="mt-1">{search.repositoryStatus.label === "Failed" ? "Indexing failed. Reconnect the repository before searching." : search.repositoryStatus.label === "Stale" ? "Repository evidence is stale. Reindex before searching." : "Repository intelligence must be ready before searching."}</p></div><Button asChild variant="secondary" size="sm"><Link href={readinessHref}>{readinessAction}<ArrowRight className="size-3.5" /></Link></Button></div></InlineAlert> : null}
         {!search.checkingReadiness && search.ready && search.loading ? <LoadingState label={`Searching ${owner}/${repo}…`} /> : null}
-        {!search.checkingReadiness && search.ready && search.success ? <InlineAlert tone="info">Repository search completed.</InlineAlert> : null}
+        {!search.checkingReadiness && search.ready && search.success ? <RepositorySearchResults intelligence={intelligence} evidence={evidence} selectedResult={searchParams.get("result")} filter={evidenceFilter} restoreFocus={Boolean(searchParams.get("result"))} onSelectIntelligence={selectIntelligence} onSelectEvidence={selectEvidence} onFilterChange={updateFilter} /> : null}
         {!search.checkingReadiness && search.ready && search.idle && !search.query ? <EmptyState icon={Search} title="Search indexed repository context" description="Submit a repository question or technical concept to run repository-scoped retrieval. Search does not create a chat session or generate an answer." /> : null}
       </div>
     </div>

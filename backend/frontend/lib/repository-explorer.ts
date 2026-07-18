@@ -100,6 +100,27 @@ export function findRepositoryExplorerItem(
   return category.items.find((item) => item.key === requestedItem) ?? category.items[0];
 }
 
+export function extractRepositorySearchCategories(
+  summary: RepositorySummary | undefined,
+  query: string,
+): RepositoryExplorerCategory[] {
+  if (!summary || !query.trim()) return [];
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  return (["architecture", "files", "symbols", "dependencies"] as const)
+    .flatMap((tab) => extractRepositoryExplorerCategories(tab, summary))
+    .map((category) => ({
+      ...category,
+      items: category.items.filter((item) => [
+        item.name,
+        item.path,
+        item.kind,
+        item.reason,
+        item.categoryLabel,
+      ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery))),
+    }))
+    .filter((category) => category.items.length > 0);
+}
+
 function category(id: string, label: string, items: readonly RepositorySummaryItem[]): RepositoryExplorerCategory {
   return {
     id,

@@ -55,6 +55,7 @@ export function useRepositorySearch(owner: string, repo: string, query: string) 
     ready: repositoryStatus.ready,
     repositoryStatus,
     repository,
+    data: search.data ?? null,
     checkingReadiness: repositories.isLoading,
     retry: repositories.isError ? repositories.refetch : validationError ? undefined : search.refetch,
   };
