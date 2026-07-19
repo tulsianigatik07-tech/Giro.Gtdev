@@ -199,6 +199,16 @@ export interface SessionMessage {
   role: "user" | "assistant";
   content: string;
   citations: Citation[];
+  evidence?: SelectedContextChunk[];
+  retrievalMetadata?: {
+    repositoryId: string;
+    retrievedAt: string;
+    sourceCounts: Record<"semantic" | "keyword" | "symbol" | "graph" | "fileSearch", number>;
+    estimatedContextTokens: number;
+    selectedChunkCount: number;
+    droppedChunkCount: number;
+    confidence?: RetrievalConfidence;
+  };
   createdAt: string;
 }
 
@@ -246,6 +256,7 @@ export interface AskResult {
     estimatedContextTokens: number;
     confidence?: RetrievalConfidence;
   };
+  retrieval: HybridRetrievalResult;
 }
 
 export interface RetrievalSignals {
@@ -253,6 +264,7 @@ export interface RetrievalSignals {
   keyword?: number;
   symbol?: number;
   graph?: number;
+  fileSearch?: number;
 }
 
 export interface RetrievalResult {
@@ -263,7 +275,7 @@ export interface RetrievalResult {
   startLine: number;
   endLine: number;
   score: number;
-  source: "semantic" | "keyword" | "symbol" | "graph";
+  source: "semantic" | "keyword" | "symbol" | "graph" | "file-search";
   signals: RetrievalSignals;
   chunkId?: string;
   symbol?: string;

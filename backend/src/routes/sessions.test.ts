@@ -20,6 +20,10 @@ import {
   clearRepositoryOwners,
 } from "../services/repository/ownershipStore.js";
 import { requireSessionAccess } from "../services/sessions/sessionOwnershipGuard.js";
+import {
+  clearRepositoryIndexRegistry,
+  setRepositoryIndexed,
+} from "../services/repository/indexingService.js";
 
 const USER_A = { userId: "user-a", email: "a@example.com" };
 const USER_B = { userId: "user-b", email: "b@example.com" };
@@ -72,6 +76,7 @@ async function createSession(
 beforeEach(() => {
   clearAllSessions();
   clearRepositoryOwners();
+  clearRepositoryIndexRegistry();
 });
 
 // --- Session Creation ---
@@ -158,6 +163,14 @@ test("8. different user adding a message -> 403 session_not_owned", async () => 
 // --- Session Ask ---
 test("9. owner can ask a question (reaches handler past ownership)", async () => {
   setRepositoryOwner("acme/demo", USER_A.userId);
+  setRepositoryIndexed("acme", "demo", {
+    chunkCount: 1,
+    fileCount: 1,
+    symbolCount: 0,
+    graphNodeCount: 0,
+    graphEdgeCount: 0,
+    summaryAvailable: false,
+  });
   const created = await createSession(authHeader(USER_A.userId), { owner: "acme", repo: "demo" });
   const id = asRecord(created.json.data).id as string;
 
@@ -168,6 +181,26 @@ test("9. owner can ask a question (reaches handler past ownership)", async () =>
   assert.notEqual(status, 401);
   assert.notEqual(status, 403);
   assert.notEqual(status, 404);
+});
+
+test("9b. indexed state is required before retrieval", async () => {
+  setRepositoryOwner("acme/demo", USER_A.userId);
+  const created = await createSession(authHeader(USER_A.userId), { owner: "acme", repo: "demo" });
+  const id = asRecord(created.json.data).id as string;
+
+  const { status, json } = await call("POST", `/sessions/${id}/ask`, authHeader(USER_A.userId), {
+    question: "explain",
+  });
+  assert.equal(status, 409);
+  assert.equal(json.error?.code, "repository_not_ready");
+});
+
+test("9c. legacy unscoped chat endpoint is deprecated", async () => {
+  const { status, json } = await call("POST", "/chat", authHeader(USER_A.userId), {
+    query: "explain",
+  });
+  assert.equal(status, 410);
+  assert.equal(json.error?.code, "endpoint_deprecated");
 });
 
 test("10. different user asking -> 403 session_not_owned", async () => {

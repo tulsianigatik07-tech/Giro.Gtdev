@@ -24,6 +24,9 @@ import {
   RepositoryOwnerSchema,
 } from "../validation/repositorySchemas.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
+import { getRepositoryIndexMetadata } from "../services/repository/indexingService.js";
+import { repoClonePath } from "../services/repository/clone.js";
+import { existsSync } from "node:fs";
 
 const LegacyCitationSchema = z
   .object({
@@ -286,8 +289,26 @@ sessionsRouter.post("/:id/ask", async (c) => {
       return fail(c, { code: repoAccess.code, message: repoAccess.message }, repoAccess.status);
     }
 
+    const repositoryStatus = getRepositoryIndexMetadata(
+      access.session.owner,
+      access.session.repo,
+    );
+    if (!repositoryStatus || repositoryStatus.status !== "indexed") {
+      return fail(c, {
+        code: "repository_not_ready",
+        message: "Repository indexing must complete before Ask Giro can answer questions.",
+      }, 409);
+    }
+    if (!existsSync(repoClonePath(access.session.owner, access.session.repo))) {
+      return fail(c, {
+        code: "repository_unavailable",
+        message: "The indexed repository checkout is unavailable. Reconnect or reindex it before asking questions.",
+      }, 409);
+    }
+
     const result = await answerSessionQuestion(id, parsed.data.question, {
       signal: getRequestDeadline(c)?.signal,
+      requestId: c.get("requestId"),
       cache: c.get("retrievalCache"),
     });
 

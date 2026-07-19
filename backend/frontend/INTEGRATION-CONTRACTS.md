@@ -1,6 +1,6 @@
 # Frontend–backend integration contracts
 
-Audited against the backend source on 2026-07-17. Protected routes require
+Audited against the backend source on 2026-07-19. Protected routes require
 `Authorization: Bearer <token>`. Repository and session ownership is checked
 after authentication; a missing owned resource returns `404`, while a known
 resource owned by another user returns `403`.
@@ -17,9 +17,9 @@ resource owned by another user returns `403`.
 | Indexing SSE | `GET /repositories/:repositoryId/indexing/events` | Encoded repository ID; bearer header; `Accept:text/event-stream` | Named `progress`, `completed`, `failed`, `heartbeat` events; JSON data `{ jobId,repositoryId,stage,percentage,message,timestamp }` | No nullable fields | `400 validation_failed`, `401 unauthorized`, `403 repo_not_owned`, `404 indexing_job_not_found`, `429 rate_limit_exceeded`, `500 internal_error` | Auth + repository owner |
 | Session creation | `POST /sessions` | JSON `{ owner, repo, title? }` | `201 data:Session` | `title` optional (server default); messages/context initially empty | `400 validation_failed`, `401 unauthorized`, `403 repo_not_owned`, `404 repo_not_connected`, `500 session_error` | Auth + repository owner |
 | Session listing | `GET /sessions` | None | `200 data:{ sessions:SessionSummary[], count }`; summary contains `messageCount`, not `messages` | None | `401 unauthorized`, `500 session_error` | Auth; response filtered to session owner |
-| Session detail | `GET /sessions/:id` | Encoded session ID | `200 data:Session` | Selected-context provenance fields and message confidence are not persisted; citations may be legacy | `401 unauthorized`, `403 session_not_owned`, `404 session_not_found`, `500 session_error` | Auth + session owner |
+| Session detail | `GET /sessions/:id` | Encoded session ID | `200 data:Session` | Assistant messages may include persisted `evidence` and `retrievalMetadata`; historical citations may be legacy | `401 unauthorized`, `403 session_not_owned`, `404 session_not_found`, `500 session_error` | Auth + session owner |
 | Session deletion | `DELETE /sessions/:id` | Encoded session ID | `200 data:{ id, deleted:true }` | None | `401 unauthorized`, `403 session_not_owned`, `404 session_not_found`, `500 session_error` | Auth + session owner |
-| Session ask | `POST /sessions/:id/ask` | JSON `{ question }` (1–2000 chars) | `200 data:{ answer,sources,citations,metadata }` | Public `metadata.confidence` is optional for compatibility | `400 validation_failed`, `401 unauthorized`, `403 session_not_owned` / `repo_not_owned`, `404 session_not_found` / `repo_not_connected`, `429 rate_limit_exceeded`, `503 dependency_unavailable`, `504 request_timeout`, `500 ask_error` | Auth + session owner + repository owner |
+| Session ask | `POST /sessions/:id/ask` | JSON `{ question }` (1–2000 chars) | `200 data:{ answer,sources,citations,metadata,retrieval }`; `retrieval` is the exact finalized evidence used by answer generation and the inspector | Public `metadata.confidence` is optional for compatibility | `400 validation_failed`, `401 unauthorized`, `403 session_not_owned` / `repo_not_owned`, `404 session_not_found` / `repo_not_connected`, `409 repository_not_ready` / `repository_unavailable`, `429 rate_limit_exceeded`, `503 dependency_unavailable`, `504 request_timeout`, `500 ask_error` | Auth + session owner + repository owner + indexed/available repository |
 | Citations | Nested in ask and assistant messages | None | Stable backend order; `{ repositoryId,relativeFilePath,language,chunkId,startLine,endLine,retrievalType,score,symbol?,repositoryVersion }` | `symbol` optional; historical legacy citations use `filePath/startLine/endLine/snippet` | Parent route status | Parent route ownership |
 | Confidence | `data.metadata.confidence` from session ask | None | Public `{ level:"high"|"medium"|"low"|"insufficient", score, answerable, reasons }` | Entire confidence object optional for historical compatibility | Low/insufficient are successful responses, not API errors | Parent route ownership |
 | Retrieval inspector | `POST /retrieval/hybrid` | JSON `{ query, owner, repo, limit? }` (`limit <= 50`) | `200 data:{ query,repository,results,citations?,stats }` | `limit`, citations, chunk ID, symbol, individual signals optional | `400 validation_failed`, `401 unauthorized`, `403 repo_not_owned`, `404 repo_not_connected`, `429 rate_limit_exceeded`, `503 dependency_unavailable`, `504 request_timeout`, `500 retrieval_error` | Auth + repository owner |
@@ -37,8 +37,9 @@ resource owned by another user returns `403`.
 - The overview combines the owned repository-list DTO (status and counts) with
   the encoded repository-summary DTO. It does not call the legacy split
   `/:owner/:repo/dashboard` route.
-- Ask uses only `POST /sessions/:id/ask`. The UI is progressive but does not
-  represent the deterministic response as token streaming.
+- Ask uses only `POST /sessions/:id/ask`. The route performs one finalized
+  retrieval for LLM grounding, citations, persistence, and the evidence
+  inspector. The legacy unscoped `POST /chat` endpoint returns `410`.
 - Retrieval inspection renders public hybrid result signals and stats only.
   Stitching and expansion are explicitly marked as not exposed; source content,
   cache state, graph-expansion traces, and internal ranking diagnostics are not

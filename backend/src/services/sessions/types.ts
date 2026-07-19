@@ -17,9 +17,8 @@ export interface Citation {
   repositoryVersion?: string;
 }
 
-// Compatible with the existing enriched retrieval chunk shape.
-// `source`/`signals` are optional: the session ask flow persists a lean chunk
-// (path/lines/content/score only), while other callers may include them.
+// Compatible with the existing enriched retrieval chunk shape. Older stored
+// sessions may omit source and signal provenance, so those fields stay optional.
 export interface SelectedContextChunk {
   filePath: string;
   language: string;
@@ -41,11 +40,34 @@ export interface SelectedContextChunk {
   citationRetrievalType?: "semantic" | "keyword" | "symbol" | "graph" | "hybrid" | "file-search";
 }
 
+export interface PersistedRetrievalMetadata {
+  repositoryId: string;
+  retrievedAt: string;
+  sourceCounts: {
+    semantic: number;
+    keyword: number;
+    symbol: number;
+    graph: number;
+    fileSearch: number;
+  };
+  estimatedContextTokens: number;
+  selectedChunkCount: number;
+  droppedChunkCount: number;
+  confidence?: {
+    level: "high" | "medium" | "low" | "insufficient";
+    score: number;
+    answerable: boolean;
+    reasons: readonly string[];
+  };
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
   content: string;
   citations: Citation[];
+  evidence?: SelectedContextChunk[];
+  retrievalMetadata?: PersistedRetrievalMetadata;
   createdAt: string; // ISO string
 }
 
@@ -72,6 +94,8 @@ export interface AddMessageInput {
   role: MessageRole;
   content: string;
   citations?: Citation[];
+  evidence?: SelectedContextChunk[];
+  retrievalMetadata?: PersistedRetrievalMetadata;
 }
 
 export interface SessionSummary {

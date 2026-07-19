@@ -7,6 +7,14 @@ import { citation, session } from "./fixtures";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/chat/session-1" }));
 
+const retrieval = {
+  query: "Explain authentication",
+  repository: "acme/platform",
+  results: [],
+  citations: [citation],
+  stats: { semanticResults: 1, keywordResults: 0, symbolResults: 0, graphBoosted: 0, returned: 0 },
+};
+
 describe("chat page", () => {
   it("renders engineering guidance and populates examples without submitting", () => {
     const onAsk = vi.fn();
@@ -88,14 +96,14 @@ describe("chat page", () => {
 
   it("shows a limited-evidence notice for a low-confidence answer", () => {
     const answered = { ...session, messages: [{ id: "a-low", role: "assistant" as const, content: "Provisional answer.", citations: [citation], createdAt: "2026-07-17T00:00:00Z" }] };
-    render(<ChatPanel session={answered} latestAnswer={{ durationMs: 100, result: { answer: "Provisional answer.", sources: [], citations: [citation], metadata: { retrievedFiles: 1, usedSummary: false, usedDependencyGraph: false, retrievalSourceCounts: { semantic: 1, keyword: 0, symbol: 0, graph: 0, fileSearch: 0 }, estimatedContextTokens: 100, confidence: { level: "low", score: 0.31, answerable: true, reasons: ["weak_top_match"] } } } }} pendingQuestion={null} asking={false} error={null} onAsk={vi.fn()} />);
+    render(<ChatPanel session={answered} latestAnswer={{ durationMs: 100, result: { answer: "Provisional answer.", sources: [], citations: [citation], metadata: { retrievedFiles: 1, usedSummary: false, usedDependencyGraph: false, retrievalSourceCounts: { semantic: 1, keyword: 0, symbol: 0, graph: 0, fileSearch: 0 }, estimatedContextTokens: 100, confidence: { level: "low", score: 0.31, answerable: true, reasons: ["weak_top_match"] } }, retrieval } }} pendingQuestion={null} asking={false} error={null} onAsk={vi.fn()} />);
     expect(screen.getByText(/Limited repository evidence supports this answer/)).toBeInTheDocument();
   });
 
   it("renders the backend insufficient-evidence fallback faithfully", () => {
     const fallback = "I could not find enough repository evidence to answer this reliably.";
     const answered = { ...session, messages: [{ id: "a-none", role: "assistant" as const, content: fallback, citations: [], createdAt: "2026-07-17T00:00:00Z" }] };
-    render(<ChatPanel session={answered} latestAnswer={{ durationMs: 100, result: { answer: fallback, sources: [], citations: [], metadata: { retrievedFiles: 0, usedSummary: false, usedDependencyGraph: false, retrievalSourceCounts: { semantic: 0, keyword: 0, symbol: 0, graph: 0, fileSearch: 0 }, estimatedContextTokens: 0, confidence: { level: "insufficient", score: 0, answerable: false, reasons: ["no_retrieval_evidence"] } } } }} pendingQuestion={null} asking={false} error={null} onAsk={vi.fn()} />);
+    render(<ChatPanel session={answered} latestAnswer={{ durationMs: 100, result: { answer: fallback, sources: [], citations: [], metadata: { retrievedFiles: 0, usedSummary: false, usedDependencyGraph: false, retrievalSourceCounts: { semantic: 0, keyword: 0, symbol: 0, graph: 0, fileSearch: 0 }, estimatedContextTokens: 0, confidence: { level: "insufficient", score: 0, answerable: false, reasons: ["no_retrieval_evidence"] } }, retrieval: { ...retrieval, results: [], citations: [], stats: { semanticResults: 0, keywordResults: 0, symbolResults: 0, graphBoosted: 0, returned: 0 } } } }} pendingQuestion={null} asking={false} error={null} onAsk={vi.fn()} />);
     expect(screen.getByText(fallback)).toBeInTheDocument();
     expect(screen.getByText("insufficient")).toBeInTheDocument();
   });
@@ -103,7 +111,7 @@ describe("chat page", () => {
   it("renders answer confidence, timing, version, and citations", () => {
     const onSelectEvidence = vi.fn();
     const answered = { ...session, messages: [{ id: "a-1", role: "assistant" as const, content: "Authentication is handled by `authenticate`.", citations: [citation], createdAt: "2026-07-17T00:00:00Z" }] };
-    render(<ChatPanel session={answered} latestAnswer={{ durationMs: 1250, result: { answer: "Authentication is handled.", sources: [], citations: [citation], metadata: { retrievedFiles: 1, usedSummary: false, usedDependencyGraph: true, retrievalSourceCounts: { semantic: 1, keyword: 0, symbol: 1, graph: 1, fileSearch: 0 }, estimatedContextTokens: 400, confidence: { level: "high", score: 0.91, answerable: true, reasons: ["strong_top_match"] } } } }} pendingQuestion={null} asking={false} error={null} onSelectEvidence={onSelectEvidence} onAsk={vi.fn()} />);
+    render(<ChatPanel session={answered} latestAnswer={{ durationMs: 1250, result: { answer: "Authentication is handled.", sources: [], citations: [citation], metadata: { retrievedFiles: 1, usedSummary: false, usedDependencyGraph: true, retrievalSourceCounts: { semantic: 1, keyword: 0, symbol: 1, graph: 1, fileSearch: 0 }, estimatedContextTokens: 400, confidence: { level: "high", score: 0.91, answerable: true, reasons: ["strong_top_match"] } }, retrieval } }} pendingQuestion={null} asking={false} error={null} onSelectEvidence={onSelectEvidence} onAsk={vi.fn()} />);
     expect(screen.getByText("high")).toBeInTheDocument();
     expect(screen.getByText("1.3 s")).toBeInTheDocument();
     expect(screen.getByText("VERSION job-1:1")).toBeInTheDocument();

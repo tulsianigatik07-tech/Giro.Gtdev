@@ -16,8 +16,6 @@ import { useAuth } from "@/features/auth/auth-context";
 import { RetrievalInspector } from "@/features/retrieval/retrieval-inspector";
 import { useRepositories } from "@/hooks/use-repositories";
 import { sessionKeys, useCreateSession, useDeleteSession, useSession, useSessions } from "@/hooks/use-sessions";
-import { getApiErrorMessage } from "@/services/api/client";
-import { retrievalApi } from "@/services/api/retrieval";
 import { sessionsApi } from "@/services/api/sessions";
 import { useUiStore } from "@/store/ui-store";
 import type { HybridRetrievalResult } from "@/types/api";
@@ -87,22 +85,21 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
     setRetrievalError(null);
     setRetrievalLoading(true);
     const start = performance.now();
-    const inspection = retrievalApi.inspect(token, { query: question, owner: session.data.owner, repo: session.data.repo, limit: 25 })
-      .then((result) => setRetrieval(result))
-      .catch((error: unknown) => setRetrievalError(getApiErrorMessage(error)))
-      .finally(() => setRetrievalLoading(false));
     try {
       const result = await sessionsApi.ask(token, sessionId, question);
+      setRetrieval(result.retrieval);
+      setRetrievalLoading(false);
       setLatestAnswer({ result, durationMs: performance.now() - start });
       await client.invalidateQueries({ queryKey: sessionKeys.all });
       await session.refetch();
       setPendingQuestion(null);
     } catch (error) {
       setAskError(error);
+      setRetrievalError("Evidence could not be retrieved for this answer.");
+      setRetrievalLoading(false);
     } finally {
       askInFlight.current = false;
       setAsking(false);
-      await inspection;
     }
   }
 

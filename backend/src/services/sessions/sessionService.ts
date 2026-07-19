@@ -70,6 +70,19 @@ export function addMessageToSession(
     role: input.role,
     content: input.content,
     citations: input.citations ?? [],
+    evidence: input.evidence ? [...input.evidence] : undefined,
+    retrievalMetadata: input.retrievalMetadata
+      ? {
+          ...input.retrievalMetadata,
+          sourceCounts: { ...input.retrievalMetadata.sourceCounts },
+          confidence: input.retrievalMetadata.confidence
+            ? {
+                ...input.retrievalMetadata.confidence,
+                reasons: [...input.retrievalMetadata.confidence.reasons],
+              }
+            : undefined,
+        }
+      : undefined,
     createdAt: nowIso(),
   };
 

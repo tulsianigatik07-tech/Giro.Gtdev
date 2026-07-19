@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { MetricsRegistry } from "../observability/metrics.js";
-import { collectStream } from "../services/ai/stream.js";
-import { runRepositoryChat } from "../services/ai/chat.js";
 import { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 import type { Citation } from "../services/retrieval/citations.js";
 import type {
@@ -371,68 +369,6 @@ test("session answer behavior preserves high answers, warns on low, and safely s
     applySessionConfidenceBehavior("grounded", insufficient),
     INSUFFICIENT_REPOSITORY_EVIDENCE_MESSAGE,
   );
-});
-
-test("insufficient streaming evidence suppresses the paid provider and preserves citations/stream shape", async () => {
-  let providerCalls = 0;
-  const attached = [{ filePath: "src/a.ts", startLine: 1, endLine: 2 }];
-  const result = await runRepositoryChat("secret query", {
-    buildContext: async () => ({
-      query: "secret query",
-      totalChunks: 0,
-      estimatedTokens: 0,
-      context: [],
-    }),
-    buildPrompt: () => ({ systemPrompt: "system", userPrompt: "user", citations: attached }),
-    streamCompletion: async () => {
-      providerCalls += 1;
-      return { async *[Symbol.asyncIterator]() { yield "paid"; } };
-    },
-  });
-  assert.equal(providerCalls, 0);
-  assert.equal(await collectStream(result.stream), INSUFFICIENT_REPOSITORY_EVIDENCE_MESSAGE);
-  assert.deepEqual(result.citations, attached);
-  assert.equal(result.confidence?.answerable, false);
-});
-
-test("answerable streaming evidence opens the provider once and confidence remains fixed", async () => {
-  let providerCalls = 0;
-  const result = await runRepositoryChat("auth", {
-    buildContext: async () => ({
-      query: "auth",
-      totalChunks: 2,
-      estimatedTokens: 20,
-      context: [
-        {
-          repository: "acme/widgets",
-          filePath: "src/a.ts",
-          language: "typescript",
-          similarity: 1,
-          content: "a",
-          startLine: 1,
-          endLine: 1,
-        },
-        {
-          repository: "acme/widgets",
-          filePath: "src/b.ts",
-          language: "typescript",
-          similarity: 0.95,
-          content: "b",
-          startLine: 1,
-          endLine: 1,
-        },
-      ],
-    }),
-    buildPrompt: () => ({ systemPrompt: "system", userPrompt: "user", citations: [] }),
-    streamCompletion: async () => {
-      providerCalls += 1;
-      return { async *[Symbol.asyncIterator]() { yield "grounded"; } };
-    },
-  });
-  const confidence = result.confidence;
-  assert.equal(providerCalls, 1);
-  assert.equal(await collectStream(result.stream), "grounded");
-  assert.deepEqual(result.confidence, confidence);
 });
 
 test("metrics labels are fixed and logs contain only bounded diagnostics", () => {

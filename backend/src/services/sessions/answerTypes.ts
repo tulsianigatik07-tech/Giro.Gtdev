@@ -29,6 +29,37 @@ export interface AskResult {
   sources: AnswerSource[];
   citations: Citation[];
   metadata: AskMetadata;
+  retrieval: {
+    query: string;
+    repository: string;
+    results: Array<{
+      repository: string;
+      filePath: string;
+      language: string;
+      content: string;
+      startLine: number;
+      endLine: number;
+      score: number;
+      source: "semantic" | "keyword" | "symbol" | "graph" | "file-search";
+      signals: {
+        semantic?: number;
+        keyword?: number;
+        symbol?: number;
+        graph?: number;
+        fileSearch?: number;
+      };
+      chunkId?: string;
+      symbol?: string;
+    }>;
+    citations: Citation[];
+    stats: {
+      semanticResults: number;
+      keywordResults: number;
+      symbolResults: number;
+      graphBoosted: number;
+      returned: number;
+    };
+  };
 }
 
 export interface RepositorySummaryView {

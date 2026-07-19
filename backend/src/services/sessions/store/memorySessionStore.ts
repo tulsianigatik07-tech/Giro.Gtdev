@@ -5,6 +5,22 @@ function cloneMessage(message: Message): Message {
   return {
     ...message,
     citations: message.citations.map((citation) => ({ ...citation })),
+    evidence: message.evidence?.map((chunk) => ({
+      ...chunk,
+      signals: chunk.signals ? { ...chunk.signals } : undefined,
+    })),
+    retrievalMetadata: message.retrievalMetadata
+      ? {
+          ...message.retrievalMetadata,
+          sourceCounts: { ...message.retrievalMetadata.sourceCounts },
+          confidence: message.retrievalMetadata.confidence
+            ? {
+                ...message.retrievalMetadata.confidence,
+                reasons: [...message.retrievalMetadata.confidence.reasons],
+              }
+            : undefined,
+        }
+      : undefined,
   };
 }
 

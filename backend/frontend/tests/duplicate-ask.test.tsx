@@ -5,12 +5,12 @@ import { ChatWorkspace } from "@/features/chat/chat-workspace";
 import { citation, session } from "./fixtures";
 
 const ask = vi.fn();
-const inspect = vi.fn().mockResolvedValue({
+const retrieval = {
   query: "Where does the application start?",
   repository: "acme/platform",
   results: [],
   stats: { semanticResults: 0, keywordResults: 0, symbolResults: 0, graphBoosted: 0, returned: 0 },
-});
+};
 const refetch = vi.fn().mockResolvedValue(undefined);
 const routerPush = vi.fn();
 const routerReplace = vi.fn();
@@ -34,7 +34,6 @@ vi.mock("@/hooks/use-sessions", () => ({
 }));
 vi.mock("@/hooks/use-repositories", () => ({ useRepository: () => ({ data: undefined }), useRepositories: () => ({ data: { repositories: [{ owner: "acme", repo: "platform", status: "indexed" }] }, isLoading: false }) }));
 vi.mock("@/services/api/sessions", () => ({ sessionsApi: { ask: (...args: unknown[]) => ask(...args) } }));
-vi.mock("@/services/api/retrieval", () => ({ retrievalApi: { inspect: (...args: unknown[]) => inspect(...args) } }));
 
 describe("session ask integration", () => {
   beforeEach(() => {
@@ -45,12 +44,6 @@ describe("session ask integration", () => {
   });
 
   it("prevents duplicate ask requests while the first request is in flight", async () => {
-    inspect.mockResolvedValue({
-      query: "Where does the application start?",
-      repository: "acme/platform",
-      results: [],
-      stats: { semanticResults: 0, keywordResults: 0, symbolResults: 0, graphBoosted: 0, returned: 0 },
-    });
     vi.mocked(window.matchMedia).mockImplementation((query) => ({
       matches: false,
       media: query,
@@ -82,6 +75,7 @@ describe("session ask integration", () => {
       sources: [],
       citations: [citation],
       metadata: { retrievedFiles: 1, usedSummary: false, usedDependencyGraph: false, retrievalSourceCounts: { semantic: 1, keyword: 0, symbol: 0, graph: 0, fileSearch: 0 }, estimatedContextTokens: 100 },
+      retrieval,
     });
     await waitFor(() => expect(refetch).toHaveBeenCalled());
   });
