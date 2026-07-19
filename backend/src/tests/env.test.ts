@@ -109,6 +109,11 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.EMBEDDINGS_PROVIDER, "mock");
   assert.equal(result.MODEL_NAME, "gpt-4.1-mini");
   assert.equal(result.INDEXING_WORKER_ID, undefined);
+  assert.equal(result.INDEXING_WORKER_POLL_INTERVAL_MS, 1_000);
+  assert.equal(result.INDEXING_WORKER_MAX_POLL_INTERVAL_MS, 10_000);
+  assert.equal(result.INDEXING_WORKER_STALE_CLAIM_MS, 300_000);
+  assert.equal(result.INDEXING_WORKER_MAX_ATTEMPTS, 3);
+  assert.equal(result.INDEXING_WORKER_SHUTDOWN_TIMEOUT_MS, 30_000);
   assert.equal(result.SHUTDOWN_TIMEOUT_MS, 10_000);
   assert.equal(result.RATE_LIMIT_WINDOW_MS, 60_000);
   assert.equal(result.RATE_LIMIT_MAX_REQUESTS, 100);
@@ -137,6 +142,28 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.CLONE_CIRCUIT_MIN_SAMPLES, 3);
   assert.equal(result.CLONE_CIRCUIT_FAILURE_THRESHOLD, 3);
   assert.equal(result.CIRCUIT_HALF_OPEN_MAX_CALLS, 1);
+});
+
+test("continuous worker configuration rejects unsafe relationships", () => {
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    INDEXING_WORKER_POLL_INTERVAL_MS: "2000",
+    INDEXING_WORKER_MAX_POLL_INTERVAL_MS: "1000",
+  }));
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    INDEXING_WORKER_HEARTBEAT_MS: "10000",
+    INDEXING_WORKER_STALE_CLAIM_MS: "10000",
+  }));
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    INDEXING_WORKER_RETRY_BASE_MS: "10000",
+    INDEXING_WORKER_RETRY_MAX_MS: "5000",
+  }));
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    INDEXING_WORKER_MAX_ATTEMPTS: "11",
+  }));
 });
 
 test("circuit configuration validates thresholds and bounds", () => {

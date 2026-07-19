@@ -29,6 +29,14 @@ export interface IndexingJobPersistenceRow {
   request_id?: string | null;
   created_at?: string;
   updated_at?: string;
+  claimed_at?: string | null;
+  started_at?: string | null;
+  heartbeat_at?: string | null;
+  last_progress_at?: string | null;
+  completed_at?: string | null;
+  failed_at?: string | null;
+  next_retry_at?: string | null;
+  recovery_count?: number;
 }
 
 export type IndexingJobInsertRow = Omit<
@@ -149,5 +157,13 @@ export function indexingJobRowToDomain(row: IndexingJobPersistenceRow): Indexing
     startedOrder: row.started_order ?? null,
     completedOrder: row.completed_order ?? null,
     ...(row.request_id ? { createdByRequestId: row.request_id } : {}),
+    ...(row.claimed_at !== undefined ? { claimedAt: row.claimed_at } : {}),
+    ...(row.started_at !== undefined ? { startedAt: row.started_at } : {}),
+    ...(row.heartbeat_at !== undefined ? { heartbeatAt: row.heartbeat_at } : {}),
+    ...(row.last_progress_at !== undefined ? { lastProgressAt: row.last_progress_at } : {}),
+    ...(row.completed_at !== undefined ? { completedAt: row.completed_at } : {}),
+    ...(row.failed_at !== undefined ? { failedAt: row.failed_at } : {}),
+    ...(row.next_retry_at !== undefined ? { nextRetryAt: row.next_retry_at } : {}),
+    ...(row.recovery_count !== undefined ? { recoveryCount: row.recovery_count } : {}),
   };
 }

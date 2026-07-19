@@ -17,6 +17,8 @@ import type {
   IndexingJobPatch,
   IndexingJobStage,
   IndexingJobStore,
+  StaleIndexingJobRecoveryInput,
+  SupervisedIndexingJobStore,
 } from "./indexingJobStore.js";
 
 const TABLE = "indexing_jobs";
@@ -76,6 +78,7 @@ export interface SupabaseIndexingJobClient {
 
 export interface SupabaseIndexingJobStoreOptions {
   client: SupabaseIndexingJobClient | SupabaseClient;
+  defaultMaxAttempts?: number;
 }
 
 function persistenceError(
@@ -157,11 +160,13 @@ function cloneFailure(failure: IndexingJobFailure | null): IndexingJobFailure | 
   return failure ? { ...failure } : null;
 }
 
-export class SupabaseIndexingJobStore implements IndexingJobStore {
+export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
   private readonly client: SupabaseIndexingJobClient;
+  private readonly defaultMaxAttempts: number;
 
   constructor(options: SupabaseIndexingJobStoreOptions) {
     this.client = options.client as unknown as SupabaseIndexingJobClient;
+    this.defaultMaxAttempts = options.defaultMaxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   }
 
   async createJob(input: CreateIndexingJobInput): Promise<IndexingJob> {
@@ -173,7 +178,7 @@ export class SupabaseIndexingJobStore implements IndexingJobStore {
         input_repository_name: input.repositoryName,
         input_repository_url: input.repositoryUrl,
         input_branch: input.branch ?? null,
-        input_max_attempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+        input_max_attempts: input.maxAttempts ?? this.defaultMaxAttempts,
         input_request_id: input.createdByRequestId ?? null,
       });
       throwIfError(error);
@@ -260,6 +265,54 @@ export class SupabaseIndexingJobStore implements IndexingJobStore {
       throwIfError(error);
       const row = rowFromData(data);
       return row ? indexingJobRowToDomain(row) : null;
+    } catch (error) {
+      throw normalizeIndexingJobPersistenceError(error);
+    }
+  }
+
+  async heartbeatJob(jobId: string, workerId: string): Promise<boolean> {
+    try {
+      const { data, error } = await this.client.rpc("heartbeat_indexing_job", {
+        input_job_id: jobId,
+        input_worker_id: workerId,
+      });
+      throwIfError(error);
+      return data === true || (Array.isArray(data) && data[0] === true);
+    } catch (error) {
+      throw normalizeIndexingJobPersistenceError(error);
+    }
+  }
+
+  async scheduleRetry(
+    jobId: string,
+    workerId: string,
+    failure: IndexingJobFailure,
+    delayMs: number,
+  ): Promise<IndexingJob | null> {
+    try {
+      const { data, error } = await this.client.rpc("schedule_indexing_job_retry", {
+        input_job_id: jobId,
+        input_worker_id: workerId,
+        input_failure_code: failure.code,
+        input_failure_message: failure.message,
+        input_delay_ms: delayMs,
+      });
+      throwIfError(error);
+      const row = rowFromData(data);
+      return row ? indexingJobRowToDomain(row) : null;
+    } catch (error) {
+      throw normalizeIndexingJobPersistenceError(error);
+    }
+  }
+
+  async recoverStaleJobs(input: StaleIndexingJobRecoveryInput): Promise<IndexingJob[]> {
+    try {
+      const { data, error } = await this.client.rpc("recover_stale_indexing_jobs", {
+        input_stale_before: input.staleBefore,
+        input_retry_delay_ms: input.retryDelayMs,
+      });
+      throwIfError(error);
+      return rowsFromData(data).map(indexingJobRowToDomain);
     } catch (error) {
       throw normalizeIndexingJobPersistenceError(error);
     }

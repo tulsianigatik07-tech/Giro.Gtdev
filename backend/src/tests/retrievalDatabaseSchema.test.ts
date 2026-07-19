@@ -13,9 +13,10 @@ const migrationsDirectory = path.resolve(testDirectory, "../../supabase/migratio
 const migrationName = "20260714000000_create_retrieval_schema.sql";
 const sql = readFileSync(path.join(migrationsDirectory, migrationName), "utf8");
 
-test("retrieval migration is versioned after every existing migration", () => {
+test("retrieval migration remains versioned before later milestones", () => {
   const migrations = readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql")).sort();
-  assert.equal(migrations.at(-1), migrationName);
+  assert.ok(migrations.includes(migrationName));
+  assert.ok(migrations.indexOf(migrationName) < migrations.indexOf("20260715000000_create_supervised_indexing_worker.sql"));
 });
 
 test("fresh schema provisions only the extensions used by retrieval", () => {

@@ -34,6 +34,15 @@ const EnvSchema = z
     EMBEDDINGS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
     MODEL_NAME: z.string().trim().min(1).default("gpt-4.1-mini"),
     INDEXING_WORKER_ID: optionalNonEmptyString,
+    INDEXING_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),
+    INDEXING_WORKER_IDLE_BACKOFF_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),
+    INDEXING_WORKER_MAX_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(300_000).default(10_000),
+    INDEXING_WORKER_STALE_CLAIM_MS: z.coerce.number().int().min(10_000).max(86_400_000).default(300_000),
+    INDEXING_WORKER_HEARTBEAT_MS: z.coerce.number().int().min(1_000).max(300_000).default(15_000),
+    INDEXING_WORKER_RETRY_BASE_MS: z.coerce.number().int().min(100).max(300_000).default(5_000),
+    INDEXING_WORKER_RETRY_MAX_MS: z.coerce.number().int().min(100).max(3_600_000).default(300_000),
+    INDEXING_WORKER_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+    INDEXING_WORKER_SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
     RETRIEVAL_CACHE_TTL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
     RETRIEVAL_CACHE_MAX_ENTRIES: z.coerce.number().int().min(1).max(10_000).default(500),
     RETRIEVAL_STITCH_LINE_GAP: z.coerce.number().int().min(0).max(1_000).default(0),
@@ -93,6 +102,15 @@ const EnvSchema = z
     CIRCUIT_HALF_OPEN_MAX_CALLS: z.coerce.number().int().min(1).max(10).default(1),
   })
   .superRefine((value, context) => {
+    if (value.INDEXING_WORKER_POLL_INTERVAL_MS > value.INDEXING_WORKER_MAX_POLL_INTERVAL_MS) {
+      context.addIssue({ code: "custom", path: ["INDEXING_WORKER_MAX_POLL_INTERVAL_MS"], message: "Maximum poll interval must be at least the base poll interval." });
+    }
+    if (value.INDEXING_WORKER_HEARTBEAT_MS >= value.INDEXING_WORKER_STALE_CLAIM_MS) {
+      context.addIssue({ code: "custom", path: ["INDEXING_WORKER_HEARTBEAT_MS"], message: "Heartbeat interval must be shorter than the stale claim threshold." });
+    }
+    if (value.INDEXING_WORKER_RETRY_BASE_MS > value.INDEXING_WORKER_RETRY_MAX_MS) {
+      context.addIssue({ code: "custom", path: ["INDEXING_WORKER_RETRY_MAX_MS"], message: "Maximum retry delay must be at least the base retry delay." });
+    }
     if (!value.SUPABASE_SERVICE_ROLE_KEY && !value.SUPABASE_ANON_KEY) {
       context.addIssue({
         code: "custom",

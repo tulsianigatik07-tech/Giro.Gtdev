@@ -43,7 +43,31 @@ export interface IndexingJob {
   createdOrder: number;
   startedOrder: number | null;
   completedOrder: number | null;
+  claimedAt?: string | null;
+  startedAt?: string | null;
+  heartbeatAt?: string | null;
+  lastProgressAt?: string | null;
+  completedAt?: string | null;
+  failedAt?: string | null;
+  nextRetryAt?: string | null;
+  recoveryCount?: number;
   createdByRequestId?: string;
+}
+
+export interface StaleIndexingJobRecoveryInput {
+  staleBefore: string;
+  retryDelayMs: number;
+}
+
+export interface SupervisedIndexingJobStore extends IndexingJobStore {
+  heartbeatJob(jobId: string, workerId: string): Promise<boolean>;
+  scheduleRetry(
+    jobId: string,
+    workerId: string,
+    failure: IndexingJobFailure,
+    delayMs: number,
+  ): Promise<IndexingJob | null>;
+  recoverStaleJobs(input: StaleIndexingJobRecoveryInput): Promise<IndexingJob[]>;
 }
 
 export interface CreateIndexingJobInput {

@@ -96,6 +96,12 @@ export interface ProcessNextIndexingJobInput {
   circuitBreakers?: DependencyCircuitBreakers;
   progressPublisher?: IndexingJobProgressPublisher;
   retrievalCacheInvalidator?: RetrievalCacheInvalidator;
+  signal?: AbortSignal;
+  observer?: {
+    onClaimed?(job: IndexingJob): void | Promise<void>;
+    onStarted?(job: IndexingJob): void | Promise<void>;
+    onProgress?(job: IndexingJob): void | Promise<void>;
+  };
 }
 
 export interface IndexingJobWorkerLogger {
@@ -113,6 +119,7 @@ function jobLogFields(job: IndexingJob, workerId: string) {
     jobId: job.jobId,
     repositoryId: job.repositoryId,
     workerId,
+    attempt: job.attempt,
     ...(job.createdByRequestId ? { requestId: job.createdByRequestId } : {}),
   };
 }
@@ -233,6 +240,21 @@ export function normalizeIndexingJobFailure(
 
   if (input.stage === null) {
     return failureFromCode("internal_error", "Indexing worker failed.", false);
+  }
+
+  if (
+    normalized.includes("invalid repository") ||
+    normalized.includes("unsupported repository") ||
+    normalized.includes("invalid repository input")
+  ) {
+    return failureFromCode("invalid_repo_url", "Repository input is invalid.", false);
+  }
+  if (
+    normalized.includes("unauthorized") ||
+    normalized.includes("authorization failed") ||
+    normalized.includes("permission denied")
+  ) {
+    return failureFromCode("unauthorized", "Repository authorization failed.", false);
   }
 
   return failureFromCode("indexing_failed", "Repository indexing failed.", true);
@@ -368,6 +390,8 @@ export async function processNextIndexingJob(
     circuitBreakers,
     progressPublisher,
     retrievalCacheInvalidator,
+    signal,
+    observer,
   } = input;
 
   const claimed = await jobStore.claimNextJob(workerId);
@@ -382,6 +406,7 @@ export async function processNextIndexingJob(
     };
   }
   logger.info("indexing_job_claimed", jobLogFields(claimed, workerId));
+  await observer?.onClaimed?.(claimed);
 
   const stagesCompleted: IndexingJobStage[] = [];
   let currentStage: IndexingJobStage | null = "pending";
@@ -395,6 +420,7 @@ export async function processNextIndexingJob(
       throw new Error("Indexing job could not transition to running");
     }
     logger.info("indexing_job_started", jobLogFields(claimed, workerId));
+    await observer?.onStarted?.(running);
     metrics?.incrementIndexing("started");
     await publishProgressSafely(progressPublisher, running, logger, workerId);
 
@@ -411,6 +437,12 @@ export async function processNextIndexingJob(
         throw new Error("Indexing job progress update failed");
       }
       await publishProgressSafely(progressPublisher, updated, logger, workerId);
+      await observer?.onProgress?.(updated);
+      logger.info("indexing_job_progress", {
+        ...jobLogFields(claimed, workerId),
+        stage: progress.stage,
+        progress: nextProgress,
+      });
       stagesCompleted.push(progress.stage);
     };
 
@@ -422,6 +454,7 @@ export async function processNextIndexingJob(
         incrementRetry: (category, result, attempt) => metrics.incrementRetry!(category, result, attempt),
       } : undefined,
       circuitBreakers,
+      signal,
     });
 
     currentStage = "finalize";

@@ -13,6 +13,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "indexing:work-once": "tsx src/commands/processNextIndexingJob.ts",
+    "indexing:worker": "tsx src/commands/runIndexingWorker.ts",
     "typecheck": "tsc --noEmit",
     "test": "pnpm test:ci",
     "test:node": "NODE_ENV=test node scripts/run-test-suite.mjs node",
