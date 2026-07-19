@@ -16,9 +16,59 @@ import { runtimeDependencyCircuitBreakers } from "../../runtime/dependencyCircui
 
 const STORAGE_ROOT = path.join(process.cwd(), ".storage", "repos");
 export type CloneExecutor = (repoUrl: string, clonePath: string, timeoutMs: number) => Promise<void>;
+export interface SnapshotCheckoutResult {
+  commitSha: string;
+  branch: string | null;
+}
+export type SnapshotCheckoutExecutor = (input: {
+  clonePath: string;
+  branch: string | null;
+  reusedClone: boolean;
+  timeoutMs: number;
+}) => Promise<SnapshotCheckoutResult>;
 
 const defaultCloneExecutor: CloneExecutor = async (repoUrl, clonePath, timeoutMs) => {
   await simpleGit({ timeout: { block: timeoutMs } }).clone(repoUrl, clonePath, ["--depth", "1"]);
+};
+
+const defaultSnapshotCheckoutExecutor: SnapshotCheckoutExecutor = async (input) => {
+  const git = simpleGit(input.clonePath, { timeout: { block: input.timeoutMs } });
+  let resolvedBranch = input.branch;
+  if (!resolvedBranch) {
+    try {
+      const localBranch = (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
+      if (localBranch && localBranch !== "HEAD") resolvedBranch = localBranch;
+    } catch {
+      // A reused detached checkout resolves its branch from origin below.
+    }
+  }
+  if (!resolvedBranch) {
+    try {
+      const remoteHead = (await git.raw([
+        "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD",
+      ])).trim();
+      resolvedBranch = remoteHead.replace(/^origin\//, "") || null;
+    } catch {
+      // Some remotes do not advertise a symbolic default branch.
+    }
+  }
+  if (input.reusedClone || resolvedBranch) {
+    const ref = resolvedBranch ?? "HEAD";
+    await git.fetch(["origin", ref, "--depth", "1", "--force"]);
+  }
+  const target = input.reusedClone || resolvedBranch ? "FETCH_HEAD" : "HEAD";
+  const revision = (await git.revparse([target])).trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(revision)) {
+    throw new Error("Repository revision could not be resolved.");
+  }
+  await git.checkout(["--detach", revision]);
+  await git.reset(["--hard", revision]);
+  await git.clean("f", ["-d"]);
+  const checkedOutRevision = (await git.revparse(["HEAD"])).trim().toLowerCase();
+  if (checkedOutRevision !== revision) {
+    throw new Error("Repository checkout does not match the resolved revision.");
+  }
+  return { commitSha: revision, branch: resolvedBranch };
 };
 
 export function repoClonePath(owner: string, repo: string): string {
@@ -49,8 +99,15 @@ export async function cloneRepo(
     metrics?: RetryMetrics;
     retryRuntime?: RetryRuntimeOptions;
     circuitBreaker?: CircuitBreaker;
+    branch?: string | null;
+    checkoutSnapshot?: SnapshotCheckoutExecutor;
   } = {},
-): Promise<{ clonePath: string; alreadyExisted: boolean }> {
+): Promise<{
+  clonePath: string;
+  alreadyExisted: boolean;
+  commitSha: string;
+  branch: string | null;
+}> {
   const clonePath = repoClonePath(owner, repo);
   const deadline = options.deadline ?? createDeadline(env.REPOSITORY_CLONE_TIMEOUT_MS);
   const ownsDeadline = options.deadline === undefined;
@@ -58,9 +115,10 @@ export async function cloneRepo(
     return await (options.circuitBreaker ?? runtimeDependencyCircuitBreakers.clone).execute(
       async () => {
         await mkdir(STORAGE_ROOT, { recursive: true });
+        let alreadyExisted = false;
         if (existsSync(clonePath)) {
           const entries = await readdir(clonePath);
-          if (entries.length > 0) return { clonePath, alreadyExisted: true };
+          alreadyExisted = entries.length > 0;
         }
         const repoUrl = `https://github.com/${owner}/${repo}.git`;
         try {
@@ -76,7 +134,7 @@ export async function cloneRepo(
               repositoryId: `${owner}/${repo}`,
             },
           });
-          await retry(
+          if (!alreadyExisted) await retry(
             async (attempt) => {
               if (attempt > 1) await rm(clonePath, { recursive: true, force: true });
               const attemptsRemaining = env.CLONE_MAX_RETRIES + 2 - attempt;
@@ -94,7 +152,19 @@ export async function cloneRepo(
             },
           );
           deadline.throwIfExpired();
-          return { clonePath, alreadyExisted: false };
+          const snapshot = await (options.checkoutSnapshot ?? defaultSnapshotCheckoutExecutor)({
+            clonePath,
+            branch: options.branch ?? null,
+            reusedClone: alreadyExisted,
+            timeoutMs: Math.max(1, Math.floor(deadline.remainingMs())),
+          });
+          deadline.throwIfExpired();
+          return {
+            clonePath,
+            alreadyExisted,
+            commitSha: snapshot.commitSha,
+            branch: snapshot.branch,
+          };
         } catch (err) {
           await rm(clonePath, { recursive: true, force: true });
           const message = err instanceof Error ? err.message : "unknown error";

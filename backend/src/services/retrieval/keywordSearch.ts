@@ -39,6 +39,9 @@ export async function keywordSearch(
   limit: number = 20,
   options: KeywordSearchOptions = {},
 ): Promise<RetrievalResult[]> {
+  if (!options.repositoryVersion?.trim()) {
+    throw new Error("Published repository revision is required for keyword search.");
+  }
   const repository = `${owner}/${repo}`;
   const tokens = query
     .toLowerCase()
@@ -61,9 +64,7 @@ export async function keywordSearch(
           .from("repository_chunks")
           .select("id,repository,file_path,language,content,start_line,end_line")
           .eq("repository", repository);
-        if (options.repositoryVersion) {
-          databaseQuery = databaseQuery.eq("repository_revision", options.repositoryVersion);
-        }
+        databaseQuery = databaseQuery.eq("repository_revision", options.repositoryVersion);
         return databaseQuery.or(orFilter).limit(limit * 3).abortSignal(deadline.signal);
       },
       {

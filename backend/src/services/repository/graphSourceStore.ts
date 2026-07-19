@@ -44,3 +44,12 @@ export function clearGraphSourceStore(): void {
 export function removeRepositoryGraphSource(repoId: string): void {
   store.delete(repoId);
 }
+
+export function replaceRepositoryGraphSource(
+  repoId: string,
+  maps: readonly FileSymbolMap[],
+): void {
+  const replacement = new Map<string, FileSymbolMap>();
+  for (const map of maps) replacement.set(map.filePath, clone(map));
+  store.set(repoId, replacement);
+}

@@ -1,10 +1,8 @@
 // Symbol-aware retrieval using extracted repository symbols. Read-only.
 
-import { existsSync } from "node:fs";
 import { logger } from "../../lib/logger.js";
-import { repoClonePath } from "../repository/clone.js";
-import { extractRepoSymbols } from "../graph/symbolExtractor.js";
-import type { ExtractedSymbol } from "../graph/types.js";
+import { getRepositorySymbolGraph } from "../repositoryGraph/runtimeRepositoryGraph.js";
+import type { RepositoryGraphNode } from "../repositoryGraph/graphTypes.js";
 import type { RetrievalResult } from "./types.js";
 
 function tokenizeQuery(query: string): string[] {
@@ -23,7 +21,7 @@ function tokenizeQuery(query: string): string[] {
   return [...tokens].filter((t) => t.length > 0);
 }
 
-function summarize(symbols: ExtractedSymbol[]): string {
+function summarize(symbols: RepositoryGraphNode[]): string {
   return (
     "Exports: " +
     symbols
@@ -38,34 +36,40 @@ export async function symbolSearch(
   owner: string,
   repo: string,
   limit: number = 20,
+  options: { repositoryVersion?: string } = {},
 ): Promise<RetrievalResult[]> {
   const repository = `${owner}/${repo}`;
-  const clonePath = repoClonePath(owner, repo);
-  if (!existsSync(clonePath)) return [];
+  const graph = getRepositorySymbolGraph(repository);
+  if (!graph || !options.repositoryVersion || graph.repositoryVersion !== options.repositoryVersion) return [];
 
   const tokens = tokenizeQuery(query);
   if (tokens.length === 0) return [];
 
   try {
-    const maps = await extractRepoSymbols(clonePath);
+    const maps = new Map<string, RepositoryGraphNode[]>();
+    for (const node of graph.nodes) {
+      if (node.kind === "module" || node.kind === "imported_member") continue;
+      const nodes = maps.get(node.file) ?? [];
+      nodes.push(node);
+      maps.set(node.file, nodes);
+    }
 
-    const scored = maps
-      .map((map) => {
+    const scored = [...maps.entries()]
+      .map(([filePath, symbols]) => {
         let raw = 0;
-        const matched: ExtractedSymbol[] = [];
-        for (const sym of map.symbols) {
+        const matched: RepositoryGraphNode[] = [];
+        for (const sym of symbols) {
           const name = sym.name.toLowerCase();
           let symScore = 0;
           if (tokens.includes(name)) symScore += 3.0;
           else if (tokens.some((t) => name.includes(t) || t.includes(name)))
             symScore += 1.5;
           if (symScore > 0) {
-            if (sym.exported) symScore *= 1.5;
             raw += symScore;
             matched.push(sym);
           }
         }
-        return { map, raw, matched };
+        return { filePath, raw, matched };
       })
       .filter((s) => s.raw > 0);
 
@@ -78,8 +82,8 @@ export async function symbolSearch(
         const lastLine = s.matched[s.matched.length - 1]?.line ?? firstLine;
         return {
           repository,
-          filePath: s.map.filePath,
-          language: s.map.language,
+          filePath: s.filePath,
+          language: s.matched[0]?.language ?? "unknown",
           content: summarize(s.matched),
           startLine: firstLine,
           endLine: lastLine,

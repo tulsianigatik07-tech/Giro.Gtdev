@@ -133,7 +133,13 @@ export class SupabaseRepositoryStore implements RepositoryStore {
     assertResult(error);
     return true;
   }
-  markIndexing(id: string) { return this.updateRepository(id, { status: "indexing" }); }
+  async markIndexing(id: string) {
+    const existing = await this.getRepository(id);
+    if (!existing) return null;
+    return this.updateRepository(id, {
+      status: existing.indexedRevision ? "indexed" : "indexing",
+    });
+  }
   async markIndexed(id: string, input: MarkIndexedInput) {
     const existing = await this.getRepository(id); if (!existing) return null;
     const timestamp = new Date().toISOString();
@@ -143,8 +149,10 @@ export class SupabaseRepositoryStore implements RepositoryStore {
       lastChangedFileCount: input.changedFileCount, indexedRevision: input.indexedRevision,
       counts: input.counts });
   }
-  markFailed(id: string, input: MarkFailedInput = {}) {
-    return this.updateRepository(id, { status: "failed", lastFailureAt: new Date().toISOString(),
+  async markFailed(id: string, input: MarkFailedInput = {}) {
+    const existing = await this.getRepository(id);
+    if (!existing) return null;
+    return this.updateRepository(id, { status: existing.indexedRevision ? "indexed" : "failed", lastFailureAt: new Date().toISOString(),
       failureReason: input.reason, failedFileCount: input.failedFileCount,
       lastSuccessfulFile: input.lastSuccessfulFile });
   }

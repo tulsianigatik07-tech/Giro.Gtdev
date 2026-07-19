@@ -2,7 +2,7 @@
 
 import { logger } from "../../lib/logger.js";
 import { semanticSearch } from "../embeddings/search.js";
-import { analyzeRepoDependencies } from "../graph/index.js";
+import { getRepositorySymbolGraph } from "../repositoryGraph/runtimeRepositoryGraph.js";
 import { keywordSearch } from "./keywordSearch.js";
 import { symbolSearch } from "./symbolSearch.js";
 import type {
@@ -90,7 +90,7 @@ export async function executeHybridSearch(
   ] = await Promise.allSettled([
     semanticSearch(query, repository, fetchLimit, options),
     keywordSearch(query, owner, repo, fetchLimit, options),
-    symbolSearch(query, owner, repo, fetchLimit),
+    symbolSearch(query, owner, repo, fetchLimit, { repositoryVersion: options.repositoryVersion }),
     expandedQuery
       ? semanticSearch(expandedQuery, repository, fetchLimit, options)
       : Promise.resolve([]),
@@ -98,7 +98,7 @@ export async function executeHybridSearch(
       ? keywordSearch(expandedQuery, owner, repo, fetchLimit, options)
       : Promise.resolve([]),
     expandedQuery
-      ? symbolSearch(expandedQuery, owner, repo, fetchLimit)
+      ? symbolSearch(expandedQuery, owner, repo, fetchLimit, { repositoryVersion: options.repositoryVersion })
       : Promise.resolve([]),
   ]);
 
@@ -170,14 +170,10 @@ export async function executeHybridSearch(
   let graphNodes: Map<string, number> | null = null;
 
   try {
-    const graph = await analyzeRepoDependencies(owner, repo);
-
-    graphNodes = new Map(
-      graph.nodes.map((node) => [
-        node.filePath,
-        node.centralityScore,
-      ]),
-    );
+    const graph = getRepositorySymbolGraph(repository);
+    if (graph && graph.repositoryVersion === options.repositoryVersion) {
+      graphNodes = new Map(graph.nodes.map((node) => [node.file, 1]));
+    }
   } catch (err) {
     logger.warn("graph_signal_unavailable", {
       repository,

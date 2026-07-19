@@ -157,6 +157,7 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
   async markSucceeded(jobId: string): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
     if (!existing) return null;
+    if (existing.status === "succeeded") return cloneIndexingJob(existing);
 
     const transitioned = transitionIndexingJob(existing, "succeeded", {
       stage: "complete",

@@ -1,7 +1,7 @@
 import { env } from "../../../config/env.js";
 import { logger } from "../../../lib/logger.js";
 import { runtimeMetrics } from "../../../observability/metrics.js";
-import { runtimeIndexingJobStore } from "../../indexing/jobs/runtimeIndexingJobStore.js";
+import { repositoryStore } from "../../repository/store/runtimeRepositoryStore.js";
 import { RetrievalCache } from "./retrievalCache.js";
 
 export const runtimeRetrievalCache = new RetrievalCache({
@@ -10,8 +10,10 @@ export const runtimeRetrievalCache = new RetrievalCache({
   metrics: runtimeMetrics,
   logger,
   versionProvider: async (repositoryId) => {
-    const job = await runtimeIndexingJobStore.getLatestRepositoryJob(repositoryId);
-    if (!job) return "unversioned";
-    return [job.jobId, job.attempt, job.status, job.currentStage, job.progress].join(":");
+    const repository = await repositoryStore.getRepository(repositoryId);
+    if (!repository?.indexedRevision) {
+      throw new Error("Repository has no published revision.");
+    }
+    return repository.indexedRevision;
   },
 });

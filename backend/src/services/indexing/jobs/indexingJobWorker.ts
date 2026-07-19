@@ -3,10 +3,11 @@ import { cloneRepo } from "../../repository/clone.js";
 import { scanRepo } from "../../repository/scanner.js";
 import { analyzeRepository } from "../../repository/analyzer.js";
 import { extractRepoSymbols } from "../../graph/symbolExtractor.js";
-import { applyGraphUpdate } from "../../repository/graphUpdateExecutor.js";
+import { buildDependencyGraph, computeStats, detectInsights } from "../../graph/graphBuilder.js";
 import { buildRepositorySymbolGraph } from "../../repositoryGraph/graphBuilder.js";
 import { saveRepositorySymbolGraph } from "../../repositoryGraph/runtimeRepositoryGraph.js";
-import { generateRepositorySummary } from "../../repositorySummary/repositorySummary.js";
+import { buildRepositoryArchitectureSummary } from "../../repositorySummary/summaryBuilder.js";
+import { saveRepositorySummary } from "../../repositorySummary/runtimeRepositorySummary.js";
 import {
   getRepositoryFileSnapshot,
   saveRepositoryFileSnapshot,
@@ -14,14 +15,10 @@ import {
 import { buildRepositoryIndexingPlan } from "../../repository/indexingPlan.js";
 import { executeIndexingPlan } from "../../repository/indexingExecutor.js";
 import {
-  buildIndexCleanupPlanFromIndexingPlan,
-  executeIndexCleanup,
-} from "../../repository/indexCleanup.js";
-import {
-  removeRepositorySymbolsForFiles,
   saveRepositorySymbols,
   symbolRecordsFromFileMaps,
 } from "../../repository/symbolIndexStore.js";
+import { replaceRepositoryGraphSource } from "../../repository/graphSourceStore.js";
 import {
   setRepositoryIndexing,
   setRepositoryIndexed,
@@ -44,6 +41,10 @@ import { isDeadlineExceeded } from "../../../runtime/deadline.js";
 import type { DependencyCircuitBreakers } from "../../../runtime/dependencyCircuitBreakers.js";
 import { runtimeMetrics } from "../../../observability/metrics.js";
 import { logger } from "../../../lib/logger.js";
+import {
+  runtimeRepositorySnapshotStore,
+  type RepositorySnapshotStore,
+} from "../snapshots/repositorySnapshotStore.js";
 
 export interface IndexingJobProgressPublisher {
   publish(job: IndexingJob): void | Promise<void>;
@@ -65,11 +66,13 @@ export interface IndexingPipelineInput {
   retryLogger?: { info(event: string, fields?: Record<string, unknown>): void };
   retryMetrics?: { incrementRetry(category: RetryMetricCategory, result: RetryMetricResult, attempt: number): void };
   circuitBreakers?: DependencyCircuitBreakers;
+  snapshotStore?: RepositorySnapshotStore;
 }
 
 export interface IndexingPipelineResult {
   counts: IndexedCounts;
   indexOptions?: SetRepositoryIndexedOptions;
+  publicationHandled?: boolean;
 }
 
 export type ExecuteIndexingPipeline = (
@@ -167,6 +170,7 @@ export const indexingJobRepositoryStore: IndexingJobRepositoryStore = {
     await setRepositoryIndexing(job.repositoryOwner, job.repositoryName);
   },
   async markIndexed(job, result) {
+    if (result.publicationHandled) return;
     await setRepositoryIndexed(
       job.repositoryOwner,
       job.repositoryName,
@@ -267,22 +271,78 @@ export async function executeRepositoryIndexingPipeline(
   const owner = job.repositoryOwner;
   const repo = job.repositoryName;
   const repoId = job.repositoryId;
+  const snapshotStore = input.snapshotStore ?? runtimeRepositorySnapshotStore;
 
   await reportStage({ stage: "clone", progress: 10 });
   const cloneDeadline = createDeadline(env.REPOSITORY_CLONE_TIMEOUT_MS, { parentSignal: input.signal });
-  let clonePath: string;
+  let cloned: Awaited<ReturnType<typeof cloneRepo>>;
   try {
-    ({ clonePath } = await cloneRepo(owner, repo, {
+    cloned = await cloneRepo(owner, repo, {
       deadline: cloneDeadline,
       requestId: job.createdByRequestId ?? undefined,
       jobId: job.jobId,
       logger: input.retryLogger,
       metrics: input.retryMetrics,
       circuitBreaker: input.circuitBreakers?.clone,
-    }));
+      branch: job.branch,
+    });
   } finally {
     cloneDeadline.dispose();
   }
+
+  const clonePath = cloned.clonePath;
+  const revision = cloned.commitSha;
+  const identity = {
+    repositoryId: repoId,
+    revision,
+    branch: cloned.branch,
+    jobId: job.jobId,
+    workerId: job.claimedBy ?? "",
+  };
+  const staged = await snapshotStore.begin(identity);
+  if (staged.alreadyPublished && staged.counts) {
+    const indexOptions = {
+      indexMode: "incremental" as const,
+      changedFileCount: 0,
+      indexedRevision: revision,
+    };
+    await snapshotStore.publish({ ...identity, counts: staged.counts, indexOptions });
+    return { counts: staged.counts, indexOptions, publicationHandled: true };
+  }
+
+  try {
+    return await buildAndPublishRepositorySnapshot({
+      ...input,
+      job,
+      clonePath,
+      revision,
+      identity,
+      snapshotStore,
+    });
+  } catch (error) {
+    try {
+      await snapshotStore.discard(identity);
+    } catch {
+      logger.error("repository_snapshot_rollback_failed", {
+        repositoryId: repoId,
+        revision,
+        jobId: job.jobId,
+      });
+    }
+    throw error;
+  }
+}
+
+async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & {
+  clonePath: string;
+  revision: string;
+  identity: Parameters<RepositorySnapshotStore["begin"]>[0];
+  snapshotStore: RepositorySnapshotStore;
+}): Promise<IndexingPipelineResult> {
+  const { job, reportStage, clonePath, revision, identity, snapshotStore } = input;
+  const owner = job.repositoryOwner;
+  const repo = job.repositoryName;
+  const repoId = job.repositoryId;
 
   await reportStage({ stage: "scan", progress: 25 });
   const stats = await scanRepo(clonePath);
@@ -300,19 +360,18 @@ export async function executeRepositoryIndexingPipeline(
   const symbolCount = symbolMaps.reduce((count, map) => count + map.symbols.length, 0);
 
   await reportStage({ stage: "graph", progress: 70 });
-  const graph = applyGraphUpdate(owner, repo, {
-    added: symbolMaps,
-    modified: [],
-    removed: indexingPlan.removedFiles,
-  });
-  const repositoryVersion = `${job.jobId}:${job.attempt}`;
+  const builtGraph = buildDependencyGraph(symbolMaps);
+  const graph = {
+    ...builtGraph,
+    stats: computeStats(builtGraph.nodes, builtGraph.edges),
+    insights: detectInsights(builtGraph.nodes, builtGraph.edges),
+  };
+  const repositoryVersion = revision;
   const symbolGraph = buildRepositorySymbolGraph({
     repositoryId: repoId,
     repositoryVersion,
     symbolMaps,
   });
-  saveRepositorySymbolGraph(symbolGraph);
-  runtimeMetrics.setSymbolGraphSize(symbolGraph.nodes.length, symbolGraph.edges.length);
   const graphLogger = input.retryLogger ?? logger;
   graphLogger.info("symbol_graph_built", {
     repositoryId: repoId,
@@ -320,7 +379,7 @@ export async function executeRepositoryIndexingPipeline(
     nodes: symbolGraph.nodes.length,
     edges: symbolGraph.edges.length,
   });
-  generateRepositorySummary({
+  const summary = buildRepositoryArchitectureSummary({
     repositoryId: repoId,
     repositoryVersion,
     generatedAt: new Date().toISOString(),
@@ -328,7 +387,8 @@ export async function executeRepositoryIndexingPipeline(
     analysis,
     symbolMaps,
     dependencyGraph: graph,
-  }, { logger: graphLogger });
+  });
+  await snapshotStore.saveSummary(identity, summary);
 
   await reportStage({ stage: "chunk", progress: 80 });
   await executeIndexingPlan({
@@ -352,28 +412,33 @@ export async function executeRepositoryIndexingPipeline(
   });
 
   await reportStage({ stage: "finalize", progress: 95 });
-  const cleanupPlan = buildIndexCleanupPlanFromIndexingPlan(indexingPlan);
-  if (cleanupPlan.cleanupRequired) {
-    const cleanup = executeIndexCleanup(cleanupPlan);
-    removeRepositorySymbolsForFiles(repoId, cleanup.removedFiles);
-  }
-  saveRepositorySymbols(repoId, symbolRecordsFromFileMaps(symbolMaps));
-  saveRepositoryFileSnapshot(repoId, stats.files);
-
-  return {
-    counts: {
+  const counts = {
       chunkCount: context.totalChunks,
       fileCount: stats.totalFiles,
       symbolCount,
       graphNodeCount: graph.nodes.length,
       graphEdgeCount: graph.edges.length,
       summaryAvailable: analysis.framework !== "unknown",
-    },
-    indexOptions: {
+    };
+  const indexOptions = {
       indexMode: indexingPlan.mode,
       changedFileCount: indexingPlan.totalChangedFiles,
       indexedRevision: repositoryVersion,
-    },
+    };
+
+  await snapshotStore.publish({ ...identity, counts, indexOptions });
+
+  saveRepositorySymbolGraph(symbolGraph);
+  saveRepositorySummary(summary);
+  replaceRepositoryGraphSource(repoId, symbolMaps);
+  saveRepositorySymbols(repoId, symbolRecordsFromFileMaps(symbolMaps));
+  saveRepositoryFileSnapshot(repoId, stats.files);
+  runtimeMetrics.setSymbolGraphSize(symbolGraph.nodes.length, symbolGraph.edges.length);
+
+  return {
+    counts,
+    indexOptions,
+    publicationHandled: true,
   };
 }
 

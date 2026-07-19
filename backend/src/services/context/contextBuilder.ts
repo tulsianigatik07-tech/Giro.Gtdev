@@ -23,6 +23,9 @@ export async function buildRepositoryContext(
     repositoryVersion?: string;
   } = {},
 ): Promise<ContextBuildResult> {
+  if (!options.repositoryVersion?.trim()) {
+    throw new Error("Immutable repository revision is required for indexing.");
+  }
   const files = await readSourceFiles(clonePath);
   const chunks = files.flatMap((file) => chunkSourceFile(file));
 
@@ -37,7 +40,7 @@ export async function buildRepositoryContext(
         .from("repository_chunks")
         .select("id")
         .eq("repository", repository)
-        .eq("repository_revision", options.repositoryVersion ?? "unversioned")
+        .eq("repository_revision", options.repositoryVersion)
         .eq("file_path", chunk.filePath)
         .eq("chunk_index", i)
         .abortSignal(databaseDeadline.signal)

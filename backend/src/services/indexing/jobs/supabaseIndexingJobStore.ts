@@ -353,6 +353,8 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
   }
 
   async markSucceeded(jobId: string): Promise<IndexingJob | null> {
+    const existing = await this.getJob(jobId);
+    if (existing?.status === "succeeded") return existing;
     return this.transition(jobId, "succeeded");
   }
 

@@ -249,9 +249,11 @@ test("clone retries transient network failure after cleanup but not permanent fa
     logger: { info: () => undefined },
     metrics: new MetricsRegistry(),
     retryRuntime: immediateTimers,
+    checkoutSnapshot: async () => ({ commitSha: "a".repeat(40), branch: "main" }),
   });
   assert.equal(transientAttempts, 2);
   assert.equal(cloned.alreadyExisted, false);
+  assert.equal(cloned.commitSha, "a".repeat(40));
 
   let permanentAttempts = 0;
   await assert.rejects(cloneRepo("retry-test-owner", "missing-repo", {

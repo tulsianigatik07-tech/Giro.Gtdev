@@ -26,6 +26,9 @@ export async function semanticSearch(
   limit: number = 10,
   options: SemanticSearchOptions & { repositoryVersion?: string } = {},
 ): Promise<SemanticSearchResult[]> {
+  if (!options.repositoryVersion?.trim()) {
+    throw new Error("Published repository revision is required for semantic search.");
+  }
   const embedding = await (options.generateQueryEmbedding ?? generateEmbedding)(query, options);
   const deadline = createDeadline(env.DATABASE_REQUEST_TIMEOUT_MS, { parentSignal: options.signal });
 
@@ -35,7 +38,7 @@ export async function semanticSearch(
         input_repository: repository,
         query_embedding: embedding,
         match_count: limit,
-        input_repository_revision: options.repositoryVersion ?? null,
+        input_repository_revision: options.repositoryVersion,
       }).abortSignal(deadline.signal),
       {
         deadline,

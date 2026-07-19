@@ -206,7 +206,10 @@ export class MemoryRepositoryStore implements RepositoryStore {
   }
 
   markIndexing(repositoryId: string): RepositoryRecord | null {
-    return this.updateRepository(repositoryId, { status: "indexing" });
+    const existing = this.repositories.get(repositoryId);
+    return this.updateRepository(repositoryId, {
+      status: existing?.indexedRevision ? "indexed" : "indexing",
+    });
   }
 
   markIndexed(
@@ -251,7 +254,7 @@ export class MemoryRepositoryStore implements RepositoryStore {
     const timestamp = now();
     const updated: RepositoryRecord = {
       ...existing,
-      status: "failed",
+      status: existing.indexedRevision ? "indexed" : "failed",
       updatedAt: timestamp,
       lastFailureAt: timestamp,
       failureReason: input.reason ?? existing.failureReason,
