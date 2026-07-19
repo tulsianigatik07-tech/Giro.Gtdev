@@ -65,13 +65,18 @@ describe("session ask integration", () => {
     ask.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><ChatWorkspace sessionId={session.id} /></QueryClientProvider>);
-    const suggestion = screen.getByRole("button", { name: "Where does this repository start?" });
+    const suggestion = screen.getByRole("button", { name: "Where does authentication start?" });
+    fireEvent.click(suggestion);
+    const composer = screen.getByLabelText("Ask a repository question");
+    expect(composer).toHaveValue("Where does authentication start?");
+    const form = composer.closest("form");
+    expect(form).not.toBeNull();
     act(() => {
-      fireEvent.click(suggestion);
-      fireEvent.click(suggestion);
+      fireEvent.submit(form as HTMLFormElement);
+      fireEvent.submit(form as HTMLFormElement);
     });
     expect(ask).toHaveBeenCalledTimes(1);
-    expect(ask).toHaveBeenCalledWith("token", session.id, "Where does this repository start?");
+    expect(ask).toHaveBeenCalledWith("token", session.id, "Where does authentication start?");
     finish({
       answer: "Grounded answer",
       sources: [],

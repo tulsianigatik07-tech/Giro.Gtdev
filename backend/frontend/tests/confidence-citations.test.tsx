@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CitationList } from "@/features/retrieval/citation-list";
 import { ConfidenceBadge } from "@/features/retrieval/confidence-badge";
@@ -28,5 +28,24 @@ describe("grounded answer evidence", () => {
     expect(screen.queryByRole("code")).not.toBeInTheDocument();
     expect(screen.getByText("Preview not available")).toBeInTheDocument();
     expect(vi.mocked(navigator.clipboard.writeText)).not.toHaveBeenCalledWith("invented");
+  });
+
+  it("uses the existing mobile evidence dialog and restores trigger focus", async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(max-width: 820px)",
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    render(<CitationList citations={[citation]} context={[{ filePath: "src/auth/login.ts", language: "typescript", content: "export function authenticate() {}", startLine: 8, endLine: 30, score: 0.9 }]} />);
+    const trigger = screen.getByRole("button", { name: /^1 src\/auth\/login.ts/i });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "Citation 1: src/auth/login.ts" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close citation" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });

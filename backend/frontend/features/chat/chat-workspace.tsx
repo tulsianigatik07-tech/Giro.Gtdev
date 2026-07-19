@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getRepositoryStatus } from "@/components/ui/status-badge";
 import { useAuth } from "@/features/auth/auth-context";
 import { RetrievalInspector } from "@/features/retrieval/retrieval-inspector";
-import { useRepositories, useRepository } from "@/hooks/use-repositories";
+import { useRepositories } from "@/hooks/use-repositories";
 import { sessionKeys, useCreateSession, useDeleteSession, useSession, useSessions } from "@/hooks/use-sessions";
 import { getApiErrorMessage } from "@/services/api/client";
 import { retrievalApi } from "@/services/api/retrieval";
@@ -34,7 +34,6 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   const { token } = useAuth();
   const session = useSession(sessionId);
   const sessions = useSessions();
-  const repositorySummary = useRepository(session.data?.owner ?? "", session.data?.repo ?? "");
   const repositories = useRepositories();
   const create = useCreateSession();
   const remove = useDeleteSession();
@@ -131,8 +130,15 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   }];
   const indexedRepository = repositories.data?.repositories.find((item) => item.owner === session.data.owner && item.repo === session.data.repo);
   const repositoryStatus = getRepositoryStatus(indexedRepository?.status);
-  const blockedReason = repositories.isLoading ? "Checking repository readiness…" : repositoryStatus.ready ? undefined : `${repositoryStatus.label} repository. Repository intelligence must be ready before asking questions.`;
-  const chat = <ChatPanel session={session.data} summary={repositorySummary.data?.summary} latestAnswer={latestAnswer} pendingQuestion={pendingQuestion} asking={asking} error={askError} blockedReason={blockedReason} initialDraft={initialDraft} composerValue={composerQuestion} focusComposer={draftFocusPending} selectedEvidencePath={selectedEvidencePath} onSelectEvidence={setSelectedEvidencePath} onComposerChange={setComposerQuestion} onComposerFocused={clearDraftFocus} onDraftAdopted={removeAdoptedDraft} onAsk={(question) => void ask(question)} />;
+  const repositoryPath = `/repositories/${encodeURIComponent(session.data.owner)}/${encodeURIComponent(session.data.repo)}`;
+  const blockedState = repositories.isLoading
+    ? { message: "Checking repository readiness…" }
+    : repositoryStatus.ready
+      ? undefined
+      : repositoryStatus.label === "Failed" || repositoryStatus.label === "Disconnected"
+        ? { message: "Repository unavailable. Reconnect the repository before asking questions.", actionHref: "/repositories/connect", actionLabel: "Connect repository" }
+        : { message: "Indexing required. Repository intelligence must be ready before asking questions.", actionHref: `${repositoryPath}/indexing`, actionLabel: "View indexing" };
+  const chat = <ChatPanel session={session.data} latestAnswer={latestAnswer} pendingQuestion={pendingQuestion} asking={asking} error={askError} blockedState={blockedState} initialDraft={initialDraft} composerValue={composerQuestion} focusComposer={draftFocusPending} selectedEvidencePath={selectedEvidencePath} onSelectEvidence={setSelectedEvidencePath} onComposerChange={setComposerQuestion} onComposerFocused={clearDraftFocus} onDraftAdopted={removeAdoptedDraft} onAsk={(question) => void ask(question)} />;
   const inspector = <RetrievalInspector retrieval={retrieval} loading={retrievalLoading} error={retrievalError} selectedPath={selectedEvidencePath} onSelectPath={setSelectedEvidencePath} onClose={() => { setInspectorOpen(false); if (layout === "mobile") setChatView("conversation"); }} />;
   async function deleteSession(id: string) {
     await remove.mutateAsync(id);
@@ -140,9 +146,9 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
   }
   const history = <ConversationHistory sessions={repositorySessions} activeId={sessionId} onCreate={() => void newSession()} creating={create.isPending} createError={create.error} onDelete={(id) => void deleteSession(id)} deleting={remove.isPending} />;
 
-  if (layout === "mobile") return <div className="flex h-full min-h-0 flex-col"><div className="border-b border-border-subtle p-1"><SegmentedControl label="Chat workspace" items={[{ id: "sessions", label: "Sessions" }, { id: "conversation", label: "Conversation" }, { id: "inspector", label: "Inspector" }]} value={chatView} onValueChange={(value) => setChatView(value as typeof chatView)} /></div><div className="relative min-h-0 flex-1"><div className={chatView === "sessions" ? "absolute inset-0" : "hidden"}>{history}</div><div className={chatView === "conversation" ? "absolute inset-0" : "hidden"}>{chat}</div><div className={chatView === "inspector" ? "absolute inset-0" : "hidden"}>{inspector}</div></div></div>;
+  if (layout === "mobile") return <div className="flex h-full min-h-0 flex-col"><div className="border-b border-border-subtle p-1"><SegmentedControl label="Ask Giro workspace" items={[{ id: "sessions", label: "Sessions" }, { id: "conversation", label: "Conversation" }, { id: "inspector", label: "Evidence" }]} value={chatView} onValueChange={(value) => setChatView(value as typeof chatView)} /></div><div className="relative min-h-0 flex-1"><div className={chatView === "sessions" ? "absolute inset-0" : "hidden"}>{history}</div><div className={chatView === "conversation" ? "absolute inset-0" : "hidden"}>{chat}</div><div className={chatView === "inspector" ? "absolute inset-0" : "hidden"}>{inspector}</div></div></div>;
 
-  if (layout === "tablet") return <div className="relative flex h-full min-h-0 flex-col"><div className="flex h-10 shrink-0 items-center gap-1 border-b border-border-subtle px-2"><Button variant="ghost" size="sm" onClick={() => { setInspectorOpen(false); setHistoryOpen(true); }}><List className="size-4" />Sessions</Button><Button variant="ghost" size="sm" className="ml-auto" onClick={() => { setHistoryOpen(false); setInspectorOpen(true); }}><PanelRight className="size-4" />Inspector</Button></div><div className="min-h-0 flex-1">{chat}</div><Drawer open={historyOpen} label="Session history" side="left" onClose={() => setHistoryOpen(false)}>{history}</Drawer><Drawer open={inspectorOpen} label="Retrieval inspector" side="right" onClose={() => setInspectorOpen(false)}>{inspector}</Drawer></div>;
+  if (layout === "tablet") return <div className="relative flex h-full min-h-0 flex-col"><div className="flex h-10 shrink-0 items-center gap-1 border-b border-border-subtle px-2"><Button variant="ghost" size="sm" onClick={() => { setInspectorOpen(false); setHistoryOpen(true); }}><List className="size-4" />Sessions</Button><Button variant="ghost" size="sm" className="ml-auto" onClick={() => { setHistoryOpen(false); setInspectorOpen(true); }}><PanelRight className="size-4" />Evidence</Button></div><div className="min-h-0 flex-1">{chat}</div><Drawer open={historyOpen} label="Session history" side="left" onClose={() => setHistoryOpen(false)}>{history}</Drawer><Drawer open={inspectorOpen} label="Repository evidence" side="right" onClose={() => setInspectorOpen(false)}>{inspector}</Drawer></div>;
 
   if (layout === "split") return <div className="relative h-full min-h-0"><PanelGroup direction="horizontal" autoSaveId="giro-chat-split"><Panel defaultSize={22} minSize={18} maxSize={30} collapsible>{history}</Panel><ResizableHandle /><Panel minSize={55}>{chat}</Panel></PanelGroup><Drawer open={inspectorOpen} label="Retrieval inspector" side="right" onClose={() => setInspectorOpen(false)}>{inspector}</Drawer></div>;
   return (

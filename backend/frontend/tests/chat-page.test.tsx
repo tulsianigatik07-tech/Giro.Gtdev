@@ -2,30 +2,53 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "@/features/chat/chat-panel";
 import { ConversationHistory } from "@/features/chat/conversation-history";
+import { ApiClientError } from "@/services/api/client";
 import { citation, session } from "./fixtures";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/chat/session-1" }));
 
 describe("chat page", () => {
-  it("renders its empty state and submits a question", () => {
+  it("renders engineering guidance and populates examples without submitting", () => {
     const onAsk = vi.fn();
     render(<ChatPanel session={session} latestAnswer={null} pendingQuestion={null} asking={false} error={null} onAsk={onAsk} />);
-    expect(screen.getByText("Explore platform")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Question the indexed repository." })).toBeInTheDocument();
+    expect(screen.getByText("Where does authentication start?")).toBeInTheDocument();
+    expect(screen.getByText("Which files define API routes?")).toBeInTheDocument();
+    expect(screen.getByText("Explain the indexing pipeline.")).toBeInTheDocument();
+    expect(screen.getByText("Show repository entry points.")).toBeInTheDocument();
+    expect(screen.getByText("Which modules depend on X?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Where does authentication start?" }));
+    expect(screen.getByLabelText("Ask a repository question")).toHaveValue("Where does authentication start?");
+    expect(screen.getByLabelText("Ask a repository question")).toHaveFocus();
+    expect(screen.getByRole("status")).toHaveTextContent("Example question inserted into the composer.");
+    expect(onAsk).not.toHaveBeenCalled();
+  });
+
+  it("submits an entered question and preserves the Enter shortcut", () => {
+    const onAsk = vi.fn();
+    render(<ChatPanel session={session} latestAnswer={null} pendingQuestion={null} asking={false} error={null} onAsk={onAsk} />);
     fireEvent.change(screen.getByLabelText("Ask a repository question"), { target: { value: "Where is auth handled?" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+    fireEvent.keyDown(screen.getByLabelText("Ask a repository question"), { key: "Enter" });
     expect(onAsk).toHaveBeenCalledWith("Where is auth handled?");
   });
 
   it("renders loading state while grounded retrieval runs", () => {
     render(<ChatPanel session={session} latestAnswer={null} pendingQuestion="Explain auth" asking error={null} onAsk={vi.fn()} />);
-    expect(screen.getByText("Retrieving repository context")).toBeInTheDocument();
+    const loadingMessage = screen.getByText("Searching indexed repository…");
+    expect(loadingMessage).toBeInTheDocument();
+    expect(loadingMessage.closest('[role="status"]')).toHaveTextContent("GROUNDING RESPONSE IN acme/platform");
     expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
   });
 
   it("blocks repository questions with an explicit readiness reason", () => {
-    render(<ChatPanel session={session} latestAnswer={null} pendingQuestion={null} asking={false} error={null} blockedReason="Indexing repository. Repository intelligence must be ready before asking questions." onAsk={vi.fn()} />);
+    render(<ChatPanel session={session} latestAnswer={null} pendingQuestion={null} asking={false} error={null} blockedState={{ message: "Indexing required. Repository intelligence must be ready before asking questions.", actionHref: "/repositories/acme/platform/indexing", actionLabel: "View indexing" }} onAsk={vi.fn()} />);
     expect(screen.getByLabelText("Ask a repository question")).toBeDisabled();
-    expect(screen.getByText(/Repository intelligence must be ready/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View indexing" })).toHaveAttribute("href", "/repositories/acme/platform/indexing");
+  });
+
+  it("offers repository recovery without changing routes", () => {
+    render(<ChatPanel session={session} latestAnswer={null} pendingQuestion={null} asking={false} error={null} blockedState={{ message: "Repository unavailable. Reconnect the repository before asking questions.", actionHref: "/repositories/connect", actionLabel: "Connect repository" }} onAsk={vi.fn()} />);
+    expect(screen.getByRole("link", { name: "Connect repository" })).toHaveAttribute("href", "/repositories/connect");
   });
 
   it("adopts a repository draft once without submitting it", () => {
@@ -87,6 +110,32 @@ describe("chat page", () => {
     expect(screen.getByText("src/auth/login.ts")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Citation 1: src\/auth\/login.ts/ }));
     expect(onSelectEvidence).toHaveBeenCalledWith("src/auth/login.ts");
+  });
+
+  it("differentiates backend and request failures with retry", () => {
+    const retry = vi.fn();
+    const backend = new ApiClientError({ code: "ask_failed", message: "Answer service rejected the request.", status: 503, retryable: true, requestId: "req-1" });
+    const view = render(<ChatPanel session={session} latestAnswer={null} pendingQuestion="Explain auth" asking={false} error={backend} onAsk={retry} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Backend error");
+    expect(screen.getByRole("alert")).toHaveTextContent("REQUEST req-1");
+    fireEvent.click(screen.getByRole("button", { name: "Retry question" }));
+    expect(retry).toHaveBeenCalledWith("Explain auth");
+    view.rerender(<ChatPanel session={session} latestAnswer={null} pendingQuestion="Explain auth" asking={false} error={new ApiClientError({ code: "network_error", message: "Unable to reach the Giro API.", status: 0, retryable: true })} onAsk={retry} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Request failed");
+  });
+
+  it("uses a labelled conversation log for long investigations", () => {
+    const messages = Array.from({ length: 12 }, (_, index) => ({
+      id: `message-${index}`,
+      role: index % 2 === 0 ? "user" as const : "assistant" as const,
+      content: `Investigation message ${index + 1}`,
+      citations: index % 2 === 0 ? [] : [citation],
+      createdAt: `2026-07-17T00:${String(index).padStart(2, "0")}:00Z`,
+    }));
+    render(<ChatPanel session={{ ...session, messages }} latestAnswer={null} pendingQuestion={null} asking={false} error={null} onAsk={vi.fn()} />);
+    expect(screen.getByRole("log", { name: "Conversation messages" })).toBeInTheDocument();
+    expect(screen.getAllByRole("article", { name: "User question" })).toHaveLength(6);
+    expect(screen.getAllByRole("article", { name: "Giro answer" })).toHaveLength(6);
   });
 
   it("supports switching sessions through conversation history", () => {
