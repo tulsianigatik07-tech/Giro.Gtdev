@@ -3,20 +3,15 @@
 import Link from "next/link";
 import { Braces, GitBranch, MessageSquare, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ErrorState } from "@/components/ui/error-state";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useRepositories } from "@/hooks/use-repositories";
 import { useSessions } from "@/hooks/use-sessions";
-import { SessionTimeline } from "@/features/sessions/session-timeline";
-import { RepositoryCard } from "./repository-card";
+import { DashboardCommandCenter } from "./dashboard-command-center";
 
 export function DashboardScreen() {
   const repositories = useRepositories();
   const sessions = useSessions();
   const hasRepositories = Boolean(repositories.data?.repositories.length);
   const empty = !repositories.isLoading && !repositories.isError && repositories.data?.repositories.length === 0;
-  const firstRepository = repositories.data?.repositories[0];
-  const investigationStartHref = firstRepository ? `/repositories/${encodeURIComponent(firstRepository.owner)}/${encodeURIComponent(firstRepository.repo)}` : "/repositories/connect";
 
   return (
     <div className="layout-standard layout-gutter py-10 max-[820px]:py-8">
@@ -24,13 +19,7 @@ export function DashboardScreen() {
         <div><p className="type-section-eyebrow text-muted-foreground">Workspace</p><h1 className="mt-2 type-page-title">Repository <span className="italic text-primary">intelligence</span><span className="not-italic">.</span></h1><p className="mt-2 type-body text-text-secondary">Connect codebases, inspect evidence, and continue grounded conversations.</p></div>
         {hasRepositories ? <Button variant="accent" asChild><Link href="/repositories/connect"><Plus className="size-4" />Connect repository</Link></Button> : null}
       </div>
-      {empty ? <EmptyDashboardOnboarding /> : <><section aria-labelledby="repositories-heading" className="mt-7">
-        <div className="mb-3 flex items-end justify-between"><div><h2 id="repositories-heading" className="type-section-eyebrow text-muted-foreground">Repositories</h2><p className="mt-2 type-compact text-text-secondary">Indexed repositories available for grounded questions</p></div><span className="type-metadata text-muted-foreground">{repositories.data?.count ?? 0} total</span></div>
-        {repositories.isError ? <ErrorState error={repositories.error} retry={() => void repositories.refetch()} /> : null}
-        {repositories.isLoading ? <div role="status" aria-live="polite" aria-label="Loading repositories" className="divide-y divide-border-subtle border-y border-border-subtle">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-20" />)}</div> : null}
-        {repositories.data?.repositories.length ? <div className="divide-y divide-border-subtle border-y border-border-subtle">{repositories.data.repositories.map((repository) => <RepositoryCard key={`${repository.owner}/${repository.repo}`} repository={repository} />)}</div> : null}
-      </section>
-      <SessionTimeline sessions={sessions.data?.sessions} loading={sessions.isLoading} error={sessions.isError ? sessions.error : undefined} onRetry={() => void sessions.refetch()} startHref={investigationStartHref} /></>}
+      {empty ? <EmptyDashboardOnboarding /> : <DashboardCommandCenter repositories={repositories.data?.repositories} repositoryCount={repositories.data?.count} repositoriesLoading={repositories.isLoading} repositoryError={repositories.isError ? repositories.error : undefined} onRetryRepositories={() => void repositories.refetch()} sessions={sessions.data?.sessions} sessionsLoading={sessions.isLoading} sessionError={sessions.isError ? sessions.error : undefined} onRetrySessions={() => void sessions.refetch()} />}
     </div>
   );
 }

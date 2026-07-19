@@ -29,12 +29,13 @@ describe("empty dashboard onboarding", () => {
     ]);
     expect(screen.getByRole("link", { name: "Connect repository" })).toHaveAttribute("href", "/repositories/connect");
     expect(screen.queryByRole("heading", { name: "Recent sessions" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Engineering command center")).not.toBeInTheDocument();
   });
 
   it("announces the repository-shaped loading state", () => {
     state.loading = true;
     render(<DashboardScreen />);
-    expect(screen.getByRole("status", { name: "Loading repositories" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading repository command center" })).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Repository onboarding steps" })).not.toBeInTheDocument();
   });
 });
