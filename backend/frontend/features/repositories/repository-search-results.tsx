@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { FileCode2, MessageSquare, SearchX, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Panel } from "@/components/ui/card";
 import { ListRow } from "@/components/ui/data-display";
 import { Drawer } from "@/components/ui/drawer";
 import { SegmentedControl } from "@/components/ui/tabs";
-import { AskGiroDialog, type AskGiroTarget } from "@/features/repositories/ask-giro-dialog";
+import type { AskGiroTarget } from "@/features/repositories/ask-giro-dialog";
 import { RepositoryExplorerDetail } from "@/features/repositories/repository-explorer-detail";
 import { RepositoryExplorerList } from "@/features/repositories/repository-explorer-list";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import type { RepositoryExplorerCategory, RepositoryExplorerItem } from "@/lib/r
 import type { RetrievalResult } from "@/types/api";
 
 export type EvidenceFilter = "all" | "symbol" | "code";
+const AskGiroDialog = dynamic(() => import("@/features/repositories/ask-giro-dialog").then((module) => module.AskGiroDialog), { ssr: false });
 
 export function normalizeEvidenceFilter(value: string | null): EvidenceFilter {
   return value === "symbol" || value === "code" ? value : "all";

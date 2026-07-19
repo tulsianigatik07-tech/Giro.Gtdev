@@ -11,7 +11,8 @@ import { useSessions } from "@/hooks/use-sessions";
 import { useUiStore } from "@/store/ui-store";
 
 export function TopNav() {
-  const { setSidebarOpen, toggleInspector } = useUiStore();
+  const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
+  const toggleInspector = useUiStore((state) => state.toggleInspector);
   const pathname = usePathname();
   const repositories = useRepositories();
   const sessions = useSessions();

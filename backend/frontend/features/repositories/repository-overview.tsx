@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, FileCode2, LoaderCircle, MessageSquare, Play, Settings } from "lucide-react";
@@ -11,7 +12,7 @@ import { InlineAlert } from "@/components/ui/inline-alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getRepositoryStatus, RepositoryStatusBadge } from "@/components/ui/status-badge";
 import { Tabs } from "@/components/ui/tabs";
-import { AskGiroDialog, type AskGiroTarget } from "@/features/repositories/ask-giro-dialog";
+import type { AskGiroTarget } from "@/features/repositories/ask-giro-dialog";
 import { RepositoryExplorerDetail } from "@/features/repositories/repository-explorer-detail";
 import { RepositoryExplorerList } from "@/features/repositories/repository-explorer-list";
 import { useRepositories, useRepository, useRepositoryWorkspace } from "@/hooks/use-repositories";
@@ -28,6 +29,8 @@ import { RepositorySummaryOverview } from "./repository-summary-overview";
 
 const REPOSITORY_TAB_IDS = ["summary", "architecture", "files", "symbols", "dependencies", "sessions", "settings"] as const;
 type RepositoryTab = (typeof REPOSITORY_TAB_IDS)[number];
+const REPOSITORY_TABS = REPOSITORY_TAB_IDS.map((id) => ({ id, label: id[0]?.toUpperCase() + id.slice(1), panelId: `repository-${id}-panel` }));
+const AskGiroDialog = dynamic(() => import("@/features/repositories/ask-giro-dialog").then((module) => module.AskGiroDialog), { ssr: false });
 
 function repositoryTab(value: string | null): RepositoryTab {
   return REPOSITORY_TAB_IDS.find((tab) => tab === value) ?? "summary";
@@ -43,7 +46,6 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
   const summary = useRepository(owner, repo);
   const repositories = useRepositories();
   const create = useCreateSession();
-  const sessions = useSessions();
   const [askTarget, setAskTarget] = useState<AskGiroTarget | null>(null);
   const activeTab = repositoryTab(searchParams.get("tab"));
   const indexed = repositories.data?.repositories.find((item) => item.owner === owner && item.repo === repo);
@@ -63,8 +65,6 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
   const explorerCategories = isExplorerTab(activeTab) ? extractRepositoryExplorerCategories(activeTab, details) : [];
   const selectedExplorerCategory = normalizeRepositoryExplorerCategory(explorerCategories, searchParams.get("category"));
   const selectedExplorerItem = findRepositoryExplorerItem(selectedExplorerCategory, searchParams.get("item"));
-  const repositorySessions = sessions.data?.sessions.filter((session) => session.owner === owner && session.repo === repo) ?? [];
-  const tabs = REPOSITORY_TAB_IDS.map((id) => ({ id, label: id[0]?.toUpperCase() + id.slice(1), panelId: `repository-${id}-panel` }));
 
   function selectTab(tab: string) {
     const nextSearchParams = new URLSearchParams(searchParams.toString());
@@ -109,7 +109,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
       {create.isError ? <div className="mt-4"><ErrorState error={create.error} compact /></div> : null}
       {summary.isError ? <div className="mt-4"><ErrorState error={summary.error} retry={() => void summary.refetch()} compact /></div> : null}
 
-      <div className="mt-6"><Tabs label="Repository sections" items={tabs} value={activeTab} onValueChange={selectTab} /></div>
+      <div className="mt-6"><Tabs label="Repository sections" items={REPOSITORY_TABS} value={activeTab} onValueChange={selectTab} /></div>
 
       <div id={`repository-${activeTab}-panel`} role="tabpanel" className="mt-8">
         {activeTab === "summary" ? <RepositorySummaryOverview owner={owner} repo={repo} summary={details} repository={indexed} workspace={workspace.data} workspaceLoading={workspace.isLoading} workspaceUnavailable={workspace.isError} onAsk={() => void openSession()} /> : null}
@@ -122,13 +122,20 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
 
         {activeTab === "dependencies" ? <ExplorerTab tab="dependencies" title="Dependency summary" description="Central modules, dependency hotspots, and detected cycles exposed by indexing." empty="No dependency summary is available." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} onAsk={repositoryStatus.ready ? (item) => setAskTarget({ kind: "repository-item", item, location: { kind: "explorer", tab: "dependencies" } }) : undefined} /> : null}
 
-        {activeTab === "sessions" ? <section aria-label="Repository sessions" className="layout-editorial ml-0"><div className="divide-y divide-border-subtle border-y border-border-subtle">{sessions.isError ? <div className="p-3"><ErrorState error={sessions.error} retry={() => void sessions.refetch()} compact /></div> : null}{sessions.isLoading ? <div className="space-y-3 p-3"><Skeleton className="h-10" /><Skeleton className="h-10" /></div> : null}{repositorySessions.map((session) => <Link key={session.id} href={`/chat/${session.id}`} className="flex min-h-10 items-center gap-3 px-3 py-2 hover:bg-hover focus-ring"><MessageSquare className="size-3.5 text-muted-foreground" /><span className="min-w-0 flex-1 truncate type-compact-strong">{session.title}</span><span className="type-metadata text-muted-foreground">{session.messageCount} messages</span></Link>)}</div>{!sessions.isLoading && !sessions.isError && repositorySessions.length === 0 ? <EmptyState icon={MessageSquare} title="No repository sessions" description="Start a session from the primary action when repository intelligence is ready." /> : null}</section> : null}
+        {activeTab === "sessions" ? <RepositorySessions owner={owner} repo={repo} /> : null}
 
         {activeTab === "settings" ? <EmptyState icon={Settings} title="No repository settings exposed" description="The current backend does not expose repository-specific settings." /> : null}
       </div>
       {askTarget ? <AskGiroDialog open owner={owner} repo={repo} target={askTarget} onClose={() => setAskTarget(null)} /> : null}
     </div>
   );
+}
+
+function RepositorySessions({ owner, repo }: { owner: string; repo: string }) {
+  const sessions = useSessions();
+  const repositorySessions = sessions.data?.sessions.filter((session) => session.owner === owner && session.repo === repo) ?? [];
+
+  return <section aria-label="Repository sessions" className="layout-editorial ml-0"><div className="divide-y divide-border-subtle border-y border-border-subtle">{sessions.isError ? <div className="p-3"><ErrorState error={sessions.error} retry={() => void sessions.refetch()} compact /></div> : null}{sessions.isLoading ? <div className="space-y-3 p-3"><Skeleton className="h-10" /><Skeleton className="h-10" /></div> : null}{repositorySessions.map((session) => <Link key={session.id} href={`/chat/${session.id}`} className="flex min-h-10 items-center gap-3 px-3 py-2 hover:bg-hover focus-ring"><MessageSquare className="size-3.5 text-muted-foreground" /><span className="min-w-0 flex-1 truncate type-compact-strong">{session.title}</span><span className="type-metadata text-muted-foreground">{session.messageCount} messages</span></Link>)}</div>{!sessions.isLoading && !sessions.isError && repositorySessions.length === 0 ? <EmptyState icon={MessageSquare} title="No repository sessions" description="Start a session from the primary action when repository intelligence is ready." /> : null}</section>;
 }
 
 function ExplorerTab({ title, description, empty, categories, selectedItem, onSelect, onAsk }: { tab: RepositoryExplorerTab; title: string; description: string; empty: string; categories: ReturnType<typeof extractRepositoryExplorerCategories>; selectedItem: RepositoryExplorerItem | undefined; onSelect(item: RepositoryExplorerItem): void; onAsk?: (item: RepositoryExplorerItem) => void }) {

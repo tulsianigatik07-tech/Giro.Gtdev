@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { LoginForm } from "@/features/auth/login-form";
+import { AuthProvider } from "@/features/auth/auth-context";
 import { PublicBrand } from "@/components/marketing/public-brand";
 import { Button } from "@/components/ui/button";
 
@@ -20,7 +21,7 @@ export default function LoginPage() {
             <p className="type-metadata-label text-muted-foreground">Engineering workspace</p>
             <h1 id="login-title" aria-label="Welcome to Giro" className="mt-2 type-display text-foreground">Welcome to <span className="italic text-primary">Giro</span><span className="not-italic">.</span></h1>
             <p className="mt-2 type-body text-text-secondary">Enter the access token issued by your Giro deployment to open your repository workspace.</p>
-            <LoginForm />
+            <AuthProvider><LoginForm /></AuthProvider>
             <p className="mt-4 type-metadata text-muted-foreground">Tokens remain in this browser tab and are validated by your Giro backend.</p>
           </div>
         </section>

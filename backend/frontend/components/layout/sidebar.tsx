@@ -29,7 +29,11 @@ export function Sidebar() {
   const repositories = useRepositories();
   const remove = useDeleteSession();
   const repositoryMenuRef = useRef<HTMLDetailsElement>(null);
-  const { sidebarOpen, sidebarCollapsed, setSidebarOpen, setSidebarCollapsed, toggleSidebarCollapsed } = useUiStore();
+  const sidebarOpen = useUiStore((state) => state.sidebarOpen);
+  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
+  const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
+  const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
+  const toggleSidebarCollapsed = useUiStore((state) => state.toggleSidebarCollapsed);
   const segments = pathname.split("/").filter(Boolean);
   const routeRepository = segments[0] === "repositories" && segments.length >= 3
     ? `${decodeURIComponent(segments[1] ?? "")}/${decodeURIComponent(segments[2] ?? "")}`

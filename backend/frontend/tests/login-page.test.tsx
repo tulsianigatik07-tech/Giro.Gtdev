@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import LoginPage from "@/app/login/page";
 
+vi.mock("@/features/auth/auth-context", () => ({ AuthProvider: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@/features/auth/login-form", () => ({ LoginForm: () => <form aria-label="Access token sign in"><label htmlFor="token">Giro access token</label><input id="token" /></form> }));
 
 describe("login composition", () => {

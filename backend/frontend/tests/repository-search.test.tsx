@@ -273,7 +273,7 @@ describe("repository search foundation", () => {
     }).toString();
     render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
     fireEvent.click(await screen.findByRole("button", { name: "Ask Giro about this evidence" }));
-    fireEvent.click(screen.getByRole("radio", { name: /New session/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /New session/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(mocks.createSession).toHaveBeenCalledWith({ owner: "acme", repo: "platform", title: "createSession" }));
     expect(mocks.routerPush.mock.calls.at(-1)?.[0]).toContain("draft=Explain+how+createSession+in+src%2Fsession.ts+works.");
