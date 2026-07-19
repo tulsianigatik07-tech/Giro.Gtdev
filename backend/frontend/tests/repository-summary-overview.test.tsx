@@ -32,6 +32,9 @@ describe("repository summary overview", () => {
   it("renders a narrative overview and repository purpose", () => {
     render(<RepositorySummaryOverview owner="acme" repo="platform" summary={summary} repository={repository} workspace={workspace} onAsk={vi.fn()} />);
     expect(screen.getByText(summary.purpose)).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Repository status and primary actions" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Repository health" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Primary actions" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Where to start reading" })).toBeInTheDocument();
   });
 

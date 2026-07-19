@@ -6,7 +6,7 @@ import { repository } from "./fixtures";
 
 const routerPush = vi.fn();
 let currentSearchParams = "";
-const repositoryMocks = vi.hoisted(() => ({ status: "indexed" }));
+const repositoryMocks = vi.hoisted(() => ({ status: "indexed", loading: false }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush }),
@@ -17,9 +17,9 @@ vi.mock("@/hooks/use-sessions", () => ({
   useSessions: () => ({ data: { sessions: [] }, isLoading: false, isError: false, refetch: vi.fn() }),
 }));
 vi.mock("@/hooks/use-repositories", () => ({
-  useRepositories: () => ({ data: { repositories: [{ ...repository, status: repositoryMocks.status }], count: 1 } }),
+  useRepositories: () => ({ data: { repositories: [{ ...repository, status: repositoryMocks.status }], count: 1 }, isLoading: repositoryMocks.loading }),
   useRepository: () => ({
-    isLoading: false,
+    isLoading: repositoryMocks.loading,
     isError: false,
       data: {
         summary: {
@@ -56,7 +56,15 @@ describe("repository page", () => {
   beforeEach(() => {
     currentSearchParams = "";
     repositoryMocks.status = "indexed";
+    repositoryMocks.loading = false;
     routerPush.mockReset();
+  });
+
+  it("renders a workspace-shaped loading state", () => {
+    repositoryMocks.loading = true;
+    render(<RepositoryOverview owner="acme" repo="platform" />);
+    expect(screen.getByRole("status", { name: "Loading repository workspace" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "platform" })).not.toBeInTheDocument();
   });
 
   it("renders overview, intelligence, entrypoints, and indexing metadata", () => {

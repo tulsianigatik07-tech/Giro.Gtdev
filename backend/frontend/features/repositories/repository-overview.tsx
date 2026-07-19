@@ -57,7 +57,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
     router.push(`/chat/${session.id}`);
   }
 
-  if (repositories.isLoading || summary.isLoading) return <div className="layout-standard layout-gutter space-y-4 py-10"><Skeleton className="h-24" /><Skeleton className="h-10" /><Skeleton className="h-56" /></div>;
+  if (repositories.isLoading || summary.isLoading) return <RepositoryWorkspaceSkeleton />;
   if (repositories.isError) return <div className="layout-standard layout-gutter py-10"><ErrorState error={repositories.error} retry={() => void repositories.refetch()} /></div>;
 
   const explorerCategories = isExplorerTab(activeTab) ? extractRepositoryExplorerCategories(activeTab, details) : [];
@@ -90,7 +90,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
 
   return (
     <div className="layout-standard layout-gutter py-10 max-[820px]:py-8">
-      <header className="flex flex-col gap-5 border-b border-border-subtle pb-6 sm:flex-row sm:items-end sm:justify-between">
+      <header className="grid gap-6 border-b border-border-subtle pb-7 laptop:grid-cols-[minmax(0,1fr)_auto] laptop:items-end">
         <div className="min-w-0">
           <p className="type-section-eyebrow text-muted-foreground">{owner}</p>
           <h1 aria-label={repo} className="mt-2 break-words type-page-title"><span className="type-page-title-accent">{repo}</span><span className="not-italic text-foreground">.</span></h1>
@@ -101,7 +101,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
           </div>
           {activeTab !== "summary" && details?.purpose ? <p className="mt-4 max-w-[68ch] type-body text-text-secondary">{details.purpose}</p> : null}
         </div>
-        <Button variant="accent" onClick={() => void openSession()} disabled={create.isPending || !repositoryStatus.ready}>{create.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <Play className="size-4" />}{create.isPending ? "Creating…" : "Open session"}</Button>
+        <Button variant="accent" className="justify-self-start max-[820px]:w-full laptop:justify-self-end" onClick={() => void openSession()} disabled={create.isPending || !repositoryStatus.ready}>{create.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <Play className="size-4" />}{create.isPending ? "Creating…" : "Open session"}</Button>
       </header>
 
       {!repositoryStatus.ready ? <InlineAlert tone={repositoryStatus.label === "Failed" ? "danger" : "warning"} className="mt-4"><div className="flex flex-wrap items-center gap-3"><div className="min-w-0 flex-1"><p className="type-compact-strong">{repositoryStatus.label} repository</p><p className="mt-1">{repositoryStatus.label === "Failed" ? "Indexing failed. Retry the repository connection before starting a session." : repositoryStatus.label === "Stale" ? "Repository evidence is stale. Reindex before starting a new session." : "Repository intelligence must be ready before starting a session."}</p></div><Button variant="secondary" size="sm" onClick={() => router.push(indexed?.status === "failed" ? "/repositories/connect" : `/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/indexing`)}>{indexed?.status === "failed" ? "Reconnect repository" : "View indexing"}<ArrowRight className="size-3.5" /></Button></div></InlineAlert> : null}
@@ -109,9 +109,9 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
       {create.isError ? <div className="mt-4"><ErrorState error={create.error} compact /></div> : null}
       {summary.isError ? <div className="mt-4"><ErrorState error={summary.error} retry={() => void summary.refetch()} compact /></div> : null}
 
-      <div className="mt-7"><Tabs label="Repository sections" items={tabs} value={activeTab} onValueChange={selectTab} /></div>
+      <div className="mt-6"><Tabs label="Repository sections" items={tabs} value={activeTab} onValueChange={selectTab} /></div>
 
-      <div id={`repository-${activeTab}-panel`} role="tabpanel" className="mt-7">
+      <div id={`repository-${activeTab}-panel`} role="tabpanel" className="mt-8">
         {activeTab === "summary" ? <RepositorySummaryOverview owner={owner} repo={repo} summary={details} repository={indexed} workspace={workspace.data} workspaceLoading={workspace.isLoading} workspaceUnavailable={workspace.isError} onAsk={() => void openSession()} /> : null}
 
         {activeTab === "architecture" ? <ExplorerTab tab="architecture" title="Architecture summary" description="Languages, frameworks, entry points, and repository surfaces exposed by indexing." empty="No architecture summary is available." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} onAsk={repositoryStatus.ready ? (item) => setAskTarget({ kind: "repository-item", item, location: { kind: "explorer", tab: "architecture" } }) : undefined} /> : null}
@@ -132,6 +132,10 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
 }
 
 function ExplorerTab({ title, description, empty, categories, selectedItem, onSelect, onAsk }: { tab: RepositoryExplorerTab; title: string; description: string; empty: string; categories: ReturnType<typeof extractRepositoryExplorerCategories>; selectedItem: RepositoryExplorerItem | undefined; onSelect(item: RepositoryExplorerItem): void; onAsk?: (item: RepositoryExplorerItem) => void }) {
-  if (!selectedItem) return <EmptyState icon={FileCode2} title={title} description={empty} />;
+  if (!selectedItem) return <section aria-labelledby="repository-explorer-empty-heading"><p className="type-section-eyebrow text-muted-foreground">Repository explorer</p><h2 id="repository-explorer-empty-heading" className="mt-2 type-section-title">{title}</h2><p className="mt-2 max-w-[68ch] type-compact text-text-secondary">{description}</p><div className="mt-5 border-y border-border-subtle"><EmptyState icon={FileCode2} title="No indexed surfaces yet" description={empty} /></div></section>;
   return <section aria-labelledby={`repository-${selectedItem.category}-heading`}><p className="type-section-eyebrow text-muted-foreground">Repository explorer</p><h2 id={`repository-${selectedItem.category}-heading`} className="mt-2 type-section-title">{title}</h2><p className="mt-2 max-w-[68ch] type-compact text-text-secondary">{description}</p><div className="mt-5 grid gap-7 laptop:grid-cols-[minmax(0,1fr)_320px]"><RepositoryExplorerList categories={categories} selectedKey={selectedItem.key} onSelect={onSelect} label={title} /><aside className="min-w-0 space-y-3"><RepositoryExplorerDetail item={selectedItem} />{onAsk ? <Button variant="secondary" className="w-full" onClick={() => onAsk(selectedItem)}><MessageSquare className="size-4" />Ask Giro about this</Button> : null}</aside></div></section>;
+}
+
+function RepositoryWorkspaceSkeleton() {
+  return <div role="status" aria-label="Loading repository workspace" className="layout-standard layout-gutter py-10 max-[820px]:py-8"><div className="grid gap-6 border-b border-border-subtle pb-7 laptop:grid-cols-[minmax(0,1fr)_auto] laptop:items-end"><div><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-12 w-64 max-w-full" /><div className="mt-4 flex gap-3"><Skeleton className="h-5 w-16" /><Skeleton className="h-4 w-28" /></div></div><Skeleton className="h-9 w-32 max-[820px]:w-full" /></div><Skeleton className="mt-6 h-10 w-full" /><div className="mt-8 grid items-start gap-10 laptop:grid-cols-[minmax(0,1fr)_320px] laptop:gap-12"><div className="space-y-8"><div><Skeleton className="h-3 w-32" /><Skeleton className="mt-3 h-6 w-48" /><Skeleton className="mt-4 h-16 w-full" /></div><div><Skeleton className="h-3 w-28" /><Skeleton className="mt-3 h-6 w-40" /><Skeleton className="mt-4 h-28 w-full" /></div></div><div className="border-t border-border-subtle pt-8 laptop:border-l laptop:border-t-0 laptop:pl-8 laptop:pt-0"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-6 w-44" /><Skeleton className="mt-4 h-56 w-full" /></div></div></div>;
 }

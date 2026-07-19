@@ -2,7 +2,6 @@ import Link from "next/link";
 import { ArrowRight, Braces, FileCode2, FolderTree, MessageSquare, Search, Waypoints } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/ui/card";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { StatusBadge, getRepositoryStatus, type StatusTone } from "@/components/ui/status-badge";
 import { repositoryExplorerItemKey } from "@/lib/repository-explorer";
@@ -73,77 +72,83 @@ export function RepositorySummaryOverview({
   ].filter((item): item is string => Boolean(item));
 
   return (
-    <div className="space-y-7">
-      <section aria-labelledby="repository-purpose-heading" className="layout-editorial ml-0">
-        <p className="type-section-eyebrow text-muted-foreground">Repository purpose</p>
-        <h2 id="repository-purpose-heading" className="sr-only">Repository purpose</h2>
-        {summary?.purpose ? (
-          <p className="mt-3 max-w-[68ch] type-body text-foreground">{summary.purpose}</p>
-        ) : (
-          <p className="mt-3 type-compact text-muted-foreground">A repository purpose summary is not available from the current index.</p>
-        )}
-      </section>
+    <div className="space-y-10">
+      <div className="grid items-start gap-10 laptop:grid-cols-[minmax(0,1fr)_320px] laptop:gap-12">
+        <div className="min-w-0 space-y-9">
+          <section aria-labelledby="repository-purpose-heading">
+            <p className="type-section-eyebrow text-muted-foreground">Engineering summary</p>
+            <h2 id="repository-purpose-heading" className="mt-2 type-section-title">Repository purpose</h2>
+            {summary?.purpose ? (
+              <p className="mt-3 max-w-[68ch] type-body text-foreground">{summary.purpose}</p>
+            ) : (
+              <p className="mt-3 max-w-[68ch] border-y border-border-subtle py-4 type-compact text-muted-foreground">A repository purpose summary is not available from the current index.</p>
+            )}
+          </section>
 
-      <section aria-labelledby="technology-stack-heading">
-        <p className="type-section-eyebrow text-muted-foreground">Technology stack</p>
-        <h2 id="technology-stack-heading" className="sr-only">Technology stack</h2>
-        {technologies.length > 0 ? (
-          <div className="mt-3 grid gap-x-7 gap-y-4 sm:grid-cols-2">
-            {technologies.map((group) => (
-              <div key={group.label}>
-                <p className="type-compact-strong text-text-secondary">{group.label}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {group.items.slice(0, 8).map((item) => <Badge key={`${group.label}-${item.name}`}>{item.name}</Badge>)}
-                </div>
+          <section aria-labelledby="technology-stack-heading">
+            <p className="type-section-eyebrow text-muted-foreground">Detected environment</p>
+            <h2 id="technology-stack-heading" className="mt-2 type-section-title">Technology stack</h2>
+            {technologies.length > 0 ? (
+              <div className="mt-4 grid gap-x-7 gap-y-4 sm:grid-cols-2">
+                {technologies.map((group) => (
+                  <div key={group.label}>
+                    <p className="type-compact-strong text-text-secondary">{group.label}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {group.items.slice(0, 8).map((item) => <Badge key={`${group.label}-${item.name}`}>{item.name}</Badge>)}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-3 border-y border-border-subtle px-3 py-4 type-compact text-muted-foreground">Technology analysis is not available from the current summary.</p>
-        )}
-      </section>
+            ) : (
+              <p className="mt-4 border-y border-border-subtle py-4 type-compact text-muted-foreground">Technology analysis is not available from the current summary.</p>
+            )}
+          </section>
+        </div>
 
-      <section aria-labelledby="repository-structure-heading">
-        <p className="type-section-eyebrow text-muted-foreground">Repository structure</p>
+        <aside aria-label="Repository status and primary actions" className="min-w-0 space-y-8 border-t border-border-subtle pt-8 laptop:border-l laptop:border-t-0 laptop:pl-8 laptop:pt-0">
+          <section aria-labelledby="repository-health-heading">
+            <p className="type-section-eyebrow text-muted-foreground">Current status</p>
+            <h2 id="repository-health-heading" className="mt-2 type-section-title">Repository health</h2>
+            <div className="mt-4 divide-y divide-border-subtle border-y border-border-subtle">
+              <HealthItem title="Index status" value={status.label} detail={repository?.lastIndexMode ? `${repository.lastIndexMode} index` : "Repository lifecycle"} tone={status.tone} />
+              <HealthItem title="AI readiness" value={workspace ? readinessLabel(workspace.aiReadiness.level) : status.ready ? "Ready" : "Unavailable"} detail={workspace ? `${workspace.aiReadiness.score}/100 readiness` : "Based on index status"} tone={workspace ? readinessTone(workspace.aiReadiness.level) : status.tone} />
+              <HealthItem title="Repository health" value={workspace ? capitalize(workspace.health.grade) : workspaceLoading ? "Checking" : "Not available"} detail={workspace ? `${workspace.health.score}/100 health score` : "Detailed health analysis"} tone={workspace ? healthTone(workspace.health.score) : "neutral"} />
+              <HealthItem title="Indexed context" value={repository ? `${repository.fileCount.toLocaleString()} files` : "Not available"} detail={repository ? `${repository.chunkCount.toLocaleString()} chunks · ${repository.symbolCount.toLocaleString()} symbols` : "Index coverage not exposed"} tone={repository && repository.fileCount > 0 ? "success" : "neutral"} />
+            </div>
+            {healthWarnings.length > 0 ? <InlineAlert tone={workspace?.aiReadiness.level === "blocked" || repository?.status === "failed" ? "danger" : "warning"} className="mt-4"><div><p className="type-compact-strong">Repository attention</p><ul className="mt-1 space-y-1">{healthWarnings.slice(0, 4).map((warning) => <li key={warning}>{warning}</li>)}</ul></div></InlineAlert> : null}
+            {workspaceUnavailable ? <InlineAlert tone="info" className="mt-4">Detailed health and readiness are temporarily unavailable. Index status remains current.</InlineAlert> : null}
+            {missingAnalysis.length > 0 ? <p className="mt-3 type-compact text-muted-foreground">Not exposed by the current summary: {missingAnalysis.join(", ")}.</p> : null}
+          </section>
+
+          <section aria-labelledby="next-actions-heading">
+            <p className="type-section-eyebrow text-muted-foreground">Continue working</p>
+            <h2 id="next-actions-heading" className="mt-2 type-section-title">Primary actions</h2>
+            <div className="mt-4 divide-y divide-border-subtle border-y border-border-subtle">
+              <NextAction href={`${basePath}/search`} icon={Search} title="Search repository" description="Find relevant symbols, files, and indexed evidence." />
+              <NextAction href={`${basePath}?tab=sessions`} icon={MessageSquare} title="Open sessions" description="Resume repository-scoped engineering conversations." />
+              <NextAction href={`${basePath}?tab=dependencies`} icon={Waypoints} title="Inspect dependencies" description="Review central modules, hotspots, and detected cycles." />
+              <NextAction href={`${basePath}?tab=symbols`} icon={Braces} title="Review symbols" description="Explore modules and API surfaces detected by indexing." />
+              <div className="flex min-h-14 items-center gap-3 py-3">
+                <MessageSquare className="size-4 shrink-0 text-primary" />
+                <div className="min-w-0 flex-1"><p className="type-compact-strong">Ask Giro</p><p className="mt-0.5 type-compact text-muted-foreground">Start a grounded conversation about this repository.</p></div>
+                <Button variant="secondary" size="sm" onClick={onAsk} disabled={!status.ready}>Ask Giro</Button>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <section aria-labelledby="repository-structure-heading" className="border-t border-border-subtle pt-9">
+        <p className="type-section-eyebrow text-muted-foreground">Repository exploration</p>
         <h2 id="repository-structure-heading" className="mt-2 type-section-title">Where to start reading</h2>
         <p className="mt-2 max-w-[68ch] type-compact text-text-secondary">Start with detected entry points and important repository surfaces, then continue in the existing explorer.</p>
         {structure.length > 0 ? (
-          <div className="mt-5 grid gap-7 laptop:grid-cols-2">
+          <div className="mt-6 grid gap-x-10 gap-y-8 laptop:grid-cols-2">
             {structure.map((group) => <StructureSection key={group.id} group={group} basePath={basePath} />)}
           </div>
         ) : (
-          <p className="mt-4 border-y border-border-subtle px-3 py-4 type-compact text-muted-foreground">Repository structure analysis is not available from the current summary.</p>
+          <p className="mt-4 border-y border-border-subtle py-4 type-compact text-muted-foreground">Repository structure analysis is not available from the current summary.</p>
         )}
-      </section>
-
-      <section aria-labelledby="repository-health-heading">
-        <p className="type-section-eyebrow text-muted-foreground">Repository health</p>
-        <h2 id="repository-health-heading" className="sr-only">Repository health</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 laptop:grid-cols-4">
-          <HealthCard title="Index status" value={status.label} detail={repository?.lastIndexMode ? `${repository.lastIndexMode} index` : "Repository lifecycle"} tone={status.tone} />
-          <HealthCard title="AI readiness" value={workspace ? readinessLabel(workspace.aiReadiness.level) : status.ready ? "Ready" : "Unavailable"} detail={workspace ? `${workspace.aiReadiness.score}/100 readiness` : "Based on index status"} tone={workspace ? readinessTone(workspace.aiReadiness.level) : status.tone} />
-          <HealthCard title="Repository health" value={workspace ? capitalize(workspace.health.grade) : workspaceLoading ? "Checking" : "Not available"} detail={workspace ? `${workspace.health.score}/100 health score` : "Detailed health analysis"} tone={workspace ? healthTone(workspace.health.score) : "neutral"} />
-          <HealthCard title="Indexed context" value={repository ? `${repository.fileCount.toLocaleString()} files` : "Not available"} detail={repository ? `${repository.chunkCount.toLocaleString()} chunks · ${repository.symbolCount.toLocaleString()} symbols` : "Index coverage not exposed"} tone={repository && repository.fileCount > 0 ? "success" : "neutral"} />
-        </div>
-        {healthWarnings.length > 0 ? <InlineAlert tone={workspace?.aiReadiness.level === "blocked" || repository?.status === "failed" ? "danger" : "warning"} className="mt-4"><div><p className="type-compact-strong">Repository attention</p><ul className="mt-1 space-y-1">{healthWarnings.slice(0, 4).map((warning) => <li key={warning}>{warning}</li>)}</ul></div></InlineAlert> : null}
-        {workspaceUnavailable ? <InlineAlert tone="info" className="mt-4">Detailed health and readiness are temporarily unavailable. Index status remains current.</InlineAlert> : null}
-        {missingAnalysis.length > 0 ? <p className="mt-3 type-compact text-muted-foreground">Not exposed by the current summary: {missingAnalysis.join(", ")}.</p> : null}
-      </section>
-
-      <section aria-labelledby="next-actions-heading">
-        <p className="type-section-eyebrow text-muted-foreground">Suggested next actions</p>
-        <h2 id="next-actions-heading" className="sr-only">Suggested next actions</h2>
-        <div className="mt-3 divide-y divide-border-subtle border-y border-border-subtle">
-          <NextAction href={`${basePath}/search`} icon={Search} title="Search repository" description="Find relevant symbols, files, and indexed evidence." />
-          <NextAction href={`${basePath}?tab=sessions`} icon={MessageSquare} title="Open sessions" description="Resume repository-scoped engineering conversations." />
-          <NextAction href={`${basePath}?tab=dependencies`} icon={Waypoints} title="Inspect dependencies" description="Review central modules, hotspots, and detected cycles." />
-          <NextAction href={`${basePath}?tab=symbols`} icon={Braces} title="Review symbols" description="Explore modules and API surfaces detected by indexing." />
-          <div className="flex min-h-14 items-center gap-3 px-3 py-3">
-            <MessageSquare className="size-4 shrink-0 text-primary" />
-            <div className="min-w-0 flex-1"><p className="type-compact-strong">Ask Giro</p><p className="mt-0.5 type-compact text-muted-foreground">Start a grounded conversation about this repository.</p></div>
-            <Button variant="secondary" size="sm" onClick={onAsk} disabled={!status.ready}>Ask Giro</Button>
-          </div>
-        </div>
       </section>
     </div>
   );
@@ -181,12 +186,12 @@ function StructureSection({ group, basePath }: { group: StructureGroup; basePath
   return <section aria-labelledby={`overview-${group.id}`}><div className="flex items-start gap-3"><Icon className="mt-0.5 size-4 shrink-0 text-primary" /><div><h3 id={`overview-${group.id}`} className="type-panel-title">{group.label}</h3><p className="mt-1 type-compact text-muted-foreground">{group.description}</p></div></div><div className="mt-3 divide-y divide-border-subtle border-y border-border-subtle">{group.items.map((item) => { const params = new URLSearchParams({ tab: item.tab, category: item.category, item: repositoryExplorerItemKey(item.category, item) }); return <div key={`${item.category}-${item.name}-${item.path ?? ""}`} className="flex min-h-12 items-center gap-3 px-3 py-2"><div className="min-w-0 flex-1"><p className="truncate type-compact-strong" title={item.name}>{item.name}</p><p className="mt-0.5 truncate type-metadata text-muted-foreground" title={item.reason ?? item.path ?? item.kind}>{item.reason ?? item.path ?? item.kind ?? "Detected by repository analysis"}</p></div><Button asChild variant="ghost" size="sm"><Link href={`${basePath}?${params.toString()}`} aria-label={`Explore ${item.name}`}>Explore<ArrowRight className="size-3.5" /></Link></Button></div>; })}</div></section>;
 }
 
-function HealthCard({ title, value, detail, tone }: { title: string; value: string; detail: string; tone: StatusTone }) {
-  return <Panel className="border border-border-subtle p-4"><p className="type-metadata-label text-muted-foreground">{title}</p><div className="mt-3"><StatusBadge label={value} tone={tone} /></div><p className="mt-2 type-compact text-muted-foreground">{detail}</p></Panel>;
+function HealthItem({ title, value, detail, tone }: { title: string; value: string; detail: string; tone: StatusTone }) {
+  return <div className="flex min-h-14 items-center gap-3 py-3"><div className="min-w-0 flex-1"><p className="type-metadata-label text-muted-foreground">{title}</p><p className="mt-1 type-compact text-muted-foreground">{detail}</p></div><StatusBadge label={value} tone={tone} className="shrink-0" /></div>;
 }
 
 function NextAction({ href, icon: Icon, title, description }: { href: string; icon: typeof Search; title: string; description: string }) {
-  return <Link href={href} className="flex min-h-14 items-center gap-3 px-3 py-3 transition-colors duration-[150ms] hover:bg-hover focus-ring"><Icon className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block type-compact-strong">{title}</span><span className="mt-0.5 block type-compact text-muted-foreground">{description}</span></span><ArrowRight className="size-3.5 shrink-0 text-muted-foreground" /></Link>;
+  return <Link href={href} className="flex min-h-14 items-center gap-3 py-3 transition-colors duration-[150ms] hover:bg-hover focus-ring"><Icon className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block type-compact-strong">{title}</span><span className="mt-0.5 block type-compact text-muted-foreground">{description}</span></span><ArrowRight className="size-3.5 shrink-0 text-muted-foreground" /></Link>;
 }
 
 function readinessLabel(level: RepositoryWorkspace["aiReadiness"]["level"]): string {
