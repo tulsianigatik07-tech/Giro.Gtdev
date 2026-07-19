@@ -16,21 +16,26 @@ export interface SemanticSearchOptions {
   metrics?: RetryMetrics;
   retryRuntime?: RetryRuntimeOptions;
   circuitBreaker?: CircuitBreaker;
+  databaseClient?: Pick<typeof supabase, "rpc">;
+  generateQueryEmbedding?: typeof generateEmbedding;
 }
 
 export async function semanticSearch(
   query: string,
+  repository: string,
   limit: number = 10,
-  options: SemanticSearchOptions = {},
+  options: SemanticSearchOptions & { repositoryVersion?: string } = {},
 ): Promise<SemanticSearchResult[]> {
-  const embedding = await generateEmbedding(query, options);
+  const embedding = await (options.generateQueryEmbedding ?? generateEmbedding)(query, options);
   const deadline = createDeadline(env.DATABASE_REQUEST_TIMEOUT_MS, { parentSignal: options.signal });
 
   try {
     const { data, error } = await retryDatabaseRead(
-      () => supabase.rpc("match_repository_chunks", {
+      () => (options.databaseClient ?? supabase).rpc("match_repository_chunks", {
+        input_repository: repository,
         query_embedding: embedding,
         match_count: limit,
+        input_repository_revision: options.repositoryVersion ?? null,
       }).abortSignal(deadline.signal),
       {
         deadline,
@@ -69,21 +74,13 @@ export async function semanticSearch(
 
 export async function semanticSearchWithCitations(
   query: string,
+  repository: string,
   limit: number = 10,
   options: SemanticSearchOptions & {
-    repositoryVersion?: (repositoryId: string, signal?: AbortSignal) => Promise<string>;
+    repositoryVersion?: string;
   } = {},
 ): Promise<{ results: SemanticSearchResult[]; citations: Citation[] }> {
-  const results = await semanticSearch(query, limit, options);
-  const repositories = [...new Set(results.map((result) => result.repository))];
-  const versions = new Map(
-    await Promise.all(repositories.map(async (repositoryId) => [
-      repositoryId,
-      options.repositoryVersion
-        ? await options.repositoryVersion(repositoryId, options.signal)
-        : "unversioned",
-    ] as const)),
-  );
+  const results = await semanticSearch(query, repository, limit, options);
   const citations = buildCitations(results.map((result) => ({
     repositoryId: result.repository,
     filePath: result.filePath,
@@ -93,7 +90,7 @@ export async function semanticSearchWithCitations(
     endLine: result.endLine,
     retrievalType: "semantic",
     score: result.similarity,
-    repositoryVersion: versions.get(result.repository) ?? "unversioned",
+    repositoryVersion: options.repositoryVersion ?? "unversioned",
   })), { surface: "semantic" });
   return { results, citations };
 }

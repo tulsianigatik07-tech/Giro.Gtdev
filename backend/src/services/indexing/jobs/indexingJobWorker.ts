@@ -326,6 +326,7 @@ export async function executeRepositoryIndexingPipeline(
     logger: input.retryLogger,
     metrics: input.retryMetrics,
     embeddingCircuitBreaker: input.circuitBreakers?.embedding,
+    repositoryVersion,
   });
 
   await reportStage({ stage: "finalize", progress: 95 });

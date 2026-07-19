@@ -18,6 +18,8 @@ export interface KeywordSearchOptions {
   metrics?: RetryMetrics;
   retryRuntime?: RetryRuntimeOptions;
   circuitBreaker?: CircuitBreaker;
+  repositoryVersion?: string;
+  databaseClient?: Pick<typeof supabase, "from">;
 }
 
 interface ChunkRow {
@@ -54,13 +56,16 @@ export async function keywordSearch(
   const deadline = createDeadline(env.DATABASE_REQUEST_TIMEOUT_MS, { parentSignal: options.signal });
   try {
     const { data, error } = await retryDatabaseRead(
-      () => supabase
-        .from("repository_chunks")
-        .select("id,repository,file_path,language,content,start_line,end_line")
-        .eq("repository", repository)
-        .or(orFilter)
-        .limit(limit * 3)
-        .abortSignal(deadline.signal),
+      () => {
+        let databaseQuery = (options.databaseClient ?? supabase)
+          .from("repository_chunks")
+          .select("id,repository,file_path,language,content,start_line,end_line")
+          .eq("repository", repository);
+        if (options.repositoryVersion) {
+          databaseQuery = databaseQuery.eq("repository_revision", options.repositoryVersion);
+        }
+        return databaseQuery.or(orFilter).limit(limit * 3).abortSignal(deadline.signal);
+      },
       {
         deadline,
         operation: "keyword_search",

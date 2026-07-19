@@ -20,6 +20,7 @@ export async function buildRepositoryContext(
     logger?: RetryLogger;
     metrics?: RetryMetrics;
     embeddingCircuitBreaker?: CircuitBreaker;
+    repositoryVersion?: string;
   } = {},
 ): Promise<ContextBuildResult> {
   const files = await readSourceFiles(clonePath);
@@ -36,6 +37,7 @@ export async function buildRepositoryContext(
         .from("repository_chunks")
         .select("id")
         .eq("repository", repository)
+        .eq("repository_revision", options.repositoryVersion ?? "unversioned")
         .eq("file_path", chunk.filePath)
         .eq("chunk_index", i)
         .abortSignal(databaseDeadline.signal)
@@ -62,6 +64,8 @@ export async function buildRepositoryContext(
       startLine: chunk.startLine,
       endLine: chunk.endLine,
       embedding,
+      repositoryRevision: options.repositoryVersion,
+      tokenCount: chunk.tokenEstimate,
     }, options);
   }
 

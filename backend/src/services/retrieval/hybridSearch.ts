@@ -88,11 +88,11 @@ export async function executeHybridSearch(
     expandedKeywordSettled,
     expandedSymbolSettled,
   ] = await Promise.allSettled([
-    semanticSearch(query, fetchLimit, options),
+    semanticSearch(query, repository, fetchLimit, options),
     keywordSearch(query, owner, repo, fetchLimit, options),
     symbolSearch(query, owner, repo, fetchLimit),
     expandedQuery
-      ? semanticSearch(expandedQuery, fetchLimit, options)
+      ? semanticSearch(expandedQuery, repository, fetchLimit, options)
       : Promise.resolve([]),
     expandedQuery
       ? keywordSearch(expandedQuery, owner, repo, fetchLimit, options)

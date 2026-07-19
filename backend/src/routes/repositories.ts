@@ -52,6 +52,8 @@ import {
 import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
 import type { IndexingProgressPublisher } from "../services/indexing/events/indexingProgressPublisher.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
+import { deleteRepositoryRetrievalData } from "../services/embeddings/store.js";
+import { env } from "../config/env.js";
 
 type Variables = {
   requestId: string;
@@ -500,6 +502,7 @@ repositoriesRoute.delete("/:owner/:repo", async (c) => {
   }
 
   const report = await cleanupRepository({ owner, repo });
+  if (env.NODE_ENV !== "test") await deleteRepositoryRetrievalData(repoId);
   try {
     c.get("retrievalCache").invalidateRepository(repoId, "repository_deleted");
   } catch {
