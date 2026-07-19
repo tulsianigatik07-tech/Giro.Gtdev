@@ -3,8 +3,13 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 
 import { createApp } from "../app.js";
+import { safeErrorLogFields } from "../middleware/errorHandler.js";
 import { signAccessToken } from "../services/auth/jwt.js";
-import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
+import {
+  indexingJobStore,
+  MemoryIndexingJobStore,
+} from "../services/indexing/jobs/memoryIndexingJobStore.js";
+import { IndexingJobPersistenceError } from "../services/indexing/jobs/supabaseIndexingJobStore.js";
 import { repoClonePath } from "../services/repository/clone.js";
 import {
   clearRepositoryIndexRegistry,
@@ -161,6 +166,67 @@ test("duplicate connect returns the active queued job", async () => {
   assert.equal(second.status, 200);
   assert.equal(asRecord(second.body.data).jobId, asRecord(first.body.data).jobId);
   assert.equal((await indexingJobStore.listRepositoryJobs("acme/duplicatejob")).length, 1);
+});
+
+test("unavailable indexing persistence returns a safe 500 and logs actionable context", async () => {
+  const store = new MemoryIndexingJobStore();
+  store.createJob = async () => {
+    throw new IndexingJobPersistenceError(
+      "supabase_unavailable",
+      "Indexing job persistence is unavailable.",
+      { cause: new TypeError("fetch failed") },
+    );
+  };
+  const entries: Array<{ event: string; fields?: Record<string, unknown> }> = [];
+  const app = createApp({
+    indexingJobStore: store,
+    requestContext: {
+      generateRequestId: () => "connect-failure-request",
+      logger: {
+        info: (event, fields) => entries.push({ event, fields }),
+        error: (event, fields) => entries.push({ event, fields }),
+      },
+    },
+  });
+
+  const response = await app.request("/repos/connect", {
+    method: "POST",
+    headers: {
+      authorization: TOKEN_A,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ repoUrl: "https://github.com/acme/persistencefailure" }),
+  });
+  const body = await response.json() as ApiResponse;
+
+  assert.equal(response.status, 500);
+  assert.equal(body.error?.code, "internal_error");
+  assert.equal(body.error?.message, "Indexing job persistence is unavailable.");
+  assert.equal(JSON.stringify(body).includes("supabase"), false);
+  assert.equal((await store.listRepositoryJobs("acme/persistencefailure")).length, 0);
+
+  const failure = entries.find((entry) => entry.event === "unhandled_error");
+  assert.deepEqual(failure?.fields, {
+    requestId: "connect-failure-request",
+    route: "/repos/connect",
+    repositoryId: "acme/persistencefailure",
+    errorName: "IndexingJobPersistenceError",
+    errorMessage: "Indexing job persistence is unavailable.",
+    errorCode: "supabase_unavailable",
+    causeName: "TypeError",
+    causeMessage: "fetch failed",
+    ...(failure?.fields?.stack ? { stack: failure.fields.stack } : {}),
+  });
+});
+
+test("development error diagnostics include a redacted stack", () => {
+  const error = new Error("provider failed with sk-secret-value");
+  const fields = safeErrorLogFields(error, "development");
+
+  assert.equal(fields.errorName, "Error");
+  assert.equal(fields.errorMessage, "provider failed with [REDACTED]");
+  assert.equal(typeof fields.stack, "string");
+  assert.equal(String(fields.stack).includes("sk-secret-value"), false);
 });
 
 test("duplicate validation errors are unchanged", async () => {

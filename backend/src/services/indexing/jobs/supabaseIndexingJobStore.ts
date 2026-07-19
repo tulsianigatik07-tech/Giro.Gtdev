@@ -32,8 +32,12 @@ export type IndexingJobPersistenceErrorCode =
 export class IndexingJobPersistenceError extends Error {
   readonly code: IndexingJobPersistenceErrorCode;
 
-  constructor(code: IndexingJobPersistenceErrorCode, message: string) {
-    super(message);
+  constructor(
+    code: IndexingJobPersistenceErrorCode,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
     this.name = "IndexingJobPersistenceError";
     this.code = code;
   }
@@ -76,6 +80,7 @@ export interface SupabaseIndexingJobStoreOptions {
 
 function persistenceError(
   code: IndexingJobPersistenceErrorCode,
+  cause?: unknown,
 ): IndexingJobPersistenceError {
   const messages: Record<IndexingJobPersistenceErrorCode, string> = {
     duplicate_active_job: "An active indexing job already exists.",
@@ -84,7 +89,7 @@ function persistenceError(
     supabase_unavailable: "Indexing job persistence is unavailable.",
     database_failure: "Indexing job persistence failed.",
   };
-  return new IndexingJobPersistenceError(code, messages[code]);
+  return new IndexingJobPersistenceError(code, messages[code], { cause });
 }
 
 function errorCode(error: unknown): string {
@@ -107,10 +112,10 @@ export function normalizeIndexingJobPersistenceError(
 
   const code = errorCode(error);
   const message = errorText(error);
-  if (code === "23505") return persistenceError("duplicate_active_job");
-  if (code === "PGRST116") return persistenceError("job_not_found");
+  if (code === "23505") return persistenceError("duplicate_active_job", error);
+  if (code === "PGRST116") return persistenceError("job_not_found", error);
   if (code === "23514" || code === "22P02" || code === "P0001") {
-    return persistenceError("invalid_transition");
+    return persistenceError("invalid_transition", error);
   }
   if (
     code.startsWith("08") ||
@@ -123,9 +128,9 @@ export function normalizeIndexingJobPersistenceError(
     message.includes("connection") ||
     message.includes("timeout")
   ) {
-    return persistenceError("supabase_unavailable");
+    return persistenceError("supabase_unavailable", error);
   }
-  return persistenceError("database_failure");
+  return persistenceError("database_failure", error);
 }
 
 function rowFromData(data: unknown): IndexingJobPersistenceRow | null {

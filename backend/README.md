@@ -10,6 +10,19 @@ cp .env.example .env
 pnpm install
 ```
 
+Repository connection uses the shared Supabase indexing-job store; there is no
+in-memory runtime fallback because the API process and indexing worker must see
+the same jobs. Local development therefore requires:
+
+- `SUPABASE_URL` for an active, DNS-resolvable Supabase project.
+- `SUPABASE_SERVICE_ROLE_KEY` from that project. Keep it server-only.
+- The migrations in `supabase/migrations/` applied in timestamp order, including
+  the `indexing_jobs` table and `create_indexing_job` RPC.
+
+If `/repos/connect` reports unavailable indexing-job persistence, verify the
+project is active and reachable, then verify the service-role key belongs to the
+same project. Never put the service-role key in the frontend environment.
+
 ## Scripts
 
 ```bash

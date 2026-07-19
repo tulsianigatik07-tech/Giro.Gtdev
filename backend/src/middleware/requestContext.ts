@@ -17,6 +17,7 @@ export interface RequestContextVariables {
   requestId: string;
   requestStartedAtMs: number;
   requestLogContext?: RequestLogContext;
+  requestLogger: RequestContextLogger;
 }
 
 export interface RequestContextLogger {
@@ -59,6 +60,7 @@ export function createRequestContextMiddleware(
     const startedAt = monotonicNow();
     c.set("requestId", requestId);
     c.set("requestStartedAtMs", startedAt);
+    c.set("requestLogger", logger);
     c.header(REQUEST_ID_HEADER, requestId);
 
     try {
