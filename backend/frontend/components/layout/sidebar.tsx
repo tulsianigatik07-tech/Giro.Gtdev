@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ChevronsUpDown, Clock3, LayoutDashboard, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
+import { PlatformNavigation } from "@/components/platform/platform-navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { getRepositoryStatus } from "@/components/ui/status-badge";
@@ -105,6 +106,7 @@ export function Sidebar() {
           </div>
         </div>
         <div className="border-t border-border-subtle px-2 pb-2 pt-3">
+          <PlatformNavigation variant="compact" />
           <Button variant="ghost" size={!drawer && sidebarCollapsed ? "icon" : "default"} title="Sign out" className={cn("w-full justify-start", !drawer && "max-[1080px]:justify-center", !drawer && sidebarCollapsed && "laptop:justify-center")} onClick={signOut}><LogOut className="size-4" /><span className={cn(hideText, collapsedText)}>Sign out</span></Button>
           {!drawer ? <Button variant="ghost" size={sidebarCollapsed ? "icon" : "default"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} className={cn("mt-1 hidden w-full justify-start laptop:inline-flex", sidebarCollapsed && "laptop:justify-center")} onClick={toggleCollapsed}>{sidebarCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}<span className={cn(sidebarCollapsed && "laptop:hidden")}>Collapse sidebar</span></Button> : null}
         </div>
