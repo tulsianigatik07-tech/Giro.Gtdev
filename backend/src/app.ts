@@ -27,8 +27,14 @@ import { createRuntimeProductionHealthCheck } from "./services/health/runtimePro
 import type { ProductionHealthCheck } from "./services/health/productionHealth.js";
 import { createRuntimeProductionReadinessCheck } from "./services/health/runtimeProductionReadiness.js";
 import type { ProductionReadinessCheck } from "./services/health/productionReadiness.js";
+import {
+  createRequestTimeoutMiddleware,
+  isRequestTimeoutExemptPath,
+  type RequestDeadlineVariables,
+  type RequestTimeoutOptions,
+} from "./middleware/requestTimeout.js";
 
-type Variables = RequestContextVariables & {
+type Variables = RequestContextVariables & RequestDeadlineVariables & {
   indexingJobStore: IndexingJobStore;
   indexingProgressPublisher: IndexingProgressPublisher;
   retrievalCache: RetrievalCache;
@@ -48,6 +54,9 @@ export interface CreateAppOptions {
   workerModeEnabled?: boolean;
   healthClock?: Pick<HealthRouteOptions, "uptime" | "now">;
   rateLimitPolicy?: RateLimitPolicy;
+  requestTimeout?: Omit<RequestTimeoutOptions, "timeoutMs"> & {
+    timeoutMs?: number;
+  };
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -93,6 +102,18 @@ export function createApp(options: CreateAppOptions = {}) {
   // Order matters: correlation context wraps every later middleware and route.
   app.use("*", createRequestContextMiddleware(options.requestContext));
   app.use("*", createMetricsMiddleware(metrics));
+  const requestTimeout = options.requestTimeout;
+  app.use("*", createRequestTimeoutMiddleware({
+    ...requestTimeout,
+    timeoutMs: requestTimeout?.timeoutMs ?? env.REQUEST_TIMEOUT_MS,
+    shouldTimeout: (path) =>
+      !isRequestTimeoutExemptPath(path) &&
+      (requestTimeout?.shouldTimeout?.(path) ?? true),
+    onTimeout: () => {
+      metrics.incrementTimeout("request");
+      requestTimeout?.onTimeout?.();
+    },
+  }));
   app.use("*", async (c, next) => {
     c.set("indexingJobStore", indexingJobStore);
     c.set("indexingProgressPublisher", indexingProgressPublisher);

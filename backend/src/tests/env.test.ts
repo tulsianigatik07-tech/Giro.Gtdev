@@ -237,6 +237,8 @@ test("timeout configuration is bounded", () => {
   assert.equal(result.DATABASE_REQUEST_TIMEOUT_MS, 500);
   assert.equal(result.REPOSITORY_CLONE_TIMEOUT_MS, 600_000);
   assert.throws(() => validateEnv({ ...REQUIRED, REQUEST_TIMEOUT_MS: "999" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, REQUEST_TIMEOUT_MS: "120001" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, REQUEST_TIMEOUT_MS: "1000.5" }));
   assert.throws(() => validateEnv({ ...REQUIRED, DATABASE_REQUEST_TIMEOUT_MS: "60001" }));
   assert.throws(() => validateEnv({ ...REQUIRED, REPOSITORY_CLONE_TIMEOUT_MS: "4000" }));
 });

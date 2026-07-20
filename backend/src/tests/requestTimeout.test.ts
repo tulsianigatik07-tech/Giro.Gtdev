@@ -3,8 +3,13 @@ import { test } from "node:test";
 import { Hono } from "hono";
 import { createApp } from "../app.js";
 import { createRequestContextMiddleware } from "../middleware/requestContext.js";
-import { createRequestTimeoutMiddleware } from "../middleware/requestTimeout.js";
+import {
+  createRequestTimeoutMiddleware,
+  getRequestDeadline,
+} from "../middleware/requestTimeout.js";
 import { MetricsRegistry } from "../observability/metrics.js";
+import { createProductionHealthCheck } from "../services/health/productionHealth.js";
+import { createProductionReadinessCheck } from "../services/health/productionReadiness.js";
 
 function timeoutApp() {
   const callbacks: Array<() => void> = [];
@@ -75,10 +80,33 @@ test("route exceeding timeout returns safe 504 with request ID and one log", asy
   assert.equal(fixture.timeoutCount(), 1);
   assert.equal(fixture.logs[0]?.event, "request_timeout");
   assert.deepEqual(Object.keys(fixture.logs[0]?.fields ?? {}).sort(), ["durationMs", "method", "requestId", "route"]);
+  assert.equal(fixture.logs[0]?.fields?.requestId, "timeout-request-id");
   assert.equal(fixture.logs[0]?.fields?.durationMs, 1_000);
+  assert.equal(fixture.clears(), 1);
   fixture.release();
   await Promise.resolve();
   assert.equal(fixture.clears(), 1);
+});
+
+test("late handler completion cannot replace or duplicate the timeout response", async () => {
+  const fixture = timeoutApp();
+  let responseCompletions = 0;
+  const responsePromise = Promise.resolve(fixture.app.request("/slow")).then((response) => {
+    responseCompletions += 1;
+    return response;
+  });
+  await Promise.resolve();
+  fixture.callbacks[0]?.();
+  const response = await responsePromise;
+  const bodyBeforeLateCompletion = await response.clone().text();
+
+  fixture.release();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(responseCompletions, 1);
+  assert.equal(response.status, 504);
+  assert.equal(await response.text(), bodyBeforeLateCompletion);
 });
 
 test("concurrent requests own isolated deadlines", async () => {
@@ -94,11 +122,100 @@ test("concurrent requests own isolated deadlines", async () => {
   fixture.release();
 });
 
-test("health and metrics routes remain outside request deadline middleware", async () => {
+test("REQUEST_TIMEOUT_MS can be overridden through application composition", async () => {
+  const scheduledDelays: number[] = [];
+  let cleared = 0;
+  const app = createApp({
+    requestTimeout: {
+      timeoutMs: 4_321,
+      setTimer: (_callback, delay) => {
+        scheduledDelays.push(delay);
+        return 1;
+      },
+      clearTimer: () => { cleared += 1; },
+    },
+  });
+
+  assert.equal((await app.request("/")).status, 200);
+  assert.deepEqual(scheduledDelays, [4_321]);
+  assert.equal(cleared, 1);
+});
+
+test("invalid or unsafe timeout overrides are rejected during app creation", () => {
+  for (const timeoutMs of [0, 999, 120_001, 1_000.5, Number.NaN]) {
+    assert.throws(
+      () => createApp({ requestTimeout: { timeoutMs } }),
+      /Request timeout must be an integer between 1000 and 120000 milliseconds/,
+    );
+  }
+});
+
+test("health and readiness routes remain outside centralized request timeout handling", async () => {
   const metrics = new MetricsRegistry();
-  const app = createApp({ metrics, readinessCheck: async () => ({ status: "ready", checks: [] }) });
+  let timersCreated = 0;
+  const app = createApp({
+    metrics,
+    readinessCheck: async () => ({ status: "ready", checks: [] }),
+    productionHealthCheck: createProductionHealthCheck({
+      checkSupabase: () => undefined,
+      checkIndexingWorker: () => undefined,
+    }),
+    productionReadinessCheck: createProductionReadinessCheck({
+      isStartupComplete: () => true,
+      checkSupabase: () => undefined,
+      checkEnvironment: () => undefined,
+      checkStorage: () => undefined,
+      isShuttingDown: () => false,
+      workerEnabled: false,
+      checkIndexingWorker: () => undefined,
+    }),
+    requestTimeout: {
+      setTimer: () => { timersCreated += 1; return timersCreated; },
+      clearTimer: () => undefined,
+    },
+  });
+  assert.equal((await app.request("/health")).status, 200);
   assert.equal((await app.request("/health/live")).status, 200);
   assert.equal((await app.request("/health/ready")).status, 200);
-  assert.equal((await app.request("/metrics")).status, 200);
+  assert.equal((await app.request("/ready")).status, 200);
+  assert.equal(timersCreated, 0);
   assert.match(metrics.render(), /giro_timeouts_total\{category="request"\} 0/);
+});
+
+test("request deadline AbortSignal is propagated to handlers that consume it", async () => {
+  const callbacks: Array<() => void> = [];
+  let observedSignal: AbortSignal | undefined;
+  let abortEvents = 0;
+  const app = new Hono();
+  app.use("*", createRequestContextMiddleware({
+    generateRequestId: () => "abort-propagation-id",
+    logger: { info: () => undefined, error: () => undefined },
+  }));
+  app.use("/abort-aware", createRequestTimeoutMiddleware({
+    timeoutMs: 1_000,
+    setTimer: (callback) => { callbacks.push(callback); return callbacks.length; },
+    clearTimer: () => undefined,
+    logger: { error: () => undefined },
+  }));
+  app.get("/abort-aware", async (c) => {
+    observedSignal = getRequestDeadline(c)?.signal;
+    await new Promise<void>((resolve) => {
+      observedSignal?.addEventListener("abort", () => {
+        abortEvents += 1;
+        resolve();
+      }, { once: true });
+    });
+    return c.json({ success: true });
+  });
+
+  const responsePromise = app.request("/abort-aware");
+  while (!observedSignal) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  callbacks[0]?.();
+  const response = await responsePromise;
+
+  assert.equal(response.status, 504);
+  assert.equal(observedSignal?.aborted, true);
+  assert.equal(abortEvents, 1);
 });

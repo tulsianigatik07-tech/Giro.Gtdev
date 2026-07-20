@@ -24,7 +24,6 @@ import {
 } from "../middleware/rateLimiter.js";
 import type { MetricsRegistry } from "../observability/metrics.js";
 import { createMetricsRoute } from "./metrics.js";
-import { createRequestTimeoutMiddleware } from "../middleware/requestTimeout.js";
 import repositoryIndexingEventsRouter from "./repositoryIndexingEvents.js";
 
 export function createRoutes(
@@ -76,18 +75,6 @@ export function createRoutes(
   routes.use("/architecture/*", authMiddleware());
   routes.use("/indexing/*", authMiddleware());
   routes.use("/repositories/*", authMiddleware());
-
-  const expensiveEndpointDeadline = createRequestTimeoutMiddleware({
-    timeoutMs: env.REQUEST_TIMEOUT_MS,
-    onTimeout: () => metrics.incrementTimeout("request"),
-  });
-  routes.use("/repos/connect", expensiveEndpointDeadline);
-  routes.use("/repos/search/*", expensiveEndpointDeadline);
-  routes.use("/context/*", expensiveEndpointDeadline);
-  routes.use("/search/*", expensiveEndpointDeadline);
-  routes.use("/chat/*", expensiveEndpointDeadline);
-  routes.use("/retrieval/*", expensiveEndpointDeadline);
-  routes.use("/sessions/:id/ask", expensiveEndpointDeadline);
 
   const apiRateLimiter = createRateLimitMiddleware({
     policy: rateLimitPolicy,
