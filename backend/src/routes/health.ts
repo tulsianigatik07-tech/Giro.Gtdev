@@ -9,6 +9,10 @@ import type {
   ProductionHealthCheck,
   ProductionHealthContract,
 } from "../services/health/productionHealth.js";
+import type {
+  ProductionReadinessCheck,
+  ProductionReadinessContract,
+} from "../services/health/productionReadiness.js";
 
 export const SERVICE_NAME = "giro-backend";
 export const SERVICE_VERSION = "0.1.0";
@@ -17,6 +21,7 @@ export type ReadinessCheck = () => Promise<ApplicationReadiness>;
 
 export interface HealthRouteOptions {
   productionHealthCheck: ProductionHealthCheck;
+  productionReadinessCheck: ProductionReadinessCheck;
   uptime?: () => number;
   now?: () => Date;
 }
@@ -29,6 +34,43 @@ export function createHealthRoute(
   const healthRoute = new Hono<{ Variables: { requestId: string } }>();
   const uptime = options.uptime ?? process.uptime;
   const now = options.now ?? (() => new Date());
+
+  healthRoute.get("/ready", async (c) => {
+    let readiness: Awaited<ReturnType<ProductionReadinessCheck>>;
+    try {
+      readiness = await options.productionReadinessCheck();
+    } catch {
+      readiness = {
+        status: "not_ready",
+        checks: {
+          startup: { status: "fail", required: true },
+          supabase: { status: "fail", required: true },
+          environment: { status: "fail", required: true },
+          storage: { status: "fail", required: true },
+          shutdown: { status: "fail", required: true },
+          indexingWorker: { status: "fail", required: true },
+        },
+      };
+    }
+    for (const [dependency, check] of Object.entries(readiness.checks)) {
+      if (check.required && check.status === "fail") {
+        logger.warn("readiness_dependency_failed", {
+          requestId: c.get("requestId"),
+          dependency,
+          required: true,
+          operation: "production_readiness",
+        });
+      }
+    }
+    const contract: ProductionReadinessContract = {
+      status: readiness.status,
+      service: SERVICE_NAME,
+      version: SERVICE_VERSION,
+      timestamp: now().toISOString(),
+      checks: readiness.checks,
+    };
+    return ok(c, contract, readiness.status === "ready" ? 200 : 503);
+  });
 
   healthRoute.get("/health", async (c) => {
     let health: Awaited<ReturnType<ProductionHealthCheck>>;

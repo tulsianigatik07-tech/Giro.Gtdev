@@ -17,6 +17,7 @@ import {
 import { stopRegisteredIndexingWorkers } from "./runtime/indexingWorkerShutdown.js";
 
 let server: ServerType;
+let startupCompleted = false;
 const coordinator = createBackendShutdown({
   logger,
   timeoutMs: env.SHUTDOWN_TIMEOUT_MS,
@@ -26,7 +27,10 @@ const coordinator = createBackendShutdown({
   flushLogs,
   forceStop: () => forceCloseHttpServer(server),
 });
-const app = createApp({ isShuttingDown: coordinator.isShuttingDown });
+const app = createApp({
+  isShuttingDown: coordinator.isShuttingDown,
+  isStartupComplete: () => startupCompleted,
+});
 
 server = serve(
   {
@@ -34,6 +38,7 @@ server = serve(
     port: env.PORT,
   },
   (info) => {
+    startupCompleted = true;
     logger.info("server_started", {
       port: info.port,
       env: env.NODE_ENV,

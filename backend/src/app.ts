@@ -25,6 +25,8 @@ import { runtimeRetrievalCache } from "./services/retrieval/cache/runtimeRetriev
 import type { RateLimitPolicy } from "./middleware/rateLimiter.js";
 import { createRuntimeProductionHealthCheck } from "./services/health/runtimeProductionHealth.js";
 import type { ProductionHealthCheck } from "./services/health/productionHealth.js";
+import { createRuntimeProductionReadinessCheck } from "./services/health/runtimeProductionReadiness.js";
+import type { ProductionReadinessCheck } from "./services/health/productionReadiness.js";
 
 type Variables = RequestContextVariables & {
   indexingJobStore: IndexingJobStore;
@@ -41,6 +43,9 @@ export interface CreateAppOptions {
   indexingProgressPublisher?: IndexingProgressPublisher;
   retrievalCache?: RetrievalCache;
   productionHealthCheck?: ProductionHealthCheck;
+  productionReadinessCheck?: ProductionReadinessCheck;
+  isStartupComplete?: () => boolean;
+  workerModeEnabled?: boolean;
   healthClock?: Pick<HealthRouteOptions, "uptime" | "now">;
   rateLimitPolicy?: RateLimitPolicy;
 }
@@ -77,6 +82,12 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   const productionHealthCheck = options.productionHealthCheck ??
     createRuntimeProductionHealthCheck();
+  const productionReadinessCheck = options.productionReadinessCheck ??
+    createRuntimeProductionReadinessCheck({
+      isStartupComplete: options.isStartupComplete,
+      isShuttingDown: options.isShuttingDown,
+      workerEnabled: options.workerModeEnabled,
+    });
   const app = new Hono<{ Variables: Variables }>();
 
   // Order matters: correlation context wraps every later middleware and route.
@@ -107,7 +118,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.route("/", createRoutes(
     readinessCheck,
-    { productionHealthCheck, ...options.healthClock },
+    { productionHealthCheck, productionReadinessCheck, ...options.healthClock },
     metrics,
     options.rateLimitPolicy,
   ));

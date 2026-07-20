@@ -35,6 +35,10 @@ const EnvSchema = z
     EMBEDDINGS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
     MODEL_NAME: z.string().trim().min(1).default("gpt-4.1-mini"),
     REPOSITORY_STORAGE_ROOT: z.string().trim().min(1).default(".storage/repos"),
+    INDEXING_WORKER_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
     INDEXING_WORKER_ID: optionalNonEmptyString,
     INDEXING_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),
     INDEXING_WORKER_IDLE_BACKOFF_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),

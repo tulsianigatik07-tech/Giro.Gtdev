@@ -1,3 +1,5 @@
+import { runBoundedDependencyCheck } from "./boundedDependencyCheck.js";
+
 export type ProductionHealthStatus = "healthy" | "degraded" | "unhealthy";
 export type ProductionDependencyStatus = "healthy" | "unhealthy";
 
@@ -33,23 +35,6 @@ const HEALTHY_OPTIONAL = Object.freeze({ status: "healthy", required: false } as
 const UNHEALTHY_REQUIRED = Object.freeze({ status: "unhealthy", required: true } as const);
 const UNHEALTHY_OPTIONAL = Object.freeze({ status: "unhealthy", required: false } as const);
 
-async function withTimeout(check: () => void | Promise<void>, timeoutMs: number): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([
-      Promise.resolve().then(check),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("Health dependency check timed out.")), timeoutMs);
-      }),
-    ]);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 export function createProductionHealthCheck(
   dependencies: ProductionHealthDependencies,
   timeoutMs = 1_000,
@@ -60,8 +45,8 @@ export function createProductionHealthCheck(
 
   return async () => {
     const [supabaseHealthy, indexingWorkerHealthy] = await Promise.all([
-      withTimeout(dependencies.checkSupabase, timeoutMs),
-      withTimeout(dependencies.checkIndexingWorker, timeoutMs),
+      runBoundedDependencyCheck(dependencies.checkSupabase, timeoutMs),
+      runBoundedDependencyCheck(dependencies.checkIndexingWorker, timeoutMs),
     ]);
     const checks = Object.freeze({
       api: HEALTHY_REQUIRED,

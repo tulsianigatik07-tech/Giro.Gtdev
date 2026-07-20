@@ -1,5 +1,3 @@
-import { constants } from "node:fs";
-import { access } from "node:fs/promises";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { env } from "../../config/env.js";
 import { supabase } from "../../lib/supabase.js";
@@ -10,7 +8,7 @@ import {
   type ApplicationReadiness,
   type ReadinessCheckDefinition,
 } from "./readinessService.js";
-import { repositoryStorageRoot } from "../../config/repositoryStorage.js";
+import { checkRepositoryStorageAccess } from "../../config/repositoryStorage.js";
 
 type SupabaseProbeResult = { error: unknown };
 
@@ -27,10 +25,6 @@ function requireOpenAiConfiguration(): void {
   if (!env.OPENAI_API_KEY) {
     throw new Error("Required configuration is unavailable.");
   }
-}
-
-async function requireStorageAccess(): Promise<void> {
-  await access(repositoryStorageRoot, constants.R_OK | constants.W_OK);
 }
 
 function requireRuntimeInitialization(jobStore: IndexingJobStore): void {
@@ -73,7 +67,7 @@ export function createRuntimeReadinessCheck(options: {
       critical: true,
       successMessage: "Repository storage is available.",
       failureMessage: "Repository storage is unavailable.",
-      check: requireStorageAccess,
+      check: checkRepositoryStorageAccess,
     },
     {
       name: "runtime_initialization",

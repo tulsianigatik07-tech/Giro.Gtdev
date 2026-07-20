@@ -8,7 +8,7 @@ import {
 
 type ProbeResult = { data: unknown; error: unknown };
 
-async function checkSupabase(client: SupabaseClient): Promise<void> {
+export async function checkSupabaseConnectivity(client: SupabaseClient): Promise<void> {
   const result = await client
     .from("repositories")
     .select("repository_id")
@@ -16,7 +16,7 @@ async function checkSupabase(client: SupabaseClient): Promise<void> {
   if (result.error) throw new Error("Supabase health check failed.");
 }
 
-async function checkIndexingWorker(client: SupabaseClient): Promise<void> {
+export async function checkIndexingWorkerReadiness(client: SupabaseClient): Promise<void> {
   const result = await client
     .from("indexing_workers")
     .select("heartbeat_at")
@@ -43,7 +43,7 @@ export function createRuntimeProductionHealthCheck(options: {
 } = {}): ProductionHealthCheck {
   const client = options.client ?? supabase;
   return createProductionHealthCheck({
-    checkSupabase: () => checkSupabase(client),
-    checkIndexingWorker: () => checkIndexingWorker(client),
+    checkSupabase: () => checkSupabaseConnectivity(client),
+    checkIndexingWorker: () => checkIndexingWorkerReadiness(client),
   }, options.timeoutMs);
 }

@@ -1,4 +1,5 @@
-import { mkdirSync, realpathSync } from "node:fs";
+import { constants, mkdirSync, realpathSync } from "node:fs";
+import { access } from "node:fs/promises";
 import path from "node:path";
 import { env } from "./env.js";
 
@@ -19,3 +20,10 @@ export function resolveRepositoryStorageRoot(configuredValue: string): Canonical
 }
 
 export const repositoryStorageRoot = resolveRepositoryStorageRoot(env.REPOSITORY_STORAGE_ROOT);
+
+export async function checkRepositoryStorageAccess(
+  root: CanonicalRepositoryStorageRoot = repositoryStorageRoot,
+  mode = constants.R_OK | constants.W_OK,
+): Promise<void> {
+  await access(root, mode);
+}
