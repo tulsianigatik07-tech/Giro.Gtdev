@@ -13,7 +13,6 @@ import { buildRetrievalHotspots } from "../retrieval/retrievalHotspots.js";
 import { buildRetrievalDiversity } from "../retrieval/retrievalDiversity.js";
 import { buildRetrievalBlindSpots } from "../retrieval/retrievalBlindSpots.js";
 import { buildRetrievalQualityScore } from "../retrieval/retrievalQualityScore.js";
-import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
 import type {
@@ -37,6 +36,7 @@ import {
   toPublicRetrievalConfidence,
 } from "../retrieval/confidence/retrievalConfidence.js";
 import { evaluateRuntimeRetrievalConfidence } from "../retrieval/confidence/runtimeRetrievalConfidence.js";
+import type { AuthorizedRepositoryContext } from "../repository/ownershipGuard.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
@@ -202,16 +202,16 @@ export function buildRepositorySummaryContextChunk(
 
 export async function assembleEnrichedContext(
   request: EnrichedAssemblyRequest,
-  options: { signal?: AbortSignal; cache?: RetrievalCache } = {},
+  options: { signal?: AbortSignal; cache?: RetrievalCache; authorizedRepository: AuthorizedRepositoryContext },
 ): Promise<EnrichedAssembledContext> {
   const maxChars = request.maxChars ?? 16_000;
   const limit = request.limit ?? 25;
-  const repository = `${request.owner}/${request.repo}`;
+  const repository = options.authorizedRepository.repositoryId;
   const cache = options.cache ?? runtimeRetrievalCache;
 
   // A genuinely missing repository is a 404 condition, distinct from a
   // partial source failure (which degrades gracefully below).
-  if (!existsSync(repoClonePath(request.owner, request.repo))) {
+  if (!existsSync(options.authorizedRepository.checkoutPath)) {
     throw new Error("Repository not connected");
   }
 
@@ -244,7 +244,7 @@ export async function assembleEnrichedContext(
       owner: request.owner,
       repo: request.repo,
       limit: 10,
-    });
+    }, options.authorizedRepository);
     fileResults = res.results;
   } catch (err) {
     logger.warn("enriched_file_search_failed", {

@@ -13,6 +13,7 @@ import type {
   ExecuteIndexingPipeline,
   IndexingJobRepositoryStore,
 } from "../services/indexing/jobs/indexingJobWorker.js";
+import { clearRepositoryOwners, setRepositoryOwner } from "../services/repository/ownershipStore.js";
 
 const BASE_JOB: CreateIndexingJobInput = {
   repositoryId: "owner/repo",
@@ -40,6 +41,8 @@ let repositoryCalls: string[];
 let repositoryStore: IndexingJobRepositoryStore;
 
 beforeEach(() => {
+  clearRepositoryOwners();
+  setRepositoryOwner(BASE_JOB.repositoryId, BASE_JOB.ownerUserId);
   jobStore = new MemoryIndexingJobStore();
   outputs = [];
   repositoryCalls = [];

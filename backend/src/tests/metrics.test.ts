@@ -8,6 +8,7 @@ import { MetricsRegistry } from "../observability/metrics.js";
 import { MemoryIndexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
 import { processNextIndexingJob } from "../services/indexing/jobs/indexingJobWorker.js";
 import { DeadlineExceededError } from "../runtime/deadline.js";
+import { setRepositoryOwner } from "../services/repository/ownershipStore.js";
 
 test("public metrics endpoint uses Prometheus content type and valid exposition", async () => {
   const metrics = new MetricsRegistry();
@@ -116,6 +117,7 @@ test("indexing lifecycle counter records started, completed, and failed", async 
     branch: "main",
   };
   await store.createJob(jobInput);
+  setRepositoryOwner("acme/demo", "user-1");
   await processNextIndexingJob({
     workerId: "worker-1",
     jobStore: store,
@@ -132,7 +134,13 @@ test("indexing lifecycle counter records started, completed, and failed", async 
       },
     }),
   });
-  await store.createJob({ ...jobInput, repositoryId: "acme/failing", repositoryName: "failing" });
+  await store.createJob({
+    ...jobInput,
+    repositoryId: "acme/failing",
+    repositoryName: "failing",
+    repositoryUrl: "https://github.com/acme/failing",
+  });
+  setRepositoryOwner("acme/failing", "user-1");
   await processNextIndexingJob({
     workerId: "worker-1",
     jobStore: store,
@@ -158,6 +166,7 @@ test("indexing deadline failure is retryable, never succeeds, and increments one
     repositoryUrl: "https://github.com/acme/timeout",
     branch: "main",
   });
+  setRepositoryOwner("acme/timeout", "user-1");
   const events: string[] = [];
   const report = await processNextIndexingJob({
     workerId: "worker-1",

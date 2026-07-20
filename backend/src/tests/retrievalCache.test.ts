@@ -248,6 +248,7 @@ test("index completion hook invalidates cached repository retrieval", async () =
     repositoryName: "cache-demo",
     repositoryUrl: "https://github.com/acme/cache-demo",
   });
+  setRepositoryOwner(REPOSITORY_ID, "user-a");
   const { cache, logs } = createCache();
   await loadValue(cache, "before");
   await processNextIndexingJob({

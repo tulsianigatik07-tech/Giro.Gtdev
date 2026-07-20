@@ -1,6 +1,6 @@
 // Shallow-clones a GitHub repository into local storage.
 
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { readdir, realpath } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { simpleGit } from "simple-git";
@@ -13,8 +13,17 @@ import { logger } from "../../lib/logger.js";
 import { runtimeMetrics } from "../../observability/metrics.js";
 import type { CircuitBreaker } from "../../runtime/circuitBreaker.js";
 import { runtimeDependencyCircuitBreakers } from "../../runtime/dependencyCircuitBreakers.js";
+import {
+  ensureRepositoryStorageRoot,
+  removeRepositoryCheckout,
+  repositoryCheckoutPath,
+  resolveRepositoryPath,
+  validateRepositoryCheckout,
+  type TrustedRepositoryCheckoutPath,
+} from "../security/repositoryPaths.js";
+import { normalizeRepositoryParts } from "../security/repositoryIdentity.js";
+import { repositoryStorageRoot } from "../../config/repositoryStorage.js";
 
-const STORAGE_ROOT = path.join(process.cwd(), ".storage", "repos");
 export type CloneExecutor = (repoUrl: string, clonePath: string, timeoutMs: number) => Promise<void>;
 export interface SnapshotCheckoutResult {
   commitSha: string;
@@ -32,7 +41,8 @@ const defaultCloneExecutor: CloneExecutor = async (repoUrl, clonePath, timeoutMs
 };
 
 const defaultSnapshotCheckoutExecutor: SnapshotCheckoutExecutor = async (input) => {
-  const git = simpleGit(input.clonePath, { timeout: { block: input.timeoutMs } });
+  const checkout = await validateGitWorkingDirectory(input.clonePath);
+  const git = simpleGit(checkout, { timeout: { block: input.timeoutMs } });
   let resolvedBranch = input.branch;
   if (!resolvedBranch) {
     try {
@@ -71,8 +81,53 @@ const defaultSnapshotCheckoutExecutor: SnapshotCheckoutExecutor = async (input) 
   return { commitSha: revision, branch: resolvedBranch };
 };
 
-export function repoClonePath(owner: string, repo: string): string {
-  return path.join(STORAGE_ROOT, `${owner}--${repo}`);
+export function repoClonePath(owner: string, repo: string): TrustedRepositoryCheckoutPath {
+  return repositoryCheckoutPath(normalizeRepositoryParts(owner, repo).repositoryId);
+}
+
+export async function validateGitWorkingDirectory(
+  checkoutPath: string,
+  timeoutMs = env.REPOSITORY_CLONE_TIMEOUT_MS,
+  storageRoot = repositoryStorageRoot,
+): Promise<TrustedRepositoryCheckoutPath> {
+  if (path.dirname(checkoutPath) !== storageRoot || !/^repo-[0-9a-f]{64}$/.test(path.basename(checkoutPath))) {
+    throw new Error("Git working directory is not an authorized checkout.");
+  }
+  // Recover the trusted type only after runtime checkout and symlink validation.
+  const checkout = checkoutPath as TrustedRepositoryCheckoutPath;
+  await resolveRepositoryPath(checkout, ".git", { mustExist: true });
+  const git = simpleGit(checkout, { timeout: { block: timeoutMs } });
+  const topLevel = await realpath((await git.revparse(["--show-toplevel"])).trim());
+  const canonicalCheckout = await realpath(checkout);
+  if (topLevel !== canonicalCheckout) {
+    throw new Error("Git top-level does not match the authorized checkout.");
+  }
+  const rawGitDirectory = (await git.revparse(["--git-dir"])).trim();
+  const gitDirectory = await realpath(path.isAbsolute(rawGitDirectory)
+    ? rawGitDirectory
+    : path.resolve(checkout, rawGitDirectory));
+  const relativeGitDirectory = path.relative(canonicalCheckout, gitDirectory);
+  if (relativeGitDirectory === ".." || relativeGitDirectory.startsWith(`..${path.sep}`) || path.isAbsolute(relativeGitDirectory)) {
+    throw new Error("Git directory escapes the authorized checkout.");
+  }
+  for (const key of ["core.worktree", "core.fsmonitor", "core.sshCommand"] as const) {
+    try {
+      const configured = (await git.raw(["config", "--local", "--get", key])).trim();
+      if (configured) throw new Error("Repository Git configuration is unsafe.");
+    } catch (error) {
+      if (error instanceof Error && error.message === "Repository Git configuration is unsafe.") throw error;
+    }
+  }
+  try {
+    const unsafeConfig = (await git.raw([
+      "config", "--local", "--get-regexp",
+      "^(filter\\..*\\.(clean|smudge|process)|submodule\\..*\\.update|core\\.hooksPath)$",
+    ])).trim();
+    if (unsafeConfig) throw new Error("Repository Git configuration is unsafe.");
+  } catch (error) {
+    if (error instanceof Error && error.message === "Repository Git configuration is unsafe.") throw error;
+  }
+  return checkout;
 }
 
 export function isTransientCloneError(error: unknown): boolean {
@@ -103,7 +158,7 @@ export async function cloneRepo(
     checkoutSnapshot?: SnapshotCheckoutExecutor;
   } = {},
 ): Promise<{
-  clonePath: string;
+  clonePath: TrustedRepositoryCheckoutPath;
   alreadyExisted: boolean;
   commitSha: string;
   branch: string | null;
@@ -114,11 +169,13 @@ export async function cloneRepo(
   try {
     return await (options.circuitBreaker ?? runtimeDependencyCircuitBreakers.clone).execute(
       async () => {
-        await mkdir(STORAGE_ROOT, { recursive: true });
+        await ensureRepositoryStorageRoot();
         let alreadyExisted = false;
         if (existsSync(clonePath)) {
+          await validateRepositoryCheckout(`${owner}/${repo}`, { mustExist: true });
           const entries = await readdir(clonePath);
           alreadyExisted = entries.length > 0;
+          if (alreadyExisted) await validateGitWorkingDirectory(clonePath);
         }
         const repoUrl = `https://github.com/${owner}/${repo}.git`;
         try {
@@ -136,10 +193,11 @@ export async function cloneRepo(
           });
           if (!alreadyExisted) await retry(
             async (attempt) => {
-              if (attempt > 1) await rm(clonePath, { recursive: true, force: true });
+              if (attempt > 1) await removeRepositoryCheckout(`${owner}/${repo}`);
               const attemptsRemaining = env.CLONE_MAX_RETRIES + 2 - attempt;
               const attemptTimeoutMs = Math.max(1, Math.floor(deadline.remainingMs() / attemptsRemaining));
               await (options.executeClone ?? defaultCloneExecutor)(repoUrl, clonePath, attemptTimeoutMs);
+              await validateRepositoryCheckout(`${owner}/${repo}`, { mustExist: true });
             },
             {
               maxAttempts: env.CLONE_MAX_RETRIES + 1,
@@ -166,7 +224,16 @@ export async function cloneRepo(
             branch: snapshot.branch,
           };
         } catch (err) {
-          await rm(clonePath, { recursive: true, force: true });
+          try {
+            await removeRepositoryCheckout(`${owner}/${repo}`);
+          } catch {
+            logger.error("repository_cleanup_rejected", {
+              requestId: options.requestId,
+              repositoryId: `${owner}/${repo}`,
+              operation: "clone_failure_cleanup",
+              reasonCode: "unsafe_cleanup_rejection",
+            });
+          }
           const message = err instanceof Error ? err.message : "unknown error";
           throw new Error(`Clone failed: ${message}`);
         }

@@ -1,24 +1,20 @@
 // Pure-Node detectors for repository intelligence signals.
 
-import { access, readFile } from "node:fs/promises";
-import { constants } from "node:fs";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 import {
   FRAMEWORK_FILE_SIGNALS,
   FRAMEWORK_PACKAGE_SIGNALS,
   type Framework,
 } from "./frameworks.js";
 import { LOCK_FILE_MAP, type PackageManager } from "./packageManagers.js";
+import { resolveRepositoryPath, type TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 
-async function exists(p: string): Promise<boolean> {
-  return access(p, constants.F_OK).then(
-    () => true,
-    () => false,
-  );
+async function exists(checkout: TrustedRepositoryCheckoutPath, relativePath: string): Promise<boolean> {
+  return resolveRepositoryPath(checkout, relativePath, { mustExist: true }).then(() => true, () => false);
 }
 
 export async function detectFramework(
-  clonePath: string,
+  clonePath: TrustedRepositoryCheckoutPath,
   topLevelFiles: string[],
 ): Promise<Framework> {
   const fileSet = new Set(topLevelFiles);
@@ -26,7 +22,8 @@ export async function detectFramework(
     if (fileSet.has(signal.file)) return signal.framework;
   }
 
-  const deps = await readFile(path.join(clonePath, "package.json"), "utf8")
+  const deps = await resolveRepositoryPath(clonePath, "package.json", { mustExist: true, requireFile: true })
+    .then((packageFile) => readFile(packageFile, "utf8"))
     .then((raw) => {
       const pkg = JSON.parse(raw) as {
         dependencies?: Record<string, string>;
@@ -100,14 +97,14 @@ export function detectBackend(allDirs: string[]): boolean {
   );
 }
 
-async function filterExisting(clonePath: string, candidates: string[]): Promise<string[]> {
+async function filterExisting(clonePath: TrustedRepositoryCheckoutPath, candidates: string[]): Promise<string[]> {
   const checks = await Promise.all(
-    candidates.map((rel) => exists(path.join(clonePath, rel))),
+    candidates.map((rel) => exists(clonePath, rel)),
   );
   return candidates.filter((_, i) => checks[i]);
 }
 
-export function detectImportantFiles(clonePath: string): Promise<string[]> {
+export function detectImportantFiles(clonePath: TrustedRepositoryCheckoutPath): Promise<string[]> {
   return filterExisting(clonePath, [
     "package.json", "tsconfig.json", "Dockerfile", "docker-compose.yml",
     "docker-compose.yaml", "turbo.json", "pnpm-workspace.yaml",
@@ -116,7 +113,7 @@ export function detectImportantFiles(clonePath: string): Promise<string[]> {
   ]);
 }
 
-export function detectEntrypoints(clonePath: string): Promise<string[]> {
+export function detectEntrypoints(clonePath: TrustedRepositoryCheckoutPath): Promise<string[]> {
   return filterExisting(clonePath, [
     "src/index.ts", "src/index.js", "src/main.ts", "src/main.js",
     "src/app.ts", "src/server.ts", "app/page.tsx", "app/layout.tsx",

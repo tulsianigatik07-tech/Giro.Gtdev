@@ -1,6 +1,5 @@
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
-import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { env } from "../../config/env.js";
 import { supabase } from "../../lib/supabase.js";
@@ -11,6 +10,7 @@ import {
   type ApplicationReadiness,
   type ReadinessCheckDefinition,
 } from "./readinessService.js";
+import { repositoryStorageRoot } from "../../config/repositoryStorage.js";
 
 type SupabaseProbeResult = { error: unknown };
 
@@ -30,19 +30,7 @@ function requireOpenAiConfiguration(): void {
 }
 
 async function requireStorageAccess(): Promise<void> {
-  const storageParent = path.join(process.cwd(), ".storage");
-  try {
-    await access(storageParent, constants.R_OK | constants.W_OK);
-  } catch (error) {
-    if (
-      !error ||
-      typeof error !== "object" ||
-      (error as NodeJS.ErrnoException).code !== "ENOENT"
-    ) {
-      throw error;
-    }
-    await access(process.cwd(), constants.R_OK | constants.W_OK);
-  }
+  await access(repositoryStorageRoot, constants.R_OK | constants.W_OK);
 }
 
 function requireRuntimeInitialization(jobStore: IndexingJobStore): void {

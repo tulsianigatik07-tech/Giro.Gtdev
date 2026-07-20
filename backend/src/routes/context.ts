@@ -3,7 +3,6 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
-import path from "node:path";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { assembleEnrichedContext } from "../services/context/enrichedAssembler.js";
 import { ok, fail } from "../lib/response.js";
@@ -14,15 +13,16 @@ import {
   RepositoryNameSchema,
   RepositoryOwnerSchema,
   SearchQuerySchema,
+  RepositoryIdSchema,
 } from "../validation/repositorySchemas.js";
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
 import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
+import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
+import { validateRepositoryCheckout } from "../services/security/repositoryPaths.js";
 
-const STORAGE_PATH_GUARD = ".storage/repos";
-
-const BuildBody = z.object({ clonePath: z.string().min(1) });
+const BuildBody = z.object({ repositoryId: RepositoryIdSchema });
 
 const AssembleBody = z.object({
   query: SearchQuerySchema.refine((value) => value.length > 0, {
@@ -50,28 +50,25 @@ contextRouter.post("/build", async (c) => {
     );
   }
 
-  const { clonePath } = parsed.data;
-  if (!clonePath.includes(STORAGE_PATH_GUARD)) {
-    return c.json(
-      { success: false, error: "Invalid clonePath. Must be within .storage/repos." },
-      403,
-    );
-  }
-
-  // Derive repository identifier from clone folder name (owner--repo)
-  const folderName = path.basename(clonePath);
-  const repository = folderName.replace("--", "/");
-
   const requestId = c.get("requestId");
+  const access = await authorizeRepositoryRequest(c, parsed.data.repositoryId, "context_build");
+  if (!access.ok) return access.response;
+  if (!access.repository.indexedRevision) {
+    return fail(c, { code: "repository_not_ready", message: "Repository indexing is not ready." }, 409);
+  }
   try {
-    const data = await buildRepositoryContext(clonePath, repository, { signal: getRequestDeadline(c)?.signal });
+    const checkout = await validateRepositoryCheckout(access.repository.repositoryId, { mustExist: true });
+    const data = await buildRepositoryContext(checkout, access.repository.repositoryId, {
+      signal: getRequestDeadline(c)?.signal,
+      repositoryVersion: access.repository.indexedRevision,
+    });
     return c.json({ success: true, requestId, data });
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     return c.json(
       {
         success: false,
-        error: err instanceof Error ? err.message : "Unknown error",
+        error: "Repository context build failed",
         requestId,
       },
       500,
@@ -91,12 +88,15 @@ contextRouter.post("/assemble", async (c) => {
   }
 
   const { query, owner, repo, maxChars, limit } = parsed.data;
+  const access = await authorizeRepositoryRequest(c, `${owner}/${repo}`, "context_assemble");
+  if (!access.ok) return access.response;
   try {
     const result = await assembleEnrichedContext(
-      { query, owner, repo, maxChars, limit },
+      { query, owner: access.repository.owner, repo: access.repository.repo, maxChars, limit },
       {
         signal: getRequestDeadline(c)?.signal,
         cache: c.get("retrievalCache"),
+        authorizedRepository: access.repository,
       },
     );
     const { _confidenceBudgetDropCount, ...publicResult } = result;
@@ -124,9 +124,10 @@ contextRouter.post("/assemble", async (c) => {
     }
     logger.error("context_assemble_failed", {
       requestId: c.get("requestId"),
-      message,
+      repositoryId: access.repository.repositoryId,
+      reasonCode: "context_assembly_failed",
     });
-    return fail(c, { code: "assembly_error", message }, 500);
+    return fail(c, { code: "assembly_error", message: "Context assembly failed." }, 500);
   }
 });
 

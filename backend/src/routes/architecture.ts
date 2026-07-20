@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 
 import { analyzeArchitecture } from "../services/repository/architectureAnalysisFacade.js";
+import { RepositoryIdSchema } from "../validation/repositorySchemas.js";
+import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
 
 const architectureRouter = new Hono();
 
@@ -26,9 +28,14 @@ architectureRouter.post("/review", async (c) => {
     );
   }
 
-  const result = analyzeArchitecture({
-    repositoryId: body.repositoryId.trim(),
-  });
+  const parsedRepository = RepositoryIdSchema.safeParse(body.repositoryId);
+  if (!parsedRepository.success) {
+    return c.json({ ok: false, error: { code: "BAD_REQUEST", message: "repositoryId is invalid" } }, 400);
+  }
+  const access = await authorizeRepositoryRequest(c, parsedRepository.data, "architecture_review");
+  if (!access.ok) return access.response;
+
+  const result = analyzeArchitecture({ repositoryId: access.repository.repositoryId });
 
   return c.json({
     ok: true,

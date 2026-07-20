@@ -1,11 +1,12 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { validateRepoPath, MAX_TREE_DEPTH } from "./validate.js";
+import { MAX_TREE_DEPTH } from "./validate.js";
+import type { TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
+import { resolveRepositoryPath } from "../security/repositoryPaths.js";
 import { shouldIgnorePath, shouldIgnoreFile } from "../repository/ignore.js";
 import type { FileTreeNode } from "./types.js";
 
-export async function buildFileTree(repoPath: string): Promise<FileTreeNode> {
-  validateRepoPath(repoPath);
+export async function buildFileTree(repoPath: TrustedRepositoryCheckoutPath): Promise<FileTreeNode> {
 
   async function buildNode(absPath: string, relPath: string, depth: number): Promise<FileTreeNode> {
     const name = path.basename(absPath);
@@ -26,8 +27,12 @@ export async function buildFileTree(repoPath: string): Promise<FileTreeNode> {
       const entryRel = relPath ? `${relPath}/${entry.name}` : entry.name;
       if (shouldIgnorePath(entryRel) || shouldIgnoreFile(entry.name)) continue;
       if (entry.isDirectory()) {
-        children.push(await buildNode(path.join(absPath, entry.name), entryRel, depth + 1));
+        try {
+          const safeDirectory = await resolveRepositoryPath(repoPath, entryRel, { mustExist: true, requireDirectory: true });
+          children.push(await buildNode(safeDirectory, entryRel, depth + 1));
+        } catch { /* skip unsafe/raced directories */ }
       } else {
+        if (!entry.isFile()) continue;
         children.push({ name: entry.name, type: "file" });
       }
     }

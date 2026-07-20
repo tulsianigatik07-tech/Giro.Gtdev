@@ -11,6 +11,8 @@ import { isTransientDatabaseError, retryDatabaseRead } from "../services/databas
 import { cloneRepo, isTransientCloneError } from "../services/repository/clone.js";
 import { MemoryIndexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
 import { processNextIndexingJob } from "../services/indexing/jobs/indexingJobWorker.js";
+import { setRepositoryOwner } from "../services/repository/ownershipStore.js";
+import { mkdir } from "node:fs/promises";
 
 const immediateTimers = {
   setTimer: (callback: () => void) => { callback(); return 1; },
@@ -242,9 +244,10 @@ test("database read retries transient transport errors only", async () => {
 test("clone retries transient network failure after cleanup but not permanent failures", async () => {
   let transientAttempts = 0;
   const cloned = await cloneRepo("retry-test-owner", "retry-test-repo", {
-    executeClone: async () => {
+    executeClone: async (_repoUrl, clonePath) => {
       transientAttempts += 1;
       if (transientAttempts === 1) throw new Error("fatal: unable to access: connection reset");
+      await mkdir(clonePath, { recursive: true });
     },
     logger: { info: () => undefined },
     metrics: new MetricsRegistry(),
@@ -279,6 +282,7 @@ test("worker stage-local retries preserve one claim and one successful lifecycle
     repositoryUrl: "https://github.com/acme/retry-worker",
     branch: "main",
   });
+  setRepositoryOwner("acme/retry-worker", "user-1");
   let stageAttempts = 0;
   const report = await processNextIndexingJob({
     workerId: "worker-1",

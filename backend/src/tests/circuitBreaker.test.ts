@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { Hono } from "hono";
 import { createRequestContextMiddleware } from "../middleware/requestContext.js";
 import { onError } from "../middleware/errorHandler.js";
+import { setRepositoryOwner } from "../services/repository/ownershipStore.js";
 
 function fixture(overrides: Partial<Parameters<typeof createCircuitBreaker>[0]> = {}) {
   let now = 0;
@@ -281,6 +282,7 @@ test("worker records one retryable failure for breaker rejection", async () => {
     repositoryId: "acme/circuit", ownerUserId: "user-1", repositoryOwner: "acme",
     repositoryName: "circuit", repositoryUrl: "https://github.com/acme/circuit", branch: "main",
   });
+  setRepositoryOwner("acme/circuit", "user-1");
   const report = await processNextIndexingJob({
     workerId: "worker-1",
     jobStore: store,

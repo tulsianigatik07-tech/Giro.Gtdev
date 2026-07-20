@@ -2,7 +2,6 @@
 
 import { existsSync } from "node:fs";
 import { logger } from "../../lib/logger.js";
-import { repoClonePath } from "../repository/clone.js";
 import { extractRepoSymbols } from "./symbolExtractor.js";
 import {
   buildDependencyGraph,
@@ -10,12 +9,12 @@ import {
   detectInsights,
 } from "./graphBuilder.js";
 import type { DependencyGraph } from "./types.js";
+import type { AuthorizedRepositoryContext } from "../repository/ownershipGuard.js";
 
 export async function analyzeRepoDependencies(
-  owner: string,
-  repo: string,
+  repository: AuthorizedRepositoryContext,
 ): Promise<DependencyGraph> {
-  const clonePath = repoClonePath(owner, repo);
+  const clonePath = repository.checkoutPath;
   if (!existsSync(clonePath)) {
     throw new Error("Repository not connected");
   }
@@ -26,8 +25,7 @@ export async function analyzeRepoDependencies(
   const insights = detectInsights(nodes, edges);
 
   logger.info("dependency_graph_complete", {
-    owner,
-    repo,
+    repositoryId: repository.repositoryId,
     totalNodes: stats.totalNodes,
     totalEdges: stats.totalEdges,
   });

@@ -2,7 +2,6 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
-import { existsSync } from "node:fs";
 import { parseRepoUrl } from "../lib/parseRepoUrl.js";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
@@ -15,7 +14,6 @@ import {
   RepositoryOwnerSchema,
   SearchQuerySchema,
 } from "../validation/repositorySchemas.js";
-import { repoClonePath } from "../services/repository/clone.js";
 import { scanRepo } from "../services/repository/scanner.js";
 import { analyzeRepository } from "../services/repository/analyzer.js";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
@@ -38,9 +36,8 @@ import { buildRepositoryIntelligenceReport } from "../services/repository/reposi
 import { buildRepositoryIntelligencePresentation } from "../services/repository/repositoryIntelligencePresenter.js";
 import {
   setRepositoryOwner,
-  getRepositoryOwner,
 } from "../services/repository/ownershipStore.js";
-import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { authorizeRepositoryConnection } from "../services/repository/ownershipGuard.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
@@ -54,6 +51,9 @@ import type { IndexingProgressPublisher } from "../services/indexing/events/inde
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 import { deleteRepositoryRetrievalData } from "../services/embeddings/store.js";
 import { env } from "../config/env.js";
+import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
+import { isRepositoryPathSecurityError, removeRepositoryCheckout, validateRepositoryCheckout } from "../services/security/repositoryPaths.js";
+import { repositoryStore } from "../services/repository/store/runtimeRepositoryStore.js";
 
 type Variables = {
   requestId: string;
@@ -115,18 +115,14 @@ repositoriesRoute.post("/connect", async (c) => {
   const repoId = `${owner}/${repo}`;
   setRequestLogContext(c, { repositoryId: repoId });
 
+  const connection = await authorizeRepositoryConnection({
+    repositoryId: repoId,
+    userId: user.userId,
+    log: { requestId: c.get("requestId"), route: c.req.path, operation: "repository_connect" },
+  });
+  if (!connection.ok) return fail(c, { code: connection.code, message: connection.message }, connection.status);
+  ({ owner, repo } = connection.identity);
   const existing = await getRepositoryIndexMetadata(owner, repo);
-  const ownerUserId = await getRepositoryOwner(repoId);
-  if (ownerUserId !== undefined && ownerUserId !== user.userId) {
-    return fail(
-      c,
-      {
-        code: "repo_not_owned",
-        message: "You do not have access to this repository.",
-      },
-      403,
-    );
-  }
   const reindexingStale = existing !== null && await isRepositoryStale(owner, repo);
   if (reindexingStale) {
     logger.info("repos_reindex_stale", { requestId: c.get("requestId"), owner, repo });
@@ -161,11 +157,9 @@ repositoriesRoute.get("/indexed", async (c) => {
   }
 
   const repositories = await listIndexedRepositories();
-  const owned = await Promise.all(repositories.map(async (repository) => {
-    const repoId = `${repository.owner}/${repository.repo}`;
-    return await getRepositoryOwner(repoId) === user.userId;
-  }));
-  const ownedRepositories = repositories.filter((_, index) => owned[index]);
+  const durable = await repositoryStore.listRepositories();
+  const ownedIds = new Set(durable.filter((repository) => repository.ownerUserId === user.userId).map((repository) => repository.repositoryId));
+  const ownedRepositories = repositories.filter((repository) => ownedIds.has(`${repository.owner}/${repository.repo}`));
 
   return ok(c, {
     repositories: ownedRepositories,
@@ -189,18 +183,12 @@ repositoriesRoute.post("/context", async (c) => {
     return fail(c, { code: "invalid_repo_url", message }, 400);
   }
 
-  const clonePath = repoClonePath(owner, repo);
-
-  const ctxUser = getAuthenticatedUser(c);
-  if (!ctxUser) {
-    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
-  }
-  const ctxAccess = await requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: ctxUser.userId });
-  if (!ctxAccess.ok) {
-    return fail(c, { code: ctxAccess.code, message: ctxAccess.message }, ctxAccess.status);
-  }
-
-  if (!existsSync(clonePath)) {
+  const ctxAccess = await authorizeRepositoryRequest(c, `${owner}/${repo}`, "repository_context");
+  if (!ctxAccess.ok) return ctxAccess.response;
+  let clonePath;
+  try {
+    clonePath = await validateRepositoryCheckout(ctxAccess.repository.repositoryId, { mustExist: true });
+  } catch {
     return fail(
       c,
       { code: "repo_not_connected", message: "Repository not connected. Call /repos/connect first." },
@@ -209,15 +197,23 @@ repositoriesRoute.post("/context", async (c) => {
   }
 
   try {
-    const context = await buildRepositoryContext(clonePath, `${owner}/${repo}`);
+    if (!ctxAccess.repository.indexedRevision) {
+      return fail(c, { code: "repository_not_ready", message: "Repository indexing is not ready." }, 409);
+    }
+    const context = await buildRepositoryContext(clonePath, ctxAccess.repository.repositoryId, {
+      repositoryVersion: ctxAccess.repository.indexedRevision,
+    });
     return ok(c, {
-      repository: { owner, repo, clonePath },
+      repository: { owner: ctxAccess.repository.owner, repo: ctxAccess.repository.repo, clonePath: ctxAccess.repository.checkoutKey },
       ...context,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    logger.error("repos_context_failed", { requestId: c.get("requestId"), message });
-    return fail(c, { code: "context_error", message }, 500);
+    logger.error("repos_context_failed", {
+      requestId: c.get("requestId"),
+      repositoryId: ctxAccess.repository.repositoryId,
+      reasonCode: "context_build_failed",
+    });
+    return fail(c, { code: "context_error", message: "Repository context could not be built." }, 500);
   }
 });
 
@@ -245,19 +241,13 @@ repositoriesRoute.get("/:id/summary", async (c) => {
     return fail(c, createValidationError(parsedId.error.flatten()), 400);
   }
   const { owner, repo } = parsedId.data;
-  const clonePath = repoClonePath(owner, repo);
   const repository = `${owner}/${repo}`;
-
-  const sumUser = getAuthenticatedUser(c);
-  if (!sumUser) {
-    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
-  }
-  const sumAccess = await requireRepositoryAccess({ repoId: repository, userId: sumUser.userId });
-  if (!sumAccess.ok) {
-    return fail(c, { code: sumAccess.code, message: sumAccess.message }, sumAccess.status);
-  }
-
-  if (!existsSync(clonePath)) {
+  const sumAccess = await authorizeRepositoryRequest(c, repository, "repository_summary");
+  if (!sumAccess.ok) return sumAccess.response;
+  let clonePath;
+  try {
+    clonePath = await validateRepositoryCheckout(sumAccess.repository.repositoryId, { mustExist: true });
+  } catch {
     return fail(
       c,
       { code: "repo_not_connected", message: "Repository not connected. Call /repos/connect first." },
@@ -275,9 +265,12 @@ repositoriesRoute.get("/:id/summary", async (c) => {
     await saveSummary(summary);
     return ok(c, { ...summary, cached: false });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    logger.error("repos_summary_failed", { requestId: c.get("requestId"), message });
-    return fail(c, { code: "summary_error", message }, 500);
+    logger.error("repos_summary_failed", {
+      requestId: c.get("requestId"),
+      repositoryId: sumAccess.repository.repositoryId,
+      reasonCode: "summary_build_failed",
+    });
+    return fail(c, { code: "summary_error", message: "Repository summary could not be built." }, 500);
   }
 });
 
@@ -289,20 +282,13 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
   }
   const { owner, repo } = parsedParams.data;
 
-  const user = getAuthenticatedUser(c);
-  if (!user) {
-    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
-  }
-
   const repoId = `${owner}/${repo}`;
-  const access = await requireRepositoryAccess({ repoId, userId: user.userId });
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
-  }
-
-  const clonePath = repoClonePath(owner, repo);
-
-  if (!existsSync(clonePath)) {
+  const access = await authorizeRepositoryRequest(c, repoId, "repository_intelligence");
+  if (!access.ok) return access.response;
+  let clonePath;
+  try {
+    clonePath = await validateRepositoryCheckout(access.repository.repositoryId, { mustExist: true });
+  } catch {
     return fail(
       c,
       {
@@ -347,16 +333,14 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
 
     return ok(c, buildRepositoryIntelligenceApiResponse(intelligence));
   } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
-
     logger.error("repository_intelligence_failed", {
       requestId: c.get("requestId"),
       owner,
       repo,
-      message,
+      reasonCode: "repository_intelligence_failed",
     });
 
-    return fail(c, { code: "repository_intelligence_error", message }, 500);
+    return fail(c, { code: "repository_intelligence_error", message: "Repository intelligence could not be built." }, 500);
   }
 });
 
@@ -369,21 +353,16 @@ repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
   }
   const { owner, repo } = parsedParams.data;
 
-  const depUser = getAuthenticatedUser(c);
-  if (!depUser) {
-    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
-  }
-  const depAccess = await requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: depUser.userId });
-  if (!depAccess.ok) {
-    return fail(c, { code: depAccess.code, message: depAccess.message }, depAccess.status);
-  }
+  const depAccess = await authorizeRepositoryRequest(c, `${owner}/${repo}`, "repository_dependencies");
+  if (!depAccess.ok) return depAccess.response;
 
   try {
-    const result = await analyzeRepoDependencies(owner, repo);
+    await validateRepositoryCheckout(depAccess.repository.repositoryId, { mustExist: true });
+    const result = await analyzeRepoDependencies(depAccess.repository);
     return ok(c, result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    if (message === "Repository not connected") {
+    if (message === "Repository not connected" || isRepositoryPathSecurityError(err)) {
       return fail(
         c,
         {
@@ -397,9 +376,9 @@ repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
       requestId: c.get("requestId"),
       owner,
       repo,
-      message,
+      reasonCode: "dependency_analysis_failed",
     });
-    return fail(c, { code: "dependency_error", message }, 500);
+    return fail(c, { code: "dependency_error", message: "Repository dependencies could not be analyzed." }, 500);
   }
 });
 
@@ -443,21 +422,21 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
     limit = parsed;
   }
 
-  const srchUser = getAuthenticatedUser(c);
-  if (!srchUser) {
-    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
-  }
-  const srchAccess = await requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: srchUser.userId });
-  if (!srchAccess.ok) {
-    return fail(c, { code: srchAccess.code, message: srchAccess.message }, srchAccess.status);
-  }
+  const srchAccess = await authorizeRepositoryRequest(c, `${owner}/${repo}`, "repository_file_search");
+  if (!srchAccess.ok) return srchAccess.response;
 
   try {
-    const result = await searchRepositoryFiles({ query: parsedQuery.data, owner, repo, limit });
+    await validateRepositoryCheckout(srchAccess.repository.repositoryId, { mustExist: true });
+    const result = await searchRepositoryFiles({
+      query: parsedQuery.data,
+      owner: srchAccess.repository.owner,
+      repo: srchAccess.repository.repo,
+      limit,
+    }, srchAccess.repository);
     return ok(c, result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    if (message === "Repository not connected") {
+    if (message === "Repository not connected" || isRepositoryPathSecurityError(err)) {
       return fail(
         c,
         { code: "repo_not_connected", message: "Repository not connected. Call POST /repos/connect first." },
@@ -468,9 +447,9 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
       requestId: c.get("requestId"),
       owner,
       repo,
-      message,
+      reasonCode: "repository_file_search_failed",
     });
-    return fail(c, { code: "file_search_error", message }, 500);
+    return fail(c, { code: "file_search_error", message: "Repository file search failed." }, 500);
   }
 });
 
@@ -482,25 +461,23 @@ repositoriesRoute.delete("/:owner/:repo", async (c) => {
   }
   const { owner, repo } = parsedParams.data;
 
-  const user = getAuthenticatedUser(c);
-  if (!user) {
-    return fail(
-      c,
-      { code: "unauthorized", message: "Authentication required" },
-      401,
-    );
-  }
-
   const repoId = `${owner}/${repo}`;
-  const access = await requireRepositoryAccess({
-    repoId,
-    userId: user.userId,
-  });
+  const access = await authorizeRepositoryRequest(c, repoId, "repository_delete");
+  if (!access.ok) return access.response;
 
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
+  try {
+    await removeRepositoryCheckout(access.repository.repositoryId);
+  } catch {
+    logger.warn("repository_cleanup_rejected", {
+      requestId: c.get("requestId"),
+      userId: access.repository.authenticatedUserId,
+      repositoryId: access.repository.repositoryId,
+      route: c.req.path,
+      operation: "repository_delete",
+      reasonCode: "unsafe_cleanup_rejection",
+    });
+    return fail(c, { code: "repository_cleanup_rejected", message: "Repository checkout cleanup was rejected." }, 409);
   }
-
   const report = await cleanupRepository({ owner, repo });
   if (env.NODE_ENV !== "test") await deleteRepositoryRetrievalData(repoId);
   try {
@@ -524,25 +501,9 @@ repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", async (c) => {
   }
   const { owner, repo } = parsedParams.data;
 
-  const user = getAuthenticatedUser(c);
-
-  if (!user) {
-    return fail(
-      c,
-      { code: "unauthorized", message: "Authentication required" },
-      401,
-    );
-  }
-
   const repoId = `${owner}/${repo}`;
-  const access = await requireRepositoryAccess({
-    repoId,
-    userId: user.userId,
-  });
-
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
-  }
+  const access = await authorizeRepositoryRequest(c, repoId, "repository_dashboard_intelligence");
+  if (!access.ok) return access.response;
 
   return ok(c, await buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo));
 });
@@ -555,25 +516,9 @@ repositoriesRoute.get("/:owner/:repo/workspace", async (c) => {
   }
   const { owner, repo } = parsedParams.data;
 
-  const user = getAuthenticatedUser(c);
-
-  if (!user) {
-    return fail(
-      c,
-      { code: "unauthorized", message: "Authentication required" },
-      401,
-    );
-  }
-
   const repoId = `${owner}/${repo}`;
-  const access = await requireRepositoryAccess({
-    repoId,
-    userId: user.userId,
-  });
-
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
-  }
+  const access = await authorizeRepositoryRequest(c, repoId, "repository_workspace");
+  if (!access.ok) return access.response;
 
   if (!await getRepositoryIndexMetadata(owner, repo)) {
     return fail(
@@ -625,25 +570,9 @@ repositoriesRoute.get("/:owner/:repo/dashboard", async (c) => {
   }
   const { owner, repo } = parsedParams.data;
 
-  const user = getAuthenticatedUser(c);
-
-  if (!user) {
-    return fail(
-      c,
-      { code: "unauthorized", message: "Authentication required" },
-      401,
-    );
-  }
-
   const repoId = `${owner}/${repo}`;
-  const access = await requireRepositoryAccess({
-    repoId,
-    userId: user.userId,
-  });
-
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
-  }
+  const access = await authorizeRepositoryRequest(c, repoId, "repository_dashboard");
+  if (!access.ok) return access.response;
 
   return ok(c, await getRepositorySummary({ owner, repo }));
 });

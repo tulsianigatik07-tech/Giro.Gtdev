@@ -1,18 +1,18 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { validateRepoPath, validateSafePath, MAX_FILE_SIZE } from "./validate.js";
+import { validateSafePath, MAX_FILE_SIZE } from "./validate.js";
+import type { TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 import { detectLanguageFromExtension } from "../context/language.js";
 import type { FileReadResult } from "./types.js";
 
 export async function readFileContents(
-  repoPath: string,
+  repoPath: TrustedRepositoryCheckoutPath,
   relativePath: string,
 ): Promise<FileReadResult> {
-  validateRepoPath(repoPath);
-  const absolute = validateSafePath(repoPath, relativePath);
+  const absolute = await validateSafePath(repoPath, relativePath, { requireFile: true });
 
   const info = await stat(absolute);
-  if (info.isDirectory()) throw new Error("Path is a directory");
+  if (!info.isFile()) throw new Error("Path is not a regular file");
   if (info.size > MAX_FILE_SIZE) throw new Error("File exceeds 512KB limit");
 
   const content = await readFile(absolute, "utf-8");

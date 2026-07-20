@@ -8,7 +8,7 @@ import type {
   IndexingJobFailure,
   IndexingJobStore,
 } from "../services/indexing/jobs/indexingJobStore.js";
-import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
 import { IndexingJobIdSchema } from "../validation/repositorySchemas.js";
 
 type Variables = { indexingJobStore: IndexingJobStore };
@@ -73,12 +73,14 @@ indexingRoute.get("/jobs/:jobId", async (c) => {
     repositoryId: job.repositoryId,
   });
 
-  const access = await requireRepositoryAccess({
-    repoId: job.repositoryId,
-    userId: user.userId,
-  });
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
+  const access = await authorizeRepositoryRequest(c, job.repositoryId, "indexing_job_status");
+  if (!access.ok) return access.response;
+  if (
+    job.ownerUserId !== user.userId ||
+    job.repositoryOwner !== access.repository.owner ||
+    job.repositoryName !== access.repository.repo
+  ) {
+    return fail(c, { code: "repo_not_owned", message: "You do not have access to this repository." }, 403);
   }
 
   return ok(c, jobStatusResponse(job));

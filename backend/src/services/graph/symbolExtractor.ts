@@ -4,6 +4,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { logger } from "../../lib/logger.js";
 import { shouldIgnorePath, shouldIgnoreFile } from "../repository/ignore.js";
+import { resolveRepositoryPath, type TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 import type {
   ExtractedSymbol,
   FileImport,
@@ -70,11 +71,11 @@ function extractImport(line: string, lineNumber: number): FileImport | null {
 }
 
 export async function extractFileSymbols(
-  filePath: string,
-  repoRoot: string,
+  relativeFilePath: string,
+  repoRoot: TrustedRepositoryCheckoutPath,
 ): Promise<FileSymbolMap> {
-  const relative = toPosix(path.relative(repoRoot, filePath));
-  const ext = path.extname(filePath).toLowerCase();
+  const relative = toPosix(relativeFilePath);
+  const ext = path.extname(relative).toLowerCase();
   const empty: FileSymbolMap = {
     filePath: relative,
     language: languageOf(ext),
@@ -84,11 +85,16 @@ export async function extractFileSymbols(
 
   let content: string;
   try {
+    const filePath = await resolveRepositoryPath(repoRoot, relative, {
+      mustExist: true,
+      requireFile: true,
+    });
+    if ((await stat(filePath)).size > MAX_FILE_SIZE) return empty;
     content = await readFile(filePath, "utf8");
   } catch (err) {
     logger.debug("symbol_extraction_read_failed", {
       file: relative,
-      message: err instanceof Error ? err.message : "unknown",
+      reasonCode: "repository_file_read_failed",
     });
     return empty;
   }
@@ -129,7 +135,7 @@ export async function extractFileSymbols(
 }
 
 export async function extractRepoSymbols(
-  repoRoot: string,
+  repoRoot: TrustedRepositoryCheckoutPath,
 ): Promise<FileSymbolMap[]> {
   const files: string[] = [];
 
@@ -145,18 +151,21 @@ export async function extractRepoSymbols(
       const rel = toPosix(path.relative(repoRoot, abs));
       if (entry.isDirectory()) {
         if (entry.name === ".git" || shouldIgnorePath(rel)) continue;
-        await walk(abs);
+        try {
+          await walk(await resolveRepositoryPath(repoRoot, rel, { mustExist: true, requireDirectory: true }));
+        } catch { /* skip unsafe or raced directories */ }
         continue;
       }
       if (!entry.isFile()) continue;
       if (shouldIgnorePath(rel) || shouldIgnoreFile(entry.name)) continue;
       if (!SOURCE_EXTS.has(path.extname(entry.name).toLowerCase())) continue;
       try {
-        if ((await stat(abs)).size > MAX_FILE_SIZE) continue;
+        const safeFile = await resolveRepositoryPath(repoRoot, rel, { mustExist: true, requireFile: true });
+        if ((await stat(safeFile)).size > MAX_FILE_SIZE) continue;
+        files.push(rel);
       } catch {
         continue;
       }
-      files.push(abs);
     }
   }
 

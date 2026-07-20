@@ -9,12 +9,13 @@ import {
 
 describe("repository contracts", () => {
   it("accepts a valid owner", () => {
-    assert.equal(validateRepositoryOwner("acme-org_1.dev"), "acme-org_1.dev");
+    assert.equal(validateRepositoryOwner("acme-org-1"), "acme-org-1");
   });
 
   it("rejects an invalid owner", () => {
     assert.throws(() => validateRepositoryOwner("acme/org"));
     assert.throws(() => validateRepositoryOwner("acme@org"));
+    assert.throws(() => validateRepositoryOwner("acme_org"));
   });
 
   it("accepts a valid repo", () => {

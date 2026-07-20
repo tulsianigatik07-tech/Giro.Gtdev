@@ -2,8 +2,6 @@
 // then layers DB/auth/queue/testing/infra detection, directory scoring, and
 // architecture classification. Deterministic and read-only.
 
-import { readdir } from "node:fs/promises";
-import path from "node:path";
 import { scanRepo } from "../repository/scanner.js";
 import { analyzeRepository } from "../repository/analyzer.js";
 import { readPackageInfo } from "./packageInfo.js";
@@ -17,20 +15,10 @@ import {
 import { scoreDirectories } from "./directoryScoring.js";
 import { classifyArchitecture } from "./architecture.js";
 import type { RepositorySummary } from "./types.js";
-
-async function collectDirs(clonePath: string): Promise<string[]> {
-  try {
-    const entries = await readdir(clonePath, { withFileTypes: true, recursive: true });
-    return entries
-      .filter((e) => e.isDirectory() && e.name !== ".git")
-      .map((e) => path.relative(clonePath, path.join(e.parentPath ?? clonePath, e.name)));
-  } catch {
-    return [];
-  }
-}
+import { collectContainedDirectories, type TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 
 export async function buildRepositorySummary(
-  clonePath: string,
+  clonePath: TrustedRepositoryCheckoutPath,
   repository: string,
 ): Promise<RepositorySummary> {
   const indexStart = performance.now();
@@ -46,7 +34,7 @@ export async function buildRepositorySummary(
       return null;
     }),
     readPackageInfo(clonePath),
-    collectDirs(clonePath),
+    collectContainedDirectories(clonePath, { ignore: (_relative, name) => name === ".git" }),
   ]);
 
   const topLevelFiles = new Set(scan.tree.filter((e) => !e.includes("/")));

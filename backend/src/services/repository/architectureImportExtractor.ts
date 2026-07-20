@@ -1,7 +1,8 @@
 import fs from "node:fs";
+import type { TrustedRepositoryFilePath } from "../security/repositoryPaths.js";
 
 export function extractImportsFromFile(
-  filePath: string,
+  filePath: TrustedRepositoryFilePath,
 ): string[] {
   const content = fs.readFileSync(
     filePath,

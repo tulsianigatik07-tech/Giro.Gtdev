@@ -6,10 +6,11 @@ import path from "node:path";
 import { shouldIgnorePath, shouldIgnoreFile } from "../repository/ignore.js";
 import { detectLanguageFromExtension } from "./language.js";
 import type { SourceFile } from "./types.js";
+import { resolveRepositoryPath, type TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 
 const MAX_FILE_SIZE = 512 * 1024; // 512KB
 
-export async function readSourceFiles(clonePath: string): Promise<SourceFile[]> {
+export async function readSourceFiles(clonePath: TrustedRepositoryCheckoutPath): Promise<SourceFile[]> {
   const files: SourceFile[] = [];
   const dirs: string[] = [clonePath];
 
@@ -25,7 +26,7 @@ export async function readSourceFiles(clonePath: string): Promise<SourceFile[]> 
     }
 
     for (const entry of entries) {
-      const absolutePath = path.join(dir, entry.name);
+      let absolutePath = path.join(dir, entry.name);
       const relativePath = path
         .relative(clonePath, absolutePath)
         .split(path.sep)
@@ -34,7 +35,9 @@ export async function readSourceFiles(clonePath: string): Promise<SourceFile[]> 
       if (entry.isDirectory()) {
         if (entry.name === ".git") continue;
         if (shouldIgnorePath(relativePath)) continue;
-        dirs.push(absolutePath);
+        try {
+          dirs.push(await resolveRepositoryPath(clonePath, relativePath, { mustExist: true, requireDirectory: true }));
+        } catch { /* skip unsafe or raced directories */ }
         continue;
       }
       if (!entry.isFile()) continue;
@@ -45,7 +48,9 @@ export async function readSourceFiles(clonePath: string): Promise<SourceFile[]> 
 
       let sizeBytes: number;
       try {
-        sizeBytes = (await stat(absolutePath)).size;
+        const safeFile = await resolveRepositoryPath(clonePath, relativePath, { mustExist: true, requireFile: true });
+        absolutePath = safeFile;
+        sizeBytes = (await stat(safeFile)).size;
       } catch {
         continue;
       }

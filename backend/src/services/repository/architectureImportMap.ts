@@ -1,4 +1,5 @@
 import { extractImportsFromFile } from "./architectureImportExtractor.js";
+import type { TrustedRepositoryFilePath } from "../security/repositoryPaths.js";
 
 export interface ArchitectureImportMapEntry {
   filePath: string;
@@ -6,7 +7,7 @@ export interface ArchitectureImportMapEntry {
 }
 
 export function buildArchitectureImportMap(
-  filePaths: readonly string[],
+  filePaths: readonly TrustedRepositoryFilePath[],
 ): readonly ArchitectureImportMapEntry[] {
   return filePaths.map((filePath) => ({
     filePath,

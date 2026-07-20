@@ -37,6 +37,7 @@ import type {
   PersistedRetrievalMetadata,
   SelectedContextChunk,
 } from "./types.js";
+import type { AuthorizedRepositoryContext } from "../repository/ownershipGuard.js";
 
 export const INSUFFICIENT_REPOSITORY_EVIDENCE_MESSAGE =
   "I could not find enough repository evidence to answer this reliably.";
@@ -73,6 +74,7 @@ export interface AnswerSessionQuestionOptions {
   assembleContext?: AssembleContext;
   generateAnswer?: GenerateAnswer;
   now?: () => string;
+  authorizedRepository?: AuthorizedRepositoryContext;
 }
 
 function toRelativePath(filePath: string): string {
@@ -209,6 +211,9 @@ export async function answerSessionQuestion(
   if (!session) return "session_not_found";
 
   const repositoryId = `${session.owner}/${session.repo}`;
+  if ((!options.authorizedRepository || options.authorizedRepository.repositoryId !== repositoryId) && !options.assembleContext) {
+    throw new Error("Session repository authorization is required.");
+  }
   const context = await (options.assembleContext ?? assembleEnrichedContext)(
     {
       query: question,
@@ -217,7 +222,11 @@ export async function answerSessionQuestion(
       maxChars: 16_000,
       limit: 25,
     },
-    { signal: options.signal, cache: options.cache },
+    {
+      signal: options.signal,
+      cache: options.cache,
+      authorizedRepository: options.authorizedRepository!,
+    },
   );
   const budget = await trimContextToBudget(context.context, {
     maxChunks: 8,

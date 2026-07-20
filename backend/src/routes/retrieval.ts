@@ -16,8 +16,7 @@ import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
 import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
-import { getAuthenticatedUser } from "../services/auth/authContext.js";
-import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
 
 type Variables = { requestId: string; retrievalCache: RetrievalCache };
 
@@ -45,20 +44,15 @@ retrievalRouter.post("/hybrid", async (c) => {
     );
   }
 
-  const user = getAuthenticatedUser(c);
-  if (!user) {
-    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
-  }
-  const access = await requireRepositoryAccess({
-    repoId: `${parsed.data.owner}/${parsed.data.repo}`,
-    userId: user.userId,
-  });
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
-  }
+  const access = await authorizeRepositoryRequest(c, `${parsed.data.owner}/${parsed.data.repo}`, "hybrid_retrieval");
+  if (!access.ok) return access.response;
 
   try {
-    const result = await hybridSearch(parsed.data, {
+    const result = await hybridSearch({
+      ...parsed.data,
+      owner: access.repository.owner,
+      repo: access.repository.repo,
+    }, {
       signal: getRequestDeadline(c)?.signal,
       cache: c.get("retrievalCache"),
     });

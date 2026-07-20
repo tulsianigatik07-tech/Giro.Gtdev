@@ -196,6 +196,7 @@ test("worker failure logs normalize provider errors and secrets", async () => {
     repositoryUrl: "https://github.com/acme/failure",
     createdByRequestId: "failure-request-id",
   });
+  setRepositoryOwner("acme/failure", "user");
   const entries: Array<{ event: string; fields?: Record<string, unknown> }> = [];
   await processNextIndexingJob({
     workerId: "worker-1",

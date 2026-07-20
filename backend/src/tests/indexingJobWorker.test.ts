@@ -23,6 +23,7 @@ import {
 } from "../services/repository/indexingService.js";
 import {
   clearRepositoryOwners,
+  setRepositoryOwner,
 } from "../services/repository/ownershipStore.js";
 import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
 
@@ -51,6 +52,7 @@ let store: MemoryIndexingJobStore;
 
 function jobInput(repositoryId: string): CreateIndexingJobInput {
   const [owner = "acme", repo = "demo"] = repositoryId.split("/");
+  setRepositoryOwner(repositoryId, USER.userId);
   return {
     ...BASE_JOB,
     repositoryId,
@@ -109,6 +111,7 @@ beforeEach(async () => {
   store = new MemoryIndexingJobStore();
   clearRepositoryOwners();
   clearRepositoryIndexRegistry();
+  setRepositoryOwner(BASE_JOB.repositoryId, USER.userId);
   await indexingJobStore.clear();
 });
 

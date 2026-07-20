@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { validateRepoPath } from "./validate.js";
+import type { TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
+import { resolveRepositoryPath } from "../security/repositoryPaths.js";
 import { shouldIgnorePath, shouldIgnoreFile } from "../repository/ignore.js";
 import type { SymbolMatch } from "./types.js";
 
@@ -22,10 +23,9 @@ const SYMBOL_PATTERNS: Record<string, RegExp[]> = {
 SYMBOL_PATTERNS[".tsx"] = SYMBOL_PATTERNS[".ts"]!;
 
 export async function findSymbol(
-  repoPath: string,
+  repoPath: TrustedRepositoryCheckoutPath,
   symbol: string,
 ): Promise<SymbolMatch[]> {
-  validateRepoPath(repoPath);
   const matches: SymbolMatch[] = [];
   const lowerSymbol = symbol.toLowerCase();
   const dirs: string[] = [repoPath];
@@ -40,7 +40,9 @@ export async function findSymbol(
       const rel = path.relative(repoPath, abs).split(path.sep).join("/");
 
       if (entry.isDirectory()) {
-        if (!shouldIgnorePath(rel)) dirs.push(abs);
+        if (!shouldIgnorePath(rel)) {
+          try { dirs.push(await resolveRepositoryPath(repoPath, rel, { mustExist: true, requireDirectory: true })); } catch { /* skip unsafe/raced directories */ }
+        }
         continue;
       }
       if (!entry.isFile()) continue;
@@ -50,7 +52,10 @@ export async function findSymbol(
       if (shouldIgnorePath(rel) || shouldIgnoreFile(entry.name)) continue;
 
       let content: string;
-      try { content = await readFile(abs, "utf-8"); } catch { continue; }
+      try {
+        const safeFile = await resolveRepositoryPath(repoPath, rel, { mustExist: true, requireFile: true });
+        content = await readFile(safeFile, "utf-8");
+      } catch { continue; }
 
       const lines = content.split("\n");
       for (let i = 0; i < lines.length; i++) {

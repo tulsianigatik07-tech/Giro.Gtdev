@@ -11,6 +11,7 @@ const REQUIRED = {
   SUPABASE_URL: "https://project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
   OPENAI_API_KEY: "sk-test-configuration-key",
+  REPOSITORY_STORAGE_ROOT: "/tmp/giro-repositories-test",
 };
 
 test("valid configuration is parsed and normalized", () => {
@@ -32,6 +33,7 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.EMBEDDINGS_PROVIDER, "openai");
   assert.equal(result.MODEL_NAME, "gpt-test");
   assert.equal(result.INDEXING_WORKER_ID, "worker-1");
+  assert.equal(result.REPOSITORY_STORAGE_ROOT, "/tmp/giro-repositories-test");
   assert.equal(result.RETRIEVAL_CACHE_TTL_MS, 60_000);
   assert.equal(result.RETRIEVAL_CACHE_MAX_ENTRIES, 500);
   assert.equal(result.RETRIEVAL_STITCH_LINE_GAP, 0);
@@ -52,6 +54,19 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.RETRIEVAL_MIN_CITATION_COVERAGE, 0.5);
   assert.equal(result.RETRIEVAL_MIN_ANSWERABLE_SCORE, 0.35);
   assert.equal(Object.isFrozen(result), true);
+});
+
+test("production has no relative, empty, or filesystem-root repository storage fallback", () => {
+  for (const value of [undefined, "", ".storage/repos", "/"]) {
+    const input = { ...REQUIRED, NODE_ENV: "production" } as Record<string, unknown>;
+    if (value === undefined) delete input.REPOSITORY_STORAGE_ROOT;
+    else input.REPOSITORY_STORAGE_ROOT = value;
+    assert.throws(() => validateEnv(input), (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.equal(Object.keys(error.issues).includes("REPOSITORY_STORAGE_ROOT"), true);
+      return true;
+    });
+  }
 });
 
 test("missing required variables produce one safe validation error", () => {
@@ -99,7 +114,7 @@ test("invalid enum values are rejected", () => {
 });
 
 test("defaults preserve existing runtime behavior", () => {
-  const result = validateEnv(REQUIRED);
+  const result = validateEnv({ ...REQUIRED, REPOSITORY_STORAGE_ROOT: undefined });
 
   assert.equal(result.NODE_ENV, "development");
   assert.equal(result.PORT, 8000);
@@ -108,6 +123,7 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.JWT_SECRET, "dev-insecure-secret-change-me");
   assert.equal(result.EMBEDDINGS_PROVIDER, "mock");
   assert.equal(result.MODEL_NAME, "gpt-4.1-mini");
+  assert.equal(result.REPOSITORY_STORAGE_ROOT, ".storage/repos");
   assert.equal(result.INDEXING_WORKER_ID, undefined);
   assert.equal(result.INDEXING_WORKER_POLL_INTERVAL_MS, 1_000);
   assert.equal(result.INDEXING_WORKER_MAX_POLL_INTERVAL_MS, 10_000);

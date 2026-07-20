@@ -10,9 +10,10 @@ import { env } from "../../config/env.js";
 import { createDeadline } from "../../runtime/deadline.js";
 import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
 import type { CircuitBreaker } from "../../runtime/circuitBreaker.js";
+import type { TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 
 export async function buildRepositoryContext(
-  clonePath: string,
+  clonePath: TrustedRepositoryCheckoutPath,
   repository: string,
   options: {
     signal?: AbortSignal;

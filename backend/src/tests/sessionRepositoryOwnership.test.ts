@@ -80,13 +80,13 @@ test("3. missing authenticated user returns 401 unauthorized", async () => {
   assert.equal(json.error?.code, "unauthorized");
 });
 
-test("4. different user returns 403 repo_not_owned", async () => {
+test("4. different user returns 403 session_not_owned before repository access", async () => {
   const id = seedSession(USER_A, "acme", "demo");
   setRepositoryOwner("acme/demo", USER_A.userId);
 
   const { status, json } = await call(USER_B, id);
   assert.equal(status, 403);
-  assert.equal(json.error?.code, "repo_not_owned");
+  assert.equal(json.error?.code, "session_not_owned");
 });
 
 test("5. repository with no ownership record returns 404 repo_not_connected", async () => {

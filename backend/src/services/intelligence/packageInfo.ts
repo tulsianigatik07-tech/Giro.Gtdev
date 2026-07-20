@@ -1,7 +1,7 @@
 // Reads package.json signals needed for intelligence analysis. Pure I/O, no throw.
 
 import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { resolveRepositoryPath, type TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 
 export interface PackageInfo {
   deps: Set<string>;
@@ -9,9 +9,10 @@ export interface PackageInfo {
   isLibrary: boolean;
 }
 
-export async function readPackageInfo(clonePath: string): Promise<PackageInfo> {
+export async function readPackageInfo(clonePath: TrustedRepositoryCheckoutPath): Promise<PackageInfo> {
   try {
-    const raw = await readFile(path.join(clonePath, "package.json"), "utf8");
+    const packageFile = await resolveRepositoryPath(clonePath, "package.json", { mustExist: true, requireFile: true });
+    const raw = await readFile(packageFile, "utf8");
     const pkg = JSON.parse(raw) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;

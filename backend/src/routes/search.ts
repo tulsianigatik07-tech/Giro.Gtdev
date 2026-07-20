@@ -6,8 +6,7 @@ import { isDeadlineExceeded } from "../runtime/deadline.js";
 import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 import { RepositoryNameSchema, RepositoryOwnerSchema } from "../validation/repositorySchemas.js";
-import { requireAuthenticatedUser } from "../services/auth/authContext.js";
-import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
 
 const SearchBody = z.object({
   query: z.string().min(1, "Query must not be empty"),
@@ -32,17 +31,14 @@ searchRouter.post("/context", async (c) => {
 
   const requestId = c.get("requestId");
   try {
-    const user = requireAuthenticatedUser(c);
     const repository = `${parsed.data.owner}/${parsed.data.repo}`;
-    const access = await requireRepositoryAccess({ repoId: repository, userId: user.userId });
-    if (!access.ok) {
-      return c.json({ success: false, requestId, error: access.message }, access.status);
-    }
+    const access = await authorizeRepositoryRequest(c, repository, "semantic_search");
+    if (!access.ok) return access.response;
     const signal = getRequestDeadline(c)?.signal;
-    const repositoryVersion = await c.get("retrievalCache").repositoryVersion(repository, signal);
+    const repositoryVersion = await c.get("retrievalCache").repositoryVersion(access.repository.repositoryId, signal);
     const { results, citations } = await semanticSearchWithCitations(
       parsed.data.query,
-      repository,
+      access.repository.repositoryId,
       parsed.data.limit,
       {
         signal,

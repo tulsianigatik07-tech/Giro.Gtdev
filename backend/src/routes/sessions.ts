@@ -12,8 +12,6 @@ import {
   addMessageToSession,
   removeSession,
 } from "../services/sessions/sessionService.js";
-import { requireSessionAccess } from "../services/sessions/sessionOwnershipGuard.js";
-import { requireSessionRepositoryOwnership } from "../services/sessions/sessionRepositoryGuard.js";
 import { answerSessionQuestion } from "../services/sessions/questionService.js";
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
@@ -22,15 +20,18 @@ import {
   QuestionTextSchema,
   RepositoryNameSchema,
   RepositoryOwnerSchema,
+  RepositoryIdSchema,
+  FilePathSchema,
 } from "../validation/repositorySchemas.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 import { getRepositoryIndexMetadata } from "../services/repository/indexingService.js";
-import { repoClonePath } from "../services/repository/clone.js";
-import { existsSync } from "node:fs";
+import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
+import { authorizeSessionRepository } from "../services/sessions/authorizedSessionRepository.js";
+import { validateRepositoryCheckout } from "../services/security/repositoryPaths.js";
 
 const LegacyCitationSchema = z
   .object({
-    filePath: z.string().min(1),
+    filePath: FilePathSchema,
     startLine: z.number().int(),
     endLine: z.number().int(),
     snippet: z.string(),
@@ -41,10 +42,8 @@ const LegacyCitationSchema = z
 
 const GroundedCitationSchema = z
   .object({
-    repositoryId: z.string().min(1),
-    relativeFilePath: z.string().min(1).refine(
-      (path) => !path.startsWith("/") && !path.split("/").includes(".."),
-    ),
+    repositoryId: RepositoryIdSchema,
+    relativeFilePath: FilePathSchema,
     language: z.string().min(1),
     chunkId: z.string().min(1),
     startLine: z.number().int().min(1),
@@ -84,7 +83,7 @@ const sessionsRouter = new Hono<{
 
 function getSessionAccessFailureResponse(
   c: Parameters<typeof fail>[0],
-  access: Extract<Awaited<ReturnType<typeof requireSessionAccess>>, { ok: false }>,
+  access: Extract<Awaited<ReturnType<typeof authorizeSessionRepository>>, { ok: false }>,
 ) {
   return fail(c, { code: access.code, message: access.message }, access.status);
 }
@@ -104,17 +103,13 @@ sessionsRouter.post("/", async (c) => {
     const user = requireAuthenticatedUser(c);
 
     // A session may only be created for a repository owned by this user.
-    const repoAccess = await requireSessionRepositoryOwnership({
-      owner: parsed.data.owner,
-      repo: parsed.data.repo,
-      userId: user.userId,
-    });
-    if (!repoAccess.ok) {
-      return fail(c, { code: repoAccess.code, message: repoAccess.message }, repoAccess.status);
-    }
+    const repoAccess = await authorizeRepositoryRequest(c, `${parsed.data.owner}/${parsed.data.repo}`, "session_create");
+    if (!repoAccess.ok) return repoAccess.response;
 
     const session = await createNewSession({
-      ...parsed.data,
+      owner: repoAccess.repository.owner,
+      repo: repoAccess.repository.repo,
+      title: parsed.data.title,
       userId: user.userId,
     });
 
@@ -135,9 +130,14 @@ sessionsRouter.get("/", async (c) => {
   try {
     const user = requireAuthenticatedUser(c);
 
-    const sessions = (await listAllSessions()).filter(
-      (session) => session.userId === user.userId,
-    );
+    const ownedSessions = (await listAllSessions()).filter((session) => session.userId === user.userId);
+    const authorized = await Promise.all(ownedSessions.map((session) => authorizeSessionRepository({
+      sessionId: session.id,
+      userId: user.userId,
+      requestId: c.get("requestId"),
+      operation: "session_list",
+    })));
+    const sessions = authorized.filter((result) => result.ok).map((result) => result.session);
 
     return ok(c, { sessions, count: sessions.length });
   } catch (err) {
@@ -157,9 +157,11 @@ sessionsRouter.get("/:id", async (c) => {
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
 
-    const access = await requireSessionAccess({
+    const access = await authorizeSessionRepository({
       sessionId: id,
       userId: user.userId,
+      requestId: c.get("requestId"),
+      operation: "session_get",
     });
 
     if (!access.ok) {
@@ -194,13 +196,22 @@ sessionsRouter.post("/:id/messages", async (c) => {
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
 
-    const access = await requireSessionAccess({
+    const access = await authorizeSessionRepository({
       sessionId: id,
       userId: user.userId,
+      requestId: c.get("requestId"),
+      operation: "session_add_message",
     });
 
     if (!access.ok) {
       return getSessionAccessFailureResponse(c, access);
+    }
+
+    const citationMismatch = parsed.data.citations?.some((citation) =>
+      "repositoryId" in citation && citation.repositoryId !== access.repository.repositoryId
+    );
+    if (citationMismatch) {
+      return fail(c, { code: "session_repository_mismatch", message: "Citation repository does not match the session." }, 400);
     }
 
     const session = await addMessageToSession(id, parsed.data);
@@ -227,9 +238,11 @@ sessionsRouter.delete("/:id", async (c) => {
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
 
-    const access = await requireSessionAccess({
+    const access = await authorizeSessionRepository({
       sessionId: id,
       userId: user.userId,
+      requestId: c.get("requestId"),
+      operation: "session_delete",
     });
 
     if (!access.ok) {
@@ -270,28 +283,20 @@ sessionsRouter.post("/:id/ask", async (c) => {
   try {
     const user = requireAuthenticatedUser(c);
 
-    const access = await requireSessionAccess({
+    const access = await authorizeSessionRepository({
       sessionId: id,
       userId: user.userId,
+      requestId: c.get("requestId"),
+      operation: "session_ask",
     });
 
     if (!access.ok) {
       return getSessionAccessFailureResponse(c, access);
     }
 
-    // The repository this session targets must still be owned by this user.
-    const repoAccess = await requireSessionRepositoryOwnership({
-      owner: access.session.owner,
-      repo: access.session.repo,
-      userId: user.userId,
-    });
-    if (!repoAccess.ok) {
-      return fail(c, { code: repoAccess.code, message: repoAccess.message }, repoAccess.status);
-    }
-
     const repositoryStatus = await getRepositoryIndexMetadata(
-      access.session.owner,
-      access.session.repo,
+      access.repository.owner,
+      access.repository.repo,
     );
     if (!repositoryStatus || repositoryStatus.status !== "indexed") {
       return fail(c, {
@@ -299,7 +304,9 @@ sessionsRouter.post("/:id/ask", async (c) => {
         message: "Repository indexing must complete before Ask Giro can answer questions.",
       }, 409);
     }
-    if (!existsSync(repoClonePath(access.session.owner, access.session.repo))) {
+    try {
+      await validateRepositoryCheckout(access.repository.repositoryId, { mustExist: true });
+    } catch {
       return fail(c, {
         code: "repository_unavailable",
         message: "The indexed repository checkout is unavailable. Reconnect or reindex it before asking questions.",
@@ -310,6 +317,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
       signal: getRequestDeadline(c)?.signal,
       requestId: c.get("requestId"),
       cache: c.get("retrievalCache"),
+      authorizedRepository: access.repository,
     });
 
     if (result === "session_not_found") {
@@ -319,15 +327,14 @@ sessionsRouter.post("/:id/ask", async (c) => {
     return ok(c, result);
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
-    const message = err instanceof Error ? err.message : "Ask failed";
 
     logger.error("session_ask_failed", {
       requestId: c.get("requestId"),
       sessionId: id,
-      message,
+      reasonCode: "session_ask_failed",
     });
 
-    return fail(c, { code: "ask_error", message }, 500);
+    return fail(c, { code: "ask_error", message: "Ask Giro could not answer the question." }, 500);
   }
 });
 

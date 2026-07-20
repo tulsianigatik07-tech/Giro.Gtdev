@@ -1,5 +1,6 @@
 import { scanRepositoryFiles } from "./architectureFileScanner.js";
 import { collectArchitectureFiles } from "./architectureFileCollector.js";
+import type { TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 
 export interface ArchitecturePipelineResult {
   files: readonly string[];
@@ -7,7 +8,7 @@ export interface ArchitecturePipelineResult {
 }
 
 export function buildArchitectureInput(
-  repositoryPath: string,
+  repositoryPath: TrustedRepositoryCheckoutPath,
 ): ArchitecturePipelineResult {
   const discoveredFiles = scanRepositoryFiles(repositoryPath);
 

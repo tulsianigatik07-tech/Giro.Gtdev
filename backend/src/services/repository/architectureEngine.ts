@@ -7,10 +7,11 @@ import { buildRepositoryArchitectureInference } from "./architectureInferenceBui
 
 import { DEFAULT_ARCHITECTURE_LAYER_RULES } from "./architectureLayerDetectorDefaults.js";
 import { DEFAULT_ARCHITECTURE_COMPONENT_RULES } from "./architectureComponentDefaults.js";
+import type { TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 
 export function runArchitectureEngine(
   repositoryId: string,
-  repositoryPath: string,
+  repositoryPath: TrustedRepositoryCheckoutPath,
 ) {
   const input = buildArchitectureInput(repositoryPath);
 

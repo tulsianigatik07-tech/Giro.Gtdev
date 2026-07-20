@@ -60,6 +60,7 @@ async function flushEvents(): Promise<void> {
 
 beforeEach(() => {
   clearRepositoryOwners();
+  setRepositoryOwner(JOB_INPUT.repositoryId, USER_A.userId);
 });
 
 test("subscriber connects, receives queued replay, and disconnect cleanup removes listeners", async () => {

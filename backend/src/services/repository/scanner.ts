@@ -3,6 +3,7 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { shouldIgnoreFile, shouldIgnorePath, IGNORED_DIRS } from "./ignore.js";
+import { resolveRepositoryPath, type TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
 
 const MAX_FILE_SIZE = 512 * 1024;
 
@@ -20,7 +21,7 @@ export interface ScanStats {
   files: ScannedFile[];
 }
 
-export async function scanRepo(clonePath: string): Promise<ScanStats> {
+export async function scanRepo(clonePath: TrustedRepositoryCheckoutPath): Promise<ScanStats> {
   const languages: Record<string, number> = {};
   const files: ScannedFile[] = [];
   let totalFiles = 0;
@@ -35,13 +36,16 @@ export async function scanRepo(clonePath: string): Promise<ScanStats> {
       if (entry.isDirectory()) {
         if (IGNORED_DIRS.has(entry.name)) continue;
         totalDirectories += 1;
-        await walk(full);
+        try {
+          await walk(await resolveRepositoryPath(clonePath, rel, { mustExist: true, requireDirectory: true }));
+        } catch { /* skip unsafe or raced directories */ }
         continue;
       }
       if (!entry.isFile()) continue;
       if (shouldIgnorePath(rel) || shouldIgnoreFile(entry.name)) continue;
 
-      const info = await stat(full);
+      const safeFile = await resolveRepositoryPath(clonePath, rel, { mustExist: true, requireFile: true });
+      const info = await stat(safeFile);
       if (info.size > MAX_FILE_SIZE) continue;
 
       totalFiles += 1;
@@ -62,7 +66,7 @@ export async function scanRepo(clonePath: string): Promise<ScanStats> {
 async function buildTree(clonePath: string): Promise<string[]> {
   const entries = await readdir(clonePath, { withFileTypes: true });
   return entries
-    .filter((e) => e.name !== ".git")
+    .filter((e) => e.name !== ".git" && !e.isSymbolicLink())
     .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
     .sort((a, b) => a.localeCompare(b));
 }

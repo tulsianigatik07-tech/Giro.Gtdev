@@ -3,10 +3,9 @@ import { streamSSE } from "hono/streaming";
 import { createApiError, createValidationError } from "../lib/apiErrors.js";
 import { fail, ok } from "../lib/response.js";
 import { setRequestLogContext } from "../middleware/requestContext.js";
-import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { IndexingProgressPublisher } from "../services/indexing/events/indexingProgressPublisher.js";
 import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
-import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
 import { getRepositorySummary } from "../services/repositorySummary/runtimeRepositorySummary.js";
 import { RepositoryIdSchema } from "../validation/repositorySchemas.js";
 
@@ -25,14 +24,8 @@ repositoryIndexingEventsRoute.get("/:repositoryId/summary", async (c) => {
   const repositoryId = parsed.data;
   setRequestLogContext(c, { repositoryId });
 
-  const user = getAuthenticatedUser(c);
-  if (!user) {
-    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
-  }
-  const access = await requireRepositoryAccess({ repoId: repositoryId, userId: user.userId });
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
-  }
+  const access = await authorizeRepositoryRequest(c, repositoryId, "repository_summary");
+  if (!access.ok) return access.response;
 
   let repositoryVersion: string | undefined;
   try {
@@ -66,14 +59,8 @@ repositoryIndexingEventsRoute.get("/:repositoryId/indexing/events", async (c) =>
   const repositoryId = parsed.data;
   setRequestLogContext(c, { repositoryId });
 
-  const user = getAuthenticatedUser(c);
-  if (!user) {
-    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
-  }
-  const access = await requireRepositoryAccess({ repoId: repositoryId, userId: user.userId });
-  if (!access.ok) {
-    return fail(c, { code: access.code, message: access.message }, access.status);
-  }
+  const access = await authorizeRepositoryRequest(c, repositoryId, "indexing_events");
+  if (!access.ok) return access.response;
 
   let latestJob;
   try {

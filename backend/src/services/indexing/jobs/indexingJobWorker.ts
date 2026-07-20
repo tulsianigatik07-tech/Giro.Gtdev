@@ -45,6 +45,11 @@ import {
   runtimeRepositorySnapshotStore,
   type RepositorySnapshotStore,
 } from "../snapshots/repositorySnapshotStore.js";
+import type { RepositoryRecord, RepositoryStore } from "../../repository/store/repositoryStore.js";
+import { repositoryStore as runtimeRepositoryStore } from "../../repository/store/runtimeRepositoryStore.js";
+import { normalizeGitHubRepositoryReference, normalizeRepositoryId } from "../../security/repositoryIdentity.js";
+import type { TrustedRepositoryCheckoutPath } from "../../security/repositoryPaths.js";
+import { BranchNameSchema } from "../../../validation/repositorySchemas.js";
 
 export interface IndexingJobProgressPublisher {
   publish(job: IndexingJob): void | Promise<void>;
@@ -89,6 +94,7 @@ export interface ProcessNextIndexingJobInput {
   workerId: string;
   jobStore: IndexingJobStore;
   repositoryStore?: IndexingJobRepositoryStore;
+  repositoryAuthorizationStore?: Pick<RepositoryStore, "getRepository">;
   executeIndexingPipeline?: ExecuteIndexingPipeline;
   logger?: IndexingJobWorkerLogger;
   metrics?: {
@@ -105,6 +111,52 @@ export interface ProcessNextIndexingJobInput {
     onStarted?(job: IndexingJob): void | Promise<void>;
     onProgress?(job: IndexingJob): void | Promise<void>;
   };
+}
+
+export type WorkerRepositoryAuthorization = Readonly<{
+  repository: RepositoryRecord;
+  repositoryId: string;
+  owner: string;
+  repo: string;
+  ownerUserId: string;
+}>;
+
+export async function authorizeIndexingJob(
+  job: IndexingJob,
+  store: Pick<RepositoryStore, "getRepository">,
+): Promise<WorkerRepositoryAuthorization> {
+  let jobIdentity;
+  let urlIdentity;
+  try {
+    jobIdentity = normalizeRepositoryId(job.repositoryId);
+    urlIdentity = normalizeGitHubRepositoryReference(job.repositoryUrl);
+  } catch {
+    throw new Error("Worker job/repository mismatch: malformed repository identity.");
+  }
+  const repository = await store.getRepository(jobIdentity.repositoryId);
+  const activeLifecycleStates = new Set(["connected", "indexing", "indexed", "failed", "stale"]);
+  if (
+    !repository ||
+    !repository.ownerUserId ||
+    repository.repositoryId !== jobIdentity.repositoryId ||
+    repository.owner !== jobIdentity.owner ||
+    repository.repo !== jobIdentity.repo ||
+    job.repositoryOwner !== repository.owner ||
+    job.repositoryName !== repository.repo ||
+    job.ownerUserId !== repository.ownerUserId ||
+    urlIdentity.repositoryId !== repository.repositoryId ||
+    (job.branch !== null && !BranchNameSchema.safeParse(job.branch).success) ||
+    !activeLifecycleStates.has(repository.status)
+  ) {
+    throw new Error("Worker job/repository mismatch: durable repository validation failed.");
+  }
+  return Object.freeze({
+    repository,
+    repositoryId: repository.repositoryId,
+    owner: repository.owner,
+    repo: repository.repo,
+    ownerUserId: repository.ownerUserId,
+  });
 }
 
 export interface IndexingJobWorkerLogger {
@@ -245,6 +297,9 @@ export function normalizeIndexingJobFailure(
   if (input.stage === null) {
     return failureFromCode("internal_error", "Indexing worker failed.", false);
   }
+  if (normalized.includes("worker job/repository mismatch")) {
+    return failureFromCode("internal_error", "Indexing job repository validation failed.", false);
+  }
 
   if (
     normalized.includes("invalid repository") ||
@@ -334,7 +389,7 @@ export async function executeRepositoryIndexingPipeline(
 }
 
 async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & {
-  clonePath: string;
+  clonePath: TrustedRepositoryCheckoutPath;
   revision: string;
   identity: Parameters<RepositorySnapshotStore["begin"]>[0];
   snapshotStore: RepositorySnapshotStore;
@@ -449,6 +504,7 @@ export async function processNextIndexingJob(
     workerId,
     jobStore,
     repositoryStore = indexingJobRepositoryStore,
+    repositoryAuthorizationStore = runtimeRepositoryStore,
     executeIndexingPipeline = executeRepositoryIndexingPipeline,
     logger = silentWorkerLogger,
     metrics,
@@ -475,8 +531,11 @@ export async function processNextIndexingJob(
 
   const stagesCompleted: IndexingJobStage[] = [];
   let currentStage: IndexingJobStage | null = "pending";
+  let repositoryAuthorized = false;
 
   try {
+    await authorizeIndexingJob(claimed, repositoryAuthorizationStore);
+    repositoryAuthorized = true;
     await repositoryStore.markIndexing(claimed);
     const firstStage = "clone";
     currentStage = firstStage;
@@ -567,10 +626,17 @@ export async function processNextIndexingJob(
       repositoryId: claimed.repositoryId,
       stage: currentStage,
     });
-    try {
-      await repositoryStore.markFailed(claimed, failure);
-    } catch {
-      // Preserve the original indexing failure in the job/report.
+    if (repositoryAuthorized) {
+      try {
+        await repositoryStore.markFailed(claimed, failure);
+      } catch {
+        // Preserve the original indexing failure in the job/report.
+      }
+    } else {
+      logger.error("indexing_job_repository_mismatch", {
+        ...jobLogFields(claimed, workerId),
+        reasonCode: "worker_job_repository_mismatch",
+      });
     }
     const failed = await jobStore.markFailed(claimed.jobId, failure);
     logger.error("indexing_job_failed", {
