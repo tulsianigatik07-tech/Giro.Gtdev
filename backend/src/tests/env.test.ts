@@ -246,12 +246,23 @@ test("rate limit configuration accepts positive integers", () => {
     ...REQUIRED,
     RATE_LIMIT_WINDOW_MS: "1500",
     RATE_LIMIT_MAX_REQUESTS: "25",
+    RATE_LIMIT_AUTH_MAX_REQUESTS: "5",
+    RATE_LIMIT_REPOSITORY_CONNECT_MAX_REQUESTS: "6",
+    RATE_LIMIT_ASK_GIRO_MAX_REQUESTS: "7",
+    RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS: "8",
+    RATE_LIMIT_INDEXING_MAX_REQUESTS: "9",
   });
 
   assert.equal(result.RATE_LIMIT_WINDOW_MS, 1500);
   assert.equal(result.RATE_LIMIT_MAX_REQUESTS, 25);
+  assert.equal(result.RATE_LIMIT_AUTH_MAX_REQUESTS, 5);
+  assert.equal(result.RATE_LIMIT_REPOSITORY_CONNECT_MAX_REQUESTS, 6);
+  assert.equal(result.RATE_LIMIT_ASK_GIRO_MAX_REQUESTS, 7);
+  assert.equal(result.RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS, 8);
+  assert.equal(result.RATE_LIMIT_INDEXING_MAX_REQUESTS, 9);
   assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_WINDOW_MS: "0" }));
   assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_MAX_REQUESTS: "1.5" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_AUTH_MAX_REQUESTS: "0" }));
 });
 
 test("shutdown timeout is bounded", () => {

@@ -22,6 +22,7 @@ import { IndexingProgressPublisher } from "./services/indexing/events/indexingPr
 import { runtimeIndexingProgressPublisher } from "./services/indexing/events/runtimeIndexingProgressPublisher.js";
 import { RetrievalCache } from "./services/retrieval/cache/retrievalCache.js";
 import { runtimeRetrievalCache } from "./services/retrieval/cache/runtimeRetrievalCache.js";
+import type { RateLimitPolicy } from "./middleware/rateLimiter.js";
 import { createRuntimeProductionHealthCheck } from "./services/health/runtimeProductionHealth.js";
 import type { ProductionHealthCheck } from "./services/health/productionHealth.js";
 
@@ -41,6 +42,7 @@ export interface CreateAppOptions {
   retrievalCache?: RetrievalCache;
   productionHealthCheck?: ProductionHealthCheck;
   healthClock?: Pick<HealthRouteOptions, "uptime" | "now">;
+  rateLimitPolicy?: RateLimitPolicy;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -107,6 +109,7 @@ export function createApp(options: CreateAppOptions = {}) {
     readinessCheck,
     { productionHealthCheck, ...options.healthClock },
     metrics,
+    options.rateLimitPolicy,
   ));
 
   app.notFound(onNotFound);

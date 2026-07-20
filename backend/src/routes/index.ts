@@ -18,7 +18,10 @@ import architectureRouter from "./architecture.js";
 import indexingRouter from "./indexing.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { env } from "../config/env.js";
-import { rateLimiter } from "../middleware/rateLimiter.js";
+import {
+  createRateLimitMiddleware,
+  type RateLimitPolicy,
+} from "../middleware/rateLimiter.js";
 import type { MetricsRegistry } from "../observability/metrics.js";
 import { createMetricsRoute } from "./metrics.js";
 import { createRequestTimeoutMiddleware } from "../middleware/requestTimeout.js";
@@ -28,6 +31,32 @@ export function createRoutes(
   readinessCheck: ReadinessCheck,
   healthOptions: HealthRouteOptions,
   metrics: MetricsRegistry,
+  rateLimitPolicy: RateLimitPolicy = {
+    authentication: {
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      maxRequests: env.RATE_LIMIT_AUTH_MAX_REQUESTS,
+    },
+    repositoryConnect: {
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      maxRequests: env.RATE_LIMIT_REPOSITORY_CONNECT_MAX_REQUESTS,
+    },
+    askGiro: {
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      maxRequests: env.RATE_LIMIT_ASK_GIRO_MAX_REQUESTS,
+    },
+    retrievalSearch: {
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      maxRequests: env.RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS,
+    },
+    indexingOperations: {
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      maxRequests: env.RATE_LIMIT_INDEXING_MAX_REQUESTS,
+    },
+    defaultApi: {
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+    },
+  },
 ) {
   const routes = new Hono();
 
@@ -60,17 +89,24 @@ export function createRoutes(
   routes.use("/retrieval/*", expensiveEndpointDeadline);
   routes.use("/sessions/:id/ask", expensiveEndpointDeadline);
 
-  const expensiveEndpointLimiter = rateLimiter({
-    windowMs: env.RATE_LIMIT_WINDOW_MS,
-    maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+  const apiRateLimiter = createRateLimitMiddleware({
+    policy: rateLimitPolicy,
     onRejected: () => metrics.incrementRateLimitRejections(),
   });
-  routes.use("/repos/connect", expensiveEndpointLimiter);
-  routes.use("/repos/search/*", expensiveEndpointLimiter);
-  routes.use("/search/*", expensiveEndpointLimiter);
-  routes.use("/chat/*", expensiveEndpointLimiter);
-  routes.use("/retrieval/*", expensiveEndpointLimiter);
-  routes.use("/sessions/:id/ask", expensiveEndpointLimiter);
+  routes.use("/auth/*", apiRateLimiter);
+  routes.use("/login", apiRateLimiter);
+  routes.use("/signup", apiRateLimiter);
+  routes.use("/token", apiRateLimiter);
+  routes.use("/repos/*", apiRateLimiter);
+  routes.use("/context/*", apiRateLimiter);
+  routes.use("/search/*", apiRateLimiter);
+  routes.use("/chat/*", apiRateLimiter);
+  routes.use("/tools/*", apiRateLimiter);
+  routes.use("/retrieval/*", apiRateLimiter);
+  routes.use("/sessions/*", apiRateLimiter);
+  routes.use("/architecture/*", apiRateLimiter);
+  routes.use("/indexing/*", apiRateLimiter);
+  routes.use("/repositories/*", apiRateLimiter);
 
   // Protected routes.
   routes.route("/repos", repositoriesRoute);
