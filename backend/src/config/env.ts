@@ -33,6 +33,7 @@ const EnvSchema = z
     OPENAI_API_KEY: z.string().trim().min(20),
     EMBEDDINGS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
     MODEL_NAME: z.string().trim().min(1).default("gpt-4.1-mini"),
+    REPOSITORY_STORAGE_ROOT: z.string().trim().min(1).default(".storage/repos"),
     INDEXING_WORKER_ID: optionalNonEmptyString,
     INDEXING_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),
     INDEXING_WORKER_IDLE_BACKOFF_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),
@@ -124,6 +125,16 @@ const EnvSchema = z
         path: ["SUPABASE_SERVICE_ROLE_KEY"],
         message: "The service-role key is required for durable backend persistence in production.",
       });
+    }
+    if (value.NODE_ENV === "production") {
+      const repositoryRoot = value.REPOSITORY_STORAGE_ROOT;
+      if (!repositoryRoot.startsWith("/") || repositoryRoot === "/" || repositoryRoot === ".storage/repos") {
+        context.addIssue({
+          code: "custom",
+          path: ["REPOSITORY_STORAGE_ROOT"],
+          message: "Production repository storage root must be an explicit absolute non-root path.",
+        });
+      }
     }
     for (const dependency of ["AI", "EMBEDDING", "DATABASE", "CLONE"] as const) {
       const threshold = value[`${dependency}_CIRCUIT_FAILURE_THRESHOLD`];

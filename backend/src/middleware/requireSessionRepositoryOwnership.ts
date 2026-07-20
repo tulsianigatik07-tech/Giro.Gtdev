@@ -9,8 +9,7 @@
 import type { MiddlewareHandler } from "hono";
 import { fail } from "../lib/response.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
-import { getSessionById } from "../services/sessions/sessionService.js";
-import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { authorizeSessionRepository } from "../services/sessions/authorizedSessionRepository.js";
 
 export const requireSessionRepositoryOwnership = (): MiddlewareHandler => {
   return async (c, next) => {
@@ -24,17 +23,12 @@ export const requireSessionRepositoryOwnership = (): MiddlewareHandler => {
     }
 
     const id = c.req.param("id");
-    const session = id ? await getSessionById(id) : null;
-    if (!session) {
-      return fail(
-        c,
-        { code: "session_not_found", message: "Session not found" },
-        404,
-      );
-    }
-
-    const repoId = `${session.owner}/${session.repo}`;
-    const result = await requireRepositoryAccess({ repoId, userId: user.userId });
+    const result = await authorizeSessionRepository({
+      sessionId: id ?? "",
+      userId: user.userId,
+      requestId: c.get("requestId"),
+      operation: "session_repository_middleware",
+    });
     if (!result.ok) {
       return fail(c, { code: result.code, message: result.message }, result.status);
     }

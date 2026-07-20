@@ -1,46 +1,23 @@
 import { z } from "zod";
+import { RepositoryNameSchema, RepositoryOwnerSchema } from "../validation/repositorySchemas.js";
+import { normalizeRepositoryId } from "../services/security/repositoryIdentity.js";
 
-const REPOSITORY_SEGMENT_PATTERN = /^[a-zA-Z0-9._-]+$/;
-
-const RepositorySegmentSchema = z
-  .string()
-  .trim()
-  .min(1, "repository value is required")
-  .regex(REPOSITORY_SEGMENT_PATTERN, "repository value contains invalid characters");
-
-export const RepositoryOwnerSchema = RepositorySegmentSchema;
-
-export const RepositoryNameSchema = RepositorySegmentSchema;
+export { RepositoryOwnerSchema, RepositoryNameSchema };
 
 export const RepositoryIdentifierSchema = z
   .string()
   .trim()
   .transform((value, ctx) => {
-    const parts = value.split("/");
-    if (parts.length !== 2) {
+    try {
+      const identity = normalizeRepositoryId(value);
+      return { owner: identity.owner, repo: identity.repo };
+    } catch {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "repository identifier must be 'owner/repo'",
       });
       return z.NEVER;
     }
-
-    const [ownerRaw, repoRaw] = parts as [string, string];
-    const parsed = z
-      .object({
-        owner: RepositoryOwnerSchema,
-        repo: RepositoryNameSchema,
-      })
-      .safeParse({ owner: ownerRaw, repo: repoRaw });
-
-    if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        ctx.addIssue(issue);
-      }
-      return z.NEVER;
-    }
-
-    return parsed.data;
   });
 
 export const RepositoryConnectRequestSchema = z.object({

@@ -1,13 +1,10 @@
 import { z } from "zod";
+import { normalizeGitHubRepositoryReference, normalizeRepositoryId } from "../services/security/repositoryIdentity.js";
 
 const GITHUB_OWNER_PATTERN = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/;
 const GITHUB_REPOSITORY_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
 const HEX_SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
-const GITHUB_HTTPS_REPOSITORY_URL_PATTERN =
-  /^https:\/\/github\.com\/([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?)\/([a-zA-Z0-9._-]+?)(?:\.git)?\/?$/;
-const GITHUB_SSH_REPOSITORY_URL_PATTERN =
-  /^git@github\.com:([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?)\/([a-zA-Z0-9._-]+?)\.git$/;
 
 function freezeSchema<TSchema extends z.ZodTypeAny>(schema: TSchema): TSchema {
   if (schema instanceof z.ZodObject) {
@@ -45,7 +42,15 @@ function isValidRepositoryName(value: string): boolean {
 function isValidBranchName(value: string): boolean {
   return (
     value.length > 0 &&
+    !value.startsWith("-") &&
+    !value.startsWith("/") &&
+    !value.endsWith("/") &&
+    !value.endsWith(".") &&
+    !value.endsWith(".lock") &&
     !value.includes("..") &&
+    !value.includes("@{") &&
+    !/[~^:?*[\\]/.test(value) &&
+    !value.split("/").some((segment) => segment === "" || segment === ".") &&
     !/\s/.test(value) &&
     !hasPathTraversal(value) &&
     !hasControlCharacters(value)
@@ -84,29 +89,15 @@ export const RepositoryIdSchema = freezeSchema(z
   .string()
   .trim()
   .transform((value, ctx) => {
-    const parts = value.split("/");
-    if (parts.length !== 2) {
+    try {
+      return normalizeRepositoryId(value).repositoryId;
+    } catch {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "repository id must be formatted as owner/repo",
       });
       return z.NEVER;
     }
-
-    const [owner, repo] = parts as [string, string];
-    const parsed = z.object({
-      owner: RepositoryOwnerSchema,
-      repo: RepositoryNameSchema,
-    }).safeParse({ owner, repo });
-
-    if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        ctx.addIssue(issue);
-      }
-      return z.NEVER;
-    }
-
-    return `${parsed.data.owner}/${parsed.data.repo}`;
   }));
 
 export const SessionIdSchema = freezeSchema(z
@@ -133,29 +124,13 @@ export const GithubRepositoryUrlSchema = freezeSchema(z
   .string()
   .trim()
   .superRefine((value, ctx) => {
-    const match =
-      value.match(GITHUB_HTTPS_REPOSITORY_URL_PATTERN) ??
-      value.match(GITHUB_SSH_REPOSITORY_URL_PATTERN);
-
-    if (!match) {
+    try {
+      normalizeGitHubRepositoryReference(value);
+    } catch {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "repository URL must be a valid GitHub repository URL",
       });
-      return;
-    }
-
-    const owner = match[1] ?? "";
-    const repo = match[2] ?? "";
-    const parsed = z.object({
-      owner: RepositoryOwnerSchema,
-      repo: RepositoryNameSchema,
-    }).safeParse({ owner, repo });
-
-    if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        ctx.addIssue(issue);
-      }
     }
   }));
 

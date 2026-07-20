@@ -23,6 +23,30 @@ If `/repos/connect` reports unavailable indexing-job persistence, verify the
 project is active and reachable, then verify the service-role key belongs to the
 same project. Never put the service-role key in the frontend environment.
 
+## Repository storage security
+
+Set `REPOSITORY_STORAGE_ROOT` to a dedicated absolute directory in production.
+Startup rejects an empty value, `/`, relative production paths, and the local
+development default. Giro canonicalizes and creates the root deliberately, then
+derives each checkout as `repo-<sha256(repository-id)>`; owner and repository
+display names are never used as directory fragments. Absolute checkout paths
+are internal and are not returned by the API.
+
+Every repository API operation authorizes the authenticated user against the
+durable repository record before services receive repository identity or a
+checkout. Session operations additionally revalidate both session ownership and
+the session's durable repository. The indexing worker applies the same durable
+boundary to claimed jobs: repository ID, owner/name, owning user, and source URL
+must all match before repository state or the filesystem is touched.
+
+Repository scans skip directory and file symlinks. A direct file read may follow
+an internal symlink only after `realpath` proves its target remains inside the
+authorized checkout; external and broken symlinks are rejected. Cleanup accepts
+only the exact server-derived checkout, rejects the storage root and parents,
+and removes a nested symlink itself without following its target. Git fetch,
+checkout, reset, and clean run only after the checkout, `.git` location, and Git
+top-level have been validated against that exact checkout.
+
 ## Scripts
 
 ```bash
