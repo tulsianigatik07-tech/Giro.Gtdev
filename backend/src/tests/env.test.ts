@@ -366,10 +366,11 @@ test("startup validation runs when the configuration module loads", () => {
   );
 
   assert.equal(result.status, 1);
-  assert.equal(
-    result.stderr.trim(),
-    "Invalid environment configuration: NODE_ENV.",
-  );
+  const startupLog = JSON.parse(result.stderr.trim()) as Record<string, unknown>;
+  assert.equal(startupLog.level, "error");
+  assert.equal(startupLog.operation, "environment_validation_failed");
+  assert.equal(startupLog.errorMessage, "Invalid environment configuration: NODE_ENV.");
+  assert.equal(typeof startupLog.timestamp, "string");
   assert.equal(result.stderr.includes("SUPABASE_SERVICE_ROLE_KEY="), false);
   assert.equal(result.stderr.includes("OPENAI_API_KEY="), false);
 });

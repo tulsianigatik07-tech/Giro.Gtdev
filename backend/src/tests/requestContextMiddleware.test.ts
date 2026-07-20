@@ -35,6 +35,21 @@ test("missing request ID uses the injected deterministic generator", async () =>
   assert.deepEqual(await response.json(), { requestId: "deterministic-id" });
 });
 
+test("missing request ID generates a UUID by default", async () => {
+  const app = new Hono<{ Variables: RequestContextVariables }>();
+  app.use("*", createRequestContextMiddleware({
+    monotonicNow: () => 1,
+    logger: { info: () => undefined, error: () => undefined },
+  }));
+  app.get("/context", (c) => c.text(c.get("requestId")));
+
+  const response = await app.request("/context");
+  const requestId = response.headers.get(REQUEST_ID_HEADER);
+
+  assert.match(requestId ?? "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(await response.text(), requestId);
+});
+
 test("malformed incoming IDs are replaced and never echoed", async () => {
   for (const invalid of ["   ", "../unsafe", "has whitespace", "a".repeat(129)]) {
     const response = await appWithGenerator("safe-generated-id").request("/context", {

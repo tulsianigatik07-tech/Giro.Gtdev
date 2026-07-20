@@ -407,7 +407,6 @@ export async function assembleEnrichedContext(
   });
 
   logger.info("enriched_context_assembled", {
-    query: request.query,
     repository,
     totalChunks: finalChunks.length,
     estimatedTokens,

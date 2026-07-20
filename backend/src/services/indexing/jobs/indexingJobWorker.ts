@@ -527,6 +527,7 @@ export async function processNextIndexingJob(
     };
   }
   logger.info("indexing_job_claimed", jobLogFields(claimed, workerId));
+  const jobStartedAtMs = performance.now();
   await observer?.onClaimed?.(claimed);
 
   const stagesCompleted: IndexingJobStage[] = [];
@@ -587,7 +588,10 @@ export async function processNextIndexingJob(
     if (!succeeded) {
       throw new Error("Indexing job could not be marked succeeded");
     }
-    logger.info("indexing_job_succeeded", jobLogFields(claimed, workerId));
+    logger.info("indexing_job_succeeded", {
+      ...jobLogFields(claimed, workerId),
+      durationMs: Math.max(0, Math.round(performance.now() - jobStartedAtMs)),
+    });
     metrics?.incrementIndexing("completed");
     try {
       retrievalCacheInvalidator?.invalidateRepository(
@@ -643,6 +647,7 @@ export async function processNextIndexingJob(
       ...jobLogFields(claimed, workerId),
       failureCode: failure.code,
       retryable: failure.retryable,
+      durationMs: Math.max(0, Math.round(performance.now() - jobStartedAtMs)),
     });
     metrics?.incrementIndexing("failed");
     if (failed) {

@@ -82,6 +82,7 @@ export class ContinuousIndexingWorker {
   }
 
   async run(): Promise<0 | 1> {
+    const startedAtMs = this.now();
     this.logger.info("indexing_worker_started", this.safeFields());
     await this.recordHealth({ state: "running" });
     await this.recoverStaleJobs();
@@ -101,9 +102,10 @@ export class ContinuousIndexingWorker {
       return this.shutdownTimedOut ? 1 : 0;
     } finally {
       await this.recordHealth({ state: "stopped", activeJobId: null });
-      this.logger.info("indexing_worker_shutdown_completed", {
+      this.logger.info("indexing_worker_finished", {
         workerId: this.config.workerId,
         timedOut: this.shutdownTimedOut,
+        durationMs: Math.max(0, this.now() - startedAtMs),
       });
     }
   }

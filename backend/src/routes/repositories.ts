@@ -143,6 +143,13 @@ repositoriesRoute.post("/connect", async (c) => {
   setRequestLogContext(c, { repositoryId: repoId, jobId: job.jobId });
   await setRepositoryIndexing(owner, repo);
 
+  logger.info("repository_connected", {
+    requestId: c.get("requestId"),
+    userId: user.userId,
+    repositoryId: repoId,
+    jobId: job.jobId,
+  });
+
   return ok(c, {
     repositoryId: repoId,
     jobId: job.jobId,
@@ -489,6 +496,12 @@ repositoriesRoute.delete("/:owner/:repo", async (c) => {
       reason: "repository_deleted",
     });
   }
+
+  logger.info("repository_deleted", {
+    requestId: c.get("requestId"),
+    userId: access.repository.authenticatedUserId,
+    repositoryId: repoId,
+  });
 
   return ok(c, report);
 });

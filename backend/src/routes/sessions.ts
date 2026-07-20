@@ -14,6 +14,7 @@ import {
 } from "../services/sessions/sessionService.js";
 import { answerSessionQuestion } from "../services/sessions/questionService.js";
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
+import { setRequestLogContext } from "../middleware/requestContext.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
 import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 import {
@@ -156,6 +157,7 @@ sessionsRouter.get("/:id", async (c) => {
   try {
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
+    setRequestLogContext(c, { sessionId: id, operation: "session_get" });
 
     const access = await authorizeSessionRepository({
       sessionId: id,
@@ -195,6 +197,7 @@ sessionsRouter.post("/:id/messages", async (c) => {
 
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
+    setRequestLogContext(c, { sessionId: id, operation: "session_add_message" });
 
     const access = await authorizeSessionRepository({
       sessionId: id,
@@ -237,6 +240,7 @@ sessionsRouter.delete("/:id", async (c) => {
   try {
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
+    setRequestLogContext(c, { sessionId: id, operation: "session_delete" });
 
     const access = await authorizeSessionRepository({
       sessionId: id,
@@ -270,6 +274,7 @@ sessionsRouter.delete("/:id", async (c) => {
 
 sessionsRouter.post("/:id/ask", async (c) => {
   const id = c.req.param("id");
+  setRequestLogContext(c, { sessionId: id, operation: "session_ask" });
   const parsed = AskBody.safeParse(await c.req.json().catch(() => null));
 
   if (!parsed.success) {

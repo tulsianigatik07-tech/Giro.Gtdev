@@ -2,6 +2,7 @@
 
 import type { Context } from "hono";
 import type { AuthenticatedUser } from "./authTypes.js";
+import { updateLogContext } from "../../lib/logger.js";
 
 export type AuthVariables = {
   authenticatedUser: AuthenticatedUser;
@@ -11,6 +12,7 @@ const KEY = "authenticatedUser";
 
 export function setAuthenticatedUser(c: Context, user: AuthenticatedUser): void {
   c.set(KEY, user);
+  updateLogContext({ userId: user.userId });
 }
 
 export function getAuthenticatedUser(c: Context): AuthenticatedUser | undefined {

@@ -66,7 +66,7 @@ export function safeErrorLogFields(
       );
     }
   }
-  if (nodeEnv === "development" && error instanceof Error && error.stack) {
+  if (error instanceof Error && error.stack) {
     const cause = error.cause;
     const stack = cause instanceof Error && cause.stack
       ? `${error.stack}\nCaused by: ${cause.stack}`
@@ -78,9 +78,10 @@ export function safeErrorLogFields(
 
 export const onError: ErrorHandler = (err, c) => {
   const requestId = c.get("requestId");
+  const requestLogger = c.get("requestLogger") ?? logger;
 
   if (isDependencyUnavailable(err)) {
-    logger.warn("dependency_unavailable", { request_id: requestId });
+    logger.warn("dependency_unavailable", { requestId });
     return fail(
       c,
       createApiError("dependency_unavailable", "A required service is temporarily unavailable."),
@@ -91,7 +92,7 @@ export const onError: ErrorHandler = (err, c) => {
   if (err instanceof HTTPException) {
     const res = err.getResponse();
     logger.warn("http_exception", {
-      request_id: requestId,
+      requestId,
       status: res.status,
       message: err.message,
     });
@@ -104,7 +105,7 @@ export const onError: ErrorHandler = (err, c) => {
 
   if (err instanceof ZodError) {
     logger.warn("validation_error", {
-      request_id: requestId,
+      requestId,
       issues: err.flatten().fieldErrors,
     });
     return fail(
@@ -119,7 +120,6 @@ export const onError: ErrorHandler = (err, c) => {
   }
 
   const matchedRoute = routePath(c, -1);
-  const requestLogger = c.get("requestLogger") ?? logger;
   const correlation = c.get("requestLogContext");
   requestLogger.error("unhandled_error", {
     requestId,

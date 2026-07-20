@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { fail } from "../../lib/response.js";
 import { logger } from "../../lib/logger.js";
+import { setRequestLogContext } from "../../middleware/requestContext.js";
 import { getAuthenticatedUser } from "../auth/authContext.js";
 import { authorizeRepository, type AuthorizedRepositoryContext } from "../repository/ownershipGuard.js";
 import { normalizeRepositoryId, RepositoryIdentityError } from "./repositoryIdentity.js";
@@ -25,6 +26,7 @@ export async function authorizeRepositoryRequest(
   let repositoryId: string;
   try {
     repositoryId = normalizeRepositoryId(rawRepositoryId).repositoryId;
+    setRequestLogContext(c, { repositoryId, operation });
   } catch (error) {
     if (!(error instanceof RepositoryIdentityError)) throw error;
     logger.warn("malformed_repository_identity", {

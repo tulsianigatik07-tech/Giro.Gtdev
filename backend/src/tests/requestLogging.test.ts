@@ -23,7 +23,7 @@ function loggingApp() {
   return { app, entries };
 }
 
-test("completion logging emits once with safe method, status, and duration", async () => {
+test("request logging emits start and finish with safe method, status, and duration", async () => {
   const { app, entries } = loggingApp();
   const response = await app.request("/health/live", {
     headers: {
@@ -33,16 +33,25 @@ test("completion logging emits once with safe method, status, and duration", asy
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(entries, [{
-    event: "request_completed",
-    fields: {
-      requestId: "trusted-id",
-      method: "GET",
-      route: "/health/live",
-      status: 200,
-      durationMs: 12,
+  assert.deepEqual(entries, [
+    {
+      event: "request_started",
+      fields: {
+        method: "GET",
+        route: "/health/live",
+      },
     },
-  }]);
+    {
+      event: "request_finished",
+      fields: {
+        requestId: "trusted-id",
+        method: "GET",
+        route: "/health/live",
+        status: 200,
+        durationMs: 12,
+      },
+    },
+  ]);
   const serialized = JSON.stringify(entries);
   assert.equal(serialized.includes("secret-token"), false);
   assert.equal(serialized.includes("Authorization"), false);
@@ -114,6 +123,22 @@ test("request logging never includes request bodies", async () => {
   const serialized = JSON.stringify(entries);
   assert.equal(serialized.includes("private question body"), false);
   assert.equal(serialized.includes("sk-secret"), false);
+});
+
+test("unexpected exceptions log a stack internally without exposing it in the response", async () => {
+  const { app, entries } = loggingApp();
+  app.get("/unexpected", () => {
+    throw new Error("internal exception detail");
+  });
+
+  const response = await app.request("/unexpected");
+  const serializedBody = JSON.stringify(await response.json());
+  const failure = entries.find((entry) => entry.event === "unhandled_error");
+
+  assert.equal(response.status, 500);
+  assert.equal(typeof failure?.fields?.stack, "string");
+  assert.equal(serializedBody.includes("internal exception detail"), false);
+  assert.equal(serializedBody.includes("requestLogging.test"), false);
 });
 
 test("connect persists request correlation without changing its public response", async () => {

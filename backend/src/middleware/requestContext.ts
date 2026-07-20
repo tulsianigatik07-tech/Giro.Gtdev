@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Context, MiddlewareHandler } from "hono";
 import { routePath } from "hono/route";
-import { logger as defaultLogger } from "../lib/logger.js";
+import {
+  logger as defaultLogger,
+  runWithLogContext,
+  updateLogContext,
+  type StructuredLogger,
+} from "../lib/logger.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 
 export const REQUEST_ID_HEADER = "X-Request-ID";
@@ -11,6 +16,9 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 export interface RequestLogContext {
   readonly repositoryId?: string;
   readonly jobId?: string;
+  readonly sessionId?: string;
+  readonly workerId?: string;
+  readonly operation?: string;
 }
 
 export interface RequestContextVariables {
@@ -20,10 +28,7 @@ export interface RequestContextVariables {
   requestLogger: RequestContextLogger;
 }
 
-export interface RequestContextLogger {
-  info(event: string, fields?: Record<string, unknown>): void;
-  error(event: string, fields?: Record<string, unknown>): void;
-}
+export type RequestContextLogger = Pick<StructuredLogger, "info" | "error">;
 
 export interface RequestContextOptions {
   generateRequestId?: () => string;
@@ -44,7 +49,11 @@ export function setRequestLogContext(
   c: Context,
   context: RequestLogContext,
 ): void {
-  c.set("requestLogContext", Object.freeze({ ...context }));
+  c.set("requestLogContext", Object.freeze({
+    ...(c.get("requestLogContext") ?? {}),
+    ...context,
+  }));
+  updateLogContext(context);
 }
 
 export function createRequestContextMiddleware(
@@ -63,30 +72,27 @@ export function createRequestContextMiddleware(
     c.set("requestLogger", logger);
     c.header(REQUEST_ID_HEADER, requestId);
 
-    try {
-      await next();
-      const user = getAuthenticatedUser(c);
-      const correlation = c.get("requestLogContext");
-      const matchedRoute = routePath(c, -1);
-      logger.info("request_completed", {
-        requestId,
+    return runWithLogContext({ requestId }, async () => {
+      logger.info("request_started", {
         method: c.req.method,
-        route: matchedRoute && matchedRoute !== "*" ? matchedRoute : c.req.path,
-        status: c.res.status,
-        durationMs: Math.max(0, Math.round(monotonicNow() - startedAt)),
-        ...(user ? { userId: user.userId } : {}),
-        ...correlation,
+        route: c.req.path,
       });
-    } catch (error) {
-      const matchedRoute = routePath(c, -1);
-      logger.error("request_failed", {
-        requestId,
-        method: c.req.method,
-        route: matchedRoute && matchedRoute !== "*" ? matchedRoute : c.req.path,
-        status: 500,
-        durationMs: Math.max(0, Math.round(monotonicNow() - startedAt)),
-      });
-      throw error;
-    }
+      try {
+        await next();
+      } finally {
+        const user = getAuthenticatedUser(c);
+        const correlation = c.get("requestLogContext");
+        const matchedRoute = routePath(c, -1);
+        logger.info("request_finished", {
+          requestId,
+          method: c.req.method,
+          route: matchedRoute && matchedRoute !== "*" ? matchedRoute : c.req.path,
+          status: c.res.status,
+          durationMs: Math.max(0, Math.round(monotonicNow() - startedAt)),
+          ...(user ? { userId: user.userId } : {}),
+          ...correlation,
+        });
+      }
+    });
   };
 }

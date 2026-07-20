@@ -94,11 +94,15 @@ test("continuous worker polls repeatedly and applies bounded idle backoff", asyn
   const sleeps: number[] = [];
   let polls = 0;
   let worker: ContinuousIndexingWorker;
+  const workerLogs: Array<{ event: string; fields?: Record<string, unknown> }> = [];
   worker = new ContinuousIndexingWorker({
     config: CONFIG,
     jobStore: store,
     stateStore: health,
-    logger,
+    logger: {
+      info: (event, fields) => workerLogs.push({ event, fields }),
+      error: (event, fields) => workerLogs.push({ event, fields }),
+    },
     executeNext: async () => {
       polls += 1;
       if (polls === 3) worker.requestShutdown("SIGTERM");
@@ -113,6 +117,14 @@ test("continuous worker polls repeatedly and applies bounded idle backoff", asyn
   assert.deepEqual(sleeps, [20, 30]);
   assert.equal(store.recoveries.length, 1);
   assert.ok(health.updates.some((update) => update.polled));
+  assert.deepEqual(workerLogs.map((entry) => entry.event), [
+    "indexing_worker_started",
+    "indexing_worker_shutdown_requested",
+    "indexing_worker_finished",
+  ]);
+  const finished = workerLogs.at(-1)?.fields;
+  assert.equal(finished?.workerId, "worker-a");
+  assert.equal(finished?.durationMs, 0);
 });
 
 test("successful execution records the completed job", async () => {
