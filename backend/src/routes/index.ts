@@ -2,7 +2,11 @@
 
 import { Hono } from "hono";
 import { rootRoute } from "./root.js";
-import { createHealthRoute, type ReadinessCheck } from "./health.js";
+import {
+  createHealthRoute,
+  type HealthRouteOptions,
+  type ReadinessCheck,
+} from "./health.js";
 import { repositoriesRoute } from "./repositories.js";
 import contextRouter from "./context.js";
 import searchRouter from "./search.js";
@@ -20,12 +24,16 @@ import { createMetricsRoute } from "./metrics.js";
 import { createRequestTimeoutMiddleware } from "../middleware/requestTimeout.js";
 import repositoryIndexingEventsRouter from "./repositoryIndexingEvents.js";
 
-export function createRoutes(readinessCheck: ReadinessCheck, metrics: MetricsRegistry) {
+export function createRoutes(
+  readinessCheck: ReadinessCheck,
+  healthOptions: HealthRouteOptions,
+  metrics: MetricsRegistry,
+) {
   const routes = new Hono();
 
   // Public routes — no authentication required.
   routes.route("/", rootRoute);
-  routes.route("/", createHealthRoute(readinessCheck, metrics));
+  routes.route("/", createHealthRoute(readinessCheck, healthOptions, metrics));
   routes.route("/", createMetricsRoute(metrics));
 
   // Protected route middleware.

@@ -3,6 +3,10 @@ import { test } from "node:test";
 import { createApp } from "../app.js";
 import type { ApplicationReadiness } from "../services/health/readinessService.js";
 import { indexingJobStore } from "../services/indexing/jobs/memoryIndexingJobStore.js";
+import {
+  createProductionHealthCheck,
+  type ProductionHealthCheck,
+} from "../services/health/productionHealth.js";
 
 type Envelope = {
   success: boolean;
@@ -13,8 +17,20 @@ type Envelope = {
 async function request(
   path: string,
   readinessCheck: () => Promise<ApplicationReadiness>,
+  productionHealthCheck: ProductionHealthCheck = createProductionHealthCheck({
+    checkSupabase: () => undefined,
+    checkIndexingWorker: () => undefined,
+  }),
 ) {
-  const app = createApp({ indexingJobStore, readinessCheck });
+  const app = createApp({
+    indexingJobStore,
+    readinessCheck,
+    productionHealthCheck,
+    healthClock: {
+      uptime: () => 42.9,
+      now: () => new Date("2026-07-20T12:00:00.000Z"),
+    },
+  });
   const response = await app.request(path);
   return { response, body: (await response.json()) as Envelope };
 }
@@ -94,12 +110,69 @@ test("unexpected readiness failure returns a safe 503 without leakage", async ()
   assert.equal(serialized.includes("runtime.ts"), false);
 });
 
-test("legacy health route remains backward compatible", async () => {
+test("production health returns a deterministic healthy contract", async () => {
   const { response, body } = await request("/health", async () => ready);
 
   assert.equal(response.status, 200);
   assert.equal(body.success, true);
-  assert.equal(body.data.status, "ok");
-  assert.equal(typeof body.data.uptime_s, "number");
-  assert.equal(typeof body.data.timestamp, "string");
+  assert.deepEqual(body.data, {
+    status: "healthy",
+    service: "giro-backend",
+    version: "0.1.0",
+    uptimeSeconds: 42,
+    timestamp: "2026-07-20T12:00:00.000Z",
+    checks: {
+      api: { status: "healthy", required: true },
+      supabase: { status: "healthy", required: true },
+      indexingWorker: { status: "healthy", required: false },
+    },
+  });
+});
+
+test("production health is degraded when only the indexing worker is unhealthy", async () => {
+  const healthCheck = createProductionHealthCheck({
+    checkSupabase: () => undefined,
+    checkIndexingWorker: () => { throw new Error("worker unavailable"); },
+  });
+  const { response, body } = await request("/health", async () => ready, healthCheck);
+
+  assert.equal(response.status, 200);
+  assert.equal(body.data.status, "degraded");
+  assert.deepEqual((body.data.checks as Record<string, unknown>).indexingWorker, {
+    status: "unhealthy",
+    required: false,
+  });
+});
+
+test("production health returns 503 when a required dependency times out", async () => {
+  const healthCheck = createProductionHealthCheck({
+    checkSupabase: () => new Promise<void>(() => undefined),
+    checkIndexingWorker: () => undefined,
+  }, 5);
+  const { response, body } = await request("/health", async () => ready, healthCheck);
+
+  assert.equal(response.status, 503);
+  assert.equal(body.data.status, "unhealthy");
+  assert.deepEqual((body.data.checks as Record<string, unknown>).supabase, {
+    status: "unhealthy",
+    required: true,
+  });
+});
+
+test("production health failures never expose dependency secrets or diagnostics", async () => {
+  const healthCheck = createProductionHealthCheck({
+    checkSupabase: () => {
+      const error = new Error("sk-secret Bearer token https://db.example.test");
+      error.stack = "at /private/service/path.ts:1";
+      throw error;
+    },
+    checkIndexingWorker: () => { throw new Error("worker-token"); },
+  });
+  const { response, body } = await request("/health", async () => ready, healthCheck);
+  const serialized = JSON.stringify(body);
+
+  assert.equal(response.status, 503);
+  for (const secret of ["sk-secret", "Bearer token", "db.example.test", "/private/", "worker-token"]) {
+    assert.equal(serialized.includes(secret), false);
+  }
 });

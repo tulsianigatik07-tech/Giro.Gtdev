@@ -6,6 +6,7 @@ import { clearAllSessions } from "../services/sessions/store.js";
 import { clearRepositoryIndexRegistry } from "../services/repository/indexingService.js";
 import { signAccessToken } from "../services/auth/jwt.js";
 import { setRepositoryOwner } from "../services/repository/ownershipStore.js";
+import { createProductionHealthCheck } from "../services/health/productionHealth.js";
 
 type ApiResponse = {
   success: boolean;
@@ -16,6 +17,10 @@ type ApiResponse = {
 
 // Valid bearer token for exercising protected routes in contract tests.
 const AUTH = `Bearer ${await signAccessToken({ userId: "test-user", email: "test@example.com" })}`;
+const HEALTHY_PRODUCTION_CHECK = createProductionHealthCheck({
+  checkSupabase: () => undefined,
+  checkIndexingWorker: () => undefined,
+});
 
 // Sessions may only target a repository owned by the user, so register the
 // repo these contract tests create sessions for.
@@ -27,7 +32,7 @@ function asRecord(v: unknown): Record<string, unknown> {
 }
 
 async function call(method: string, path: string, body?: unknown) {
-  const app = createApp();
+  const app = createApp({ productionHealthCheck: HEALTHY_PRODUCTION_CHECK });
   const res = await app.fetch(
     new Request("http://local" + path, {
       method,
@@ -43,7 +48,7 @@ test("1. GET /health returns 200 with status field", async () => {
   const { status, json } = await call("GET", "/health");
   assert.equal(status, 200);
   assert.equal(json.success, true);
-  assert.equal(asRecord(json.data).status, "ok");
+  assert.equal(asRecord(json.data).status, "healthy");
 });
 
 test("2. POST /sessions creates a session (201)", async () => {

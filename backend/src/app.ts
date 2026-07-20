@@ -11,7 +11,7 @@ import {
 } from "./middleware/requestContext.js";
 import { onError, onNotFound } from "./middleware/errorHandler.js";
 import { createRoutes } from "./routes/index.js";
-import type { ReadinessCheck } from "./routes/health.js";
+import type { HealthRouteOptions, ReadinessCheck } from "./routes/health.js";
 import type { IndexingJobStore } from "./services/indexing/jobs/indexingJobStore.js";
 import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexingJobStore.js";
 import { createRuntimeReadinessCheck } from "./services/health/runtimeReadiness.js";
@@ -22,6 +22,8 @@ import { IndexingProgressPublisher } from "./services/indexing/events/indexingPr
 import { runtimeIndexingProgressPublisher } from "./services/indexing/events/runtimeIndexingProgressPublisher.js";
 import { RetrievalCache } from "./services/retrieval/cache/retrievalCache.js";
 import { runtimeRetrievalCache } from "./services/retrieval/cache/runtimeRetrievalCache.js";
+import { createRuntimeProductionHealthCheck } from "./services/health/runtimeProductionHealth.js";
+import type { ProductionHealthCheck } from "./services/health/productionHealth.js";
 
 type Variables = RequestContextVariables & {
   indexingJobStore: IndexingJobStore;
@@ -37,6 +39,8 @@ export interface CreateAppOptions {
   metrics?: MetricsRegistry;
   indexingProgressPublisher?: IndexingProgressPublisher;
   retrievalCache?: RetrievalCache;
+  productionHealthCheck?: ProductionHealthCheck;
+  healthClock?: Pick<HealthRouteOptions, "uptime" | "now">;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -69,6 +73,8 @@ export function createApp(options: CreateAppOptions = {}) {
       indexingJobStore,
       isShuttingDown: options.isShuttingDown,
     });
+  const productionHealthCheck = options.productionHealthCheck ??
+    createRuntimeProductionHealthCheck();
   const app = new Hono<{ Variables: Variables }>();
 
   // Order matters: correlation context wraps every later middleware and route.
@@ -97,7 +103,11 @@ export function createApp(options: CreateAppOptions = {}) {
     }),
   );
 
-  app.route("/", createRoutes(readinessCheck, metrics));
+  app.route("/", createRoutes(
+    readinessCheck,
+    { productionHealthCheck, ...options.healthClock },
+    metrics,
+  ));
 
   app.notFound(onNotFound);
   app.onError(onError);

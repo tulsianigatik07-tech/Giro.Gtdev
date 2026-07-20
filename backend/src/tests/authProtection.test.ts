@@ -2,8 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../app.js";
 import { signAccessToken } from "../services/auth/jwt.js";
+import { createProductionHealthCheck } from "../services/health/productionHealth.js";
 
 const VALID = `Bearer ${await signAccessToken({ userId: "u1", email: "u1@example.com" })}`;
+const HEALTHY_PRODUCTION_CHECK = createProductionHealthCheck({
+  checkSupabase: () => undefined,
+  checkIndexingWorker: () => undefined,
+});
 
 type ApiResponse = {
   success: boolean;
@@ -11,7 +16,7 @@ type ApiResponse = {
 };
 
 async function call(path: string, headers?: Record<string, string>, method = "GET") {
-  const app = createApp();
+  const app = createApp({ productionHealthCheck: HEALTHY_PRODUCTION_CHECK });
   const res = await app.fetch(
     new Request("http://local" + path, {
       method,

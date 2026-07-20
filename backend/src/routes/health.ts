@@ -4,23 +4,68 @@ import { Hono } from "hono";
 import { ok } from "../lib/response.js";
 import type { ApplicationReadiness } from "../services/health/readinessService.js";
 import type { MetricsRegistry } from "../observability/metrics.js";
+import { logger } from "../lib/logger.js";
+import type {
+  ProductionHealthCheck,
+  ProductionHealthContract,
+} from "../services/health/productionHealth.js";
+
+export const SERVICE_NAME = "giro-backend";
+export const SERVICE_VERSION = "0.1.0";
 
 export type ReadinessCheck = () => Promise<ApplicationReadiness>;
 
-export function createHealthRoute(readinessCheck: ReadinessCheck, metrics?: MetricsRegistry) {
-  const healthRoute = new Hono();
+export interface HealthRouteOptions {
+  productionHealthCheck: ProductionHealthCheck;
+  uptime?: () => number;
+  now?: () => Date;
+}
 
-  // Backward-compatible legacy health response.
-  healthRoute.get("/health", (c) => {
-    return ok(c, {
-      status: "ok",
-      uptime_s: Math.round(process.uptime()),
-      timestamp: new Date().toISOString(),
-    });
+export function createHealthRoute(
+  readinessCheck: ReadinessCheck,
+  options: HealthRouteOptions,
+  metrics?: MetricsRegistry,
+) {
+  const healthRoute = new Hono<{ Variables: { requestId: string } }>();
+  const uptime = options.uptime ?? process.uptime;
+  const now = options.now ?? (() => new Date());
+
+  healthRoute.get("/health", async (c) => {
+    let health: Awaited<ReturnType<ProductionHealthCheck>>;
+    try {
+      health = await options.productionHealthCheck();
+    } catch {
+      health = {
+        status: "unhealthy",
+        checks: {
+          api: { status: "healthy", required: true },
+          supabase: { status: "unhealthy", required: true },
+          indexingWorker: { status: "unhealthy", required: false },
+        },
+      };
+    }
+    for (const [dependency, check] of Object.entries(health.checks)) {
+      if (check.status === "unhealthy") {
+        logger.warn("health_dependency_failed", {
+          requestId: c.get("requestId"),
+          dependency,
+          required: check.required,
+        });
+      }
+    }
+    const contract: ProductionHealthContract = {
+      status: health.status,
+      service: SERVICE_NAME,
+      version: SERVICE_VERSION,
+      uptimeSeconds: Math.max(0, Math.floor(uptime())),
+      timestamp: now().toISOString(),
+      checks: health.checks,
+    };
+    return ok(c, contract, health.status === "unhealthy" ? 503 : 200);
   });
 
   healthRoute.get("/health/live", (c) => {
-    return ok(c, { status: "alive", service: "giro-backend" });
+    return ok(c, { status: "alive", service: SERVICE_NAME });
   });
 
   healthRoute.get("/health/ready", async (c) => {

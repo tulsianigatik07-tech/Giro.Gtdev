@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 
 const runner = process.argv[2];
 if (runner !== "node" && runner !== "vitest") {
-  console.error("Usage: node scripts/run-test-suite.mjs <node|vitest>");
+  process.stderr.write("Usage: node scripts/run-test-suite.mjs <node|vitest>\n");
   process.exit(2);
 }
 
@@ -30,7 +30,7 @@ for (const file of allTests) {
   const usesVitest = /from\s+["']vitest["']/.test(source);
 
   if (usesNode === usesVitest) {
-    console.error(`Test file must import exactly one supported runner: ${file}`);
+    process.stderr.write(`Test file must import exactly one supported runner: ${file}\n`);
     process.exit(2);
   }
 
@@ -38,7 +38,7 @@ for (const file of allTests) {
 }
 
 const files = suites[runner];
-console.log(`Running ${files.length} ${runner} test files.`);
+process.stdout.write(`Running ${files.length} ${runner} test files.\n`);
 
 const command = runner === "node" ? "tsx" : "vitest";
 const args = runner === "node" ? ["--test", ...files] : ["run", ...files];

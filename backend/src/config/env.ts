@@ -2,6 +2,7 @@
 
 import "dotenv/config";
 import { z } from "zod";
+import { stderrLogger } from "../lib/logger.js";
 
 const optionalNonEmptyString = z.preprocess(
   (value) =>
@@ -196,7 +197,9 @@ function loadStartupEnv(): Env {
   } catch (error) {
     if (!(error instanceof EnvironmentValidationError)) throw error;
     // Do not print environment values or Zod input details.
-    console.error(error.message);
+    stderrLogger.error("environment_validation_failed", {
+      errorMessage: error.message,
+    });
     process.exit(1);
   }
 }
