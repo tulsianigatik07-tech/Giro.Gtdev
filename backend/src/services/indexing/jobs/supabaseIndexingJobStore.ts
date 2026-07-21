@@ -23,6 +23,7 @@ import type {
 
 const TABLE = "indexing_jobs";
 const DEFAULT_MAX_ATTEMPTS = 3;
+const DEFAULT_LEASE_DURATION_MS = 300_000;
 
 export type IndexingJobPersistenceErrorCode =
   | "duplicate_active_job"
@@ -258,10 +259,14 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
     }
   }
 
-  async claimNextJob(workerId: string): Promise<IndexingJob | null> {
+  async claimNextJob(
+    workerId: string,
+    leaseDurationMs = DEFAULT_LEASE_DURATION_MS,
+  ): Promise<IndexingJob | null> {
     try {
       const { data, error } = await this.client.rpc("claim_next_indexing_job", {
         input_worker_id: workerId,
+        input_lease_ms: leaseDurationMs,
       });
       throwIfError(error);
       const row = rowFromData(data);
@@ -271,11 +276,16 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
     }
   }
 
-  async heartbeatJob(jobId: string, workerId: string): Promise<boolean> {
+  async heartbeatJob(
+    jobId: string,
+    workerId: string,
+    leaseDurationMs = DEFAULT_LEASE_DURATION_MS,
+  ): Promise<boolean> {
     try {
       const { data, error } = await this.client.rpc("heartbeat_indexing_job", {
         input_job_id: jobId,
         input_worker_id: workerId,
+        input_lease_ms: leaseDurationMs,
       });
       throwIfError(error);
       return data === true || (Array.isArray(data) && data[0] === true);
@@ -310,6 +320,7 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
     try {
       const { data, error } = await this.client.rpc("recover_stale_indexing_jobs", {
         input_stale_before: input.staleBefore,
+        input_expired_before: input.leaseExpiresBefore ?? input.staleBefore,
         input_retry_delay_ms: input.retryDelayMs,
       });
       throwIfError(error);
@@ -319,9 +330,13 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
     }
   }
 
-  async updateJob(jobId: string, patch: IndexingJobPatch): Promise<IndexingJob | null> {
+  async updateJob(
+    jobId: string,
+    patch: IndexingJobPatch,
+    workerId?: string,
+  ): Promise<IndexingJob | null> {
     const existing = await this.getJob(jobId);
-    if (!existing) return null;
+    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
 
     const progress = patch.progress ?? existing.progress;
     if (validateIndexingJobProgress(existing, progress)) return null;
@@ -335,35 +350,39 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
         : cloneFailure(patch.failure),
       maxAttempts: patch.maxAttempts ?? existing.maxAttempts,
     };
-    return this.compareAndSet(existing, updated);
+    return this.compareAndSet(existing, updated, workerId);
   }
 
   async markRunning(
     jobId: string,
     stage: IndexingJobStage = "clone",
+    workerId?: string,
   ): Promise<IndexingJob | null> {
-    return this.transition(jobId, "running", { stage });
+    return this.transition(jobId, "running", { stage }, workerId);
   }
 
   async updateProgress(
     jobId: string,
     progress: number,
     stage?: IndexingJobStage,
+    workerId?: string,
   ): Promise<IndexingJob | null> {
-    return this.updateJob(jobId, { progress, currentStage: stage });
+    return this.updateJob(jobId, { progress, currentStage: stage }, workerId);
   }
 
-  async markSucceeded(jobId: string): Promise<IndexingJob | null> {
+  async markSucceeded(jobId: string, workerId?: string): Promise<IndexingJob | null> {
     const existing = await this.getJob(jobId);
+    if (workerId && existing?.claimedBy !== workerId) return null;
     if (existing?.status === "succeeded") return existing;
-    return this.transition(jobId, "succeeded");
+    return this.transition(jobId, "succeeded", {}, workerId);
   }
 
   async markFailed(
     jobId: string,
     failure: IndexingJobFailure,
+    workerId?: string,
   ): Promise<IndexingJob | null> {
-    return this.transition(jobId, "failed", { failure });
+    return this.transition(jobId, "failed", { failure }, workerId);
   }
 
   async cancelJob(jobId: string): Promise<IndexingJob | null> {
@@ -400,25 +419,29 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
     jobId: string,
     nextStatus: IndexingJob["status"],
     options: { stage?: IndexingJobStage; failure?: IndexingJobFailure } = {},
+    workerId?: string,
   ): Promise<IndexingJob | null> {
     const existing = await this.getJob(jobId);
-    if (!existing) return null;
+    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
     const transitioned = transitionIndexingJob(existing, nextStatus, options);
     if (!transitioned.ok) return null;
-    return this.compareAndSet(existing, transitioned.job);
+    return this.compareAndSet(existing, transitioned.job, workerId);
   }
 
   private async compareAndSet(
     existing: IndexingJob,
     updated: IndexingJob,
+    workerId?: string,
   ): Promise<IndexingJob | null> {
     try {
-      const { data, error } = await this.client
+      let query = this.client
         .from(TABLE)
         .update(indexingJobToUpdateRow(updated))
         .eq("job_id", existing.jobId)
         .eq("status", existing.status)
-        .eq("progress", existing.progress)
+        .eq("progress", existing.progress);
+      if (workerId) query = query.eq("claimed_by", workerId);
+      const { data, error } = await query
         .select("*")
         .maybeSingle();
       if (isNotFoundError(error)) return null;

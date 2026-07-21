@@ -5,6 +5,7 @@ import type {
   ProcessNextIndexingJobInput,
 } from "../jobs/indexingJobWorker.js";
 import type { IndexingWorkerStateStore } from "./indexingWorkerStateStore.js";
+import { parseTraceparent } from "../../../observability/tracing.js";
 
 export interface ContinuousIndexingWorkerConfig {
   workerId: string;
@@ -50,6 +51,11 @@ export function retryDelayMs(
   maximumMs: number,
 ): number {
   return Math.min(maximumMs, baseMs * 2 ** Math.max(0, attempt - 1));
+}
+
+function traceFields(job: IndexingJob | null | undefined): Record<string, string> {
+  const trace = parseTraceparent(job?.createdByTraceparent);
+  return trace ? { traceId: trace.traceId } : {};
 }
 
 export class ContinuousIndexingWorker {
@@ -157,21 +163,23 @@ export class ContinuousIndexingWorker {
             delay,
           );
           if (retried) {
-            this.logger.info("indexing_job_retry_scheduled", {
+            this.logger.info("indexing_job_retry", {
               workerId: this.config.workerId,
               jobId: report.jobId,
               repositoryId: report.repositoryId,
               attempt: retried.attempt,
               retryDelayMs: delay,
+              ...traceFields(retried),
             });
           }
         } else {
-          this.logger.error("indexing_job_terminal_failure", {
+          this.logger.error("indexing_job_permanent_failure", {
             workerId: this.config.workerId,
             jobId: report.jobId,
             repositoryId: report.repositoryId,
             attempt: claimed?.attempt,
             failureCode: report.failure.code,
+            ...traceFields(claimed),
           });
         }
         await this.recordHealth({
@@ -231,7 +239,21 @@ export class ContinuousIndexingWorker {
         await defaultSleep(this.config.heartbeatMs, controller.signal);
         if (controller.signal.aborted) break;
         try {
-          await this.jobStore.heartbeatJob(job.jobId, this.config.workerId);
+          const renewed = await this.jobStore.heartbeatJob(
+            job.jobId,
+            this.config.workerId,
+            this.config.staleClaimMs,
+          );
+          if (!renewed) {
+            this.logger.error("indexing_job_lease_lost", {
+              workerId: this.config.workerId,
+              jobId: job.jobId,
+              repositoryId: job.repositoryId,
+              attempt: job.attempt,
+            });
+            this.activeController?.abort(new Error("Indexing job lease was lost."));
+            break;
+          }
           await this.recordHealth({
             state: this.stopping ? "stopping" : "running",
             activeJobId: job.jobId,
@@ -251,20 +273,52 @@ export class ContinuousIndexingWorker {
 
   private async recoverStaleJobs(): Promise<void> {
     this.lastRecoveryAt = this.now();
+    const startedAt = this.now();
+    this.logger.info("indexing_recovery_started", {
+      workerId: this.config.workerId,
+      leaseExpiresBefore: new Date(this.now()).toISOString(),
+    });
     try {
       const jobs = await this.jobStore.recoverStaleJobs({
         staleBefore: new Date(this.now() - this.config.staleClaimMs).toISOString(),
+        leaseExpiresBefore: new Date(this.now()).toISOString(),
         retryDelayMs: this.config.retryBaseMs,
       });
       for (const job of jobs) {
-        this.logger.info("indexing_stale_job_recovered", {
+        this.logger.info("indexing_abandoned_lease_recovered", {
           workerId: this.config.workerId,
           jobId: job.jobId,
           repositoryId: job.repositoryId,
           attempt: job.attempt,
           status: job.status,
+          ...traceFields(job),
         });
+        if (job.status === "queued") {
+          this.logger.info("indexing_job_retry", {
+            workerId: this.config.workerId,
+            jobId: job.jobId,
+            repositoryId: job.repositoryId,
+            attempt: job.attempt,
+            retryDelayMs: this.config.retryBaseMs,
+            reason: "abandoned_lease",
+            ...traceFields(job),
+          });
+        } else {
+          this.logger.error("indexing_job_permanent_failure", {
+            workerId: this.config.workerId,
+            jobId: job.jobId,
+            repositoryId: job.repositoryId,
+            attempt: job.attempt,
+            failureCode: job.failure?.code ?? "abandoned_lease",
+            ...traceFields(job),
+          });
+        }
       }
+      this.logger.info("indexing_recovery_completed", {
+        workerId: this.config.workerId,
+        recoveredJobs: jobs.length,
+        durationMs: Math.max(0, this.now() - startedAt),
+      });
     } catch {
       this.logger.error("indexing_stale_recovery_failed", { workerId: this.config.workerId });
     }

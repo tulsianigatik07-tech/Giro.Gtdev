@@ -33,6 +33,7 @@ export interface IndexingJobPersistenceRow {
   claimed_at?: string | null;
   started_at?: string | null;
   heartbeat_at?: string | null;
+  lease_expires_at?: string | null;
   last_progress_at?: string | null;
   completed_at?: string | null;
   failed_at?: string | null;
@@ -165,6 +166,7 @@ export function indexingJobRowToDomain(row: IndexingJobPersistenceRow): Indexing
     ...(row.claimed_at !== undefined ? { claimedAt: row.claimed_at } : {}),
     ...(row.started_at !== undefined ? { startedAt: row.started_at } : {}),
     ...(row.heartbeat_at !== undefined ? { heartbeatAt: row.heartbeat_at } : {}),
+    ...(row.lease_expires_at !== undefined ? { leaseExpiresAt: row.lease_expires_at } : {}),
     ...(row.last_progress_at !== undefined ? { lastProgressAt: row.last_progress_at } : {}),
     ...(row.completed_at !== undefined ? { completedAt: row.completed_at } : {}),
     ...(row.failed_at !== undefined ? { failedAt: row.failed_at } : {}),

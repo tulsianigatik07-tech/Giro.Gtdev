@@ -15,6 +15,8 @@ import {
   stopHttpServer,
 } from "./runtime/httpServerShutdown.js";
 import { stopRegisteredIndexingWorkers } from "./runtime/indexingWorkerShutdown.js";
+import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexingJobStore.js";
+import { recoverIndexingJobsOnStartup } from "./services/indexing/jobs/indexingJobStartupRecovery.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -31,6 +33,22 @@ const app = createApp({
   isShuttingDown: coordinator.isShuttingDown,
   isStartupComplete: () => startupCompleted,
 });
+
+try {
+  await recoverIndexingJobsOnStartup({
+    jobStore: runtimeIndexingJobStore,
+    logger,
+    leaseDurationMs: env.INDEXING_WORKER_STALE_CLAIM_MS,
+    retryDelayMs: env.INDEXING_WORKER_RETRY_BASE_MS,
+  });
+} catch {
+  logger.error("indexing_recovery_failed", {
+    source: "backend_startup",
+    reasonCode: "durable_recovery_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
 
 server = serve(
   {

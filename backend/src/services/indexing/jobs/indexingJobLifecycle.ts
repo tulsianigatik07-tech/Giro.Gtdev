@@ -22,7 +22,7 @@ export const ACTIVE_INDEXING_JOB_STATUSES: readonly IndexingJobStatus[] = [
 
 const TRANSITIONS: Record<IndexingJobStatus, readonly IndexingJobStatus[]> = {
   queued: ["claimed", "cancelled"],
-  claimed: ["running", "cancelled"],
+  claimed: ["running", "failed", "cancelled"],
   running: ["succeeded", "failed"],
   succeeded: [],
   failed: ["queued"],
@@ -140,7 +140,10 @@ export function transitionIndexingJob(
     };
   }
 
-  const progress = nextStatus === "succeeded" ? 100 : (options.progress ?? job.progress);
+  const retrying = nextStatus === "queued" && job.status === "failed";
+  const progress = nextStatus === "succeeded"
+    ? 100
+    : retrying ? 0 : (options.progress ?? job.progress);
   const progressError = validateIndexingJobProgress(
     nextStatus === "succeeded" ? { ...job, status: "succeeded" } : job,
     progress,
@@ -154,11 +157,13 @@ export function transitionIndexingJob(
     job: {
       ...cloneIndexingJob(job),
       status: nextStatus,
-      attempt: nextStatus === "queued" && job.status === "failed"
+      attempt: retrying
         ? job.attempt + 1
         : job.attempt,
       progress,
-      currentStage: options.stage ?? (nextStatus === "succeeded" ? "complete" : job.currentStage),
+      currentStage: retrying
+        ? "pending"
+        : options.stage ?? (nextStatus === "succeeded" ? "complete" : job.currentStage),
       failure:
         nextStatus === "failed"
           ? cloneFailure(options.failure ?? null)
@@ -172,11 +177,15 @@ export function transitionIndexingJob(
             ? null
             : job.claimedBy,
       startedOrder:
-        nextStatus === "claimed" || nextStatus === "running"
+        retrying
+          ? null
+          : nextStatus === "claimed" || nextStatus === "running"
           ? (job.startedOrder ?? options.order ?? null)
           : job.startedOrder,
       completedOrder:
-        nextStatus === "succeeded" || nextStatus === "failed" || nextStatus === "cancelled"
+        retrying
+          ? null
+          : nextStatus === "succeeded" || nextStatus === "failed" || nextStatus === "cancelled"
           ? (options.order ?? job.completedOrder)
           : job.completedOrder,
     },

@@ -12,6 +12,8 @@ import type {
   IndexingJobPatch,
   IndexingJobStage,
   IndexingJobStore,
+  StaleIndexingJobRecoveryInput,
+  SupervisedIndexingJobStore,
 } from "./indexingJobStore.js";
 
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -28,10 +30,17 @@ function matchesFilters(job: IndexingJob, filters?: IndexingJobListFilters): boo
   return true;
 }
 
-export class MemoryIndexingJobStore implements IndexingJobStore {
+const DEFAULT_LEASE_DURATION_MS = 300_000;
+
+export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
   private readonly jobs = new Map<string, IndexingJob>();
+  private readonly now: () => Date;
   private nextSequence = 1;
   private nextOrder = 1;
+
+  constructor(options: { now?: () => Date } = {}) {
+    this.now = options.now ?? (() => new Date());
+  }
 
   async createJob(input: CreateIndexingJobInput): Promise<IndexingJob> {
     const active = this.findActiveRepositoryJob(input.repositoryId);
@@ -94,9 +103,16 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
     return jobs.at(-1) ?? null;
   }
 
-  async claimNextJob(workerId: string): Promise<IndexingJob | null> {
+  async claimNextJob(
+    workerId: string,
+    leaseDurationMs = DEFAULT_LEASE_DURATION_MS,
+  ): Promise<IndexingJob | null> {
+    const now = this.now();
     const next = [...this.jobs.values()]
-      .filter((job) => job.status === "queued")
+      .filter((job) =>
+        job.status === "queued" &&
+        (!job.nextRetryAt || Date.parse(job.nextRetryAt) <= now.getTime())
+      )
       .sort(byCreatedOrder)[0];
     if (!next) return null;
 
@@ -106,8 +122,108 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
     });
     if (!transitioned.ok) return null;
 
-    this.jobs.set(next.jobId, cloneIndexingJob(transitioned.job));
-    return cloneIndexingJob(transitioned.job);
+    const claimed = {
+      ...transitioned.job,
+      claimedAt: now.toISOString(),
+      heartbeatAt: now.toISOString(),
+      leaseExpiresAt: new Date(now.getTime() + leaseDurationMs).toISOString(),
+      nextRetryAt: null,
+    };
+    this.jobs.set(next.jobId, cloneIndexingJob(claimed));
+    return cloneIndexingJob(claimed);
+  }
+
+  async heartbeatJob(
+    jobId: string,
+    workerId: string,
+    leaseDurationMs = DEFAULT_LEASE_DURATION_MS,
+  ): Promise<boolean> {
+    const job = this.jobs.get(jobId);
+    const now = this.now();
+    if (
+      !job ||
+      !["claimed", "running"].includes(job.status) ||
+      job.claimedBy !== workerId ||
+      (job.leaseExpiresAt !== undefined && job.leaseExpiresAt !== null &&
+        Date.parse(job.leaseExpiresAt) <= now.getTime())
+    ) return false;
+    this.jobs.set(jobId, cloneIndexingJob({
+      ...job,
+      heartbeatAt: now.toISOString(),
+      leaseExpiresAt: new Date(now.getTime() + leaseDurationMs).toISOString(),
+    }));
+    return true;
+  }
+
+  async scheduleRetry(
+    jobId: string,
+    workerId: string,
+    failure: IndexingJobFailure,
+    delayMs: number,
+  ): Promise<IndexingJob | null> {
+    const job = this.jobs.get(jobId);
+    if (
+      !job || job.status !== "failed" || job.claimedBy !== workerId ||
+      !failure.retryable || job.failure?.retryable !== true ||
+      job.attempt >= job.maxAttempts
+    ) return null;
+    const transitioned = transitionIndexingJob(job, "queued");
+    if (!transitioned.ok) return null;
+    const queued = {
+      ...transitioned.job,
+      claimedAt: null,
+      startedAt: null,
+      heartbeatAt: null,
+      leaseExpiresAt: null,
+      nextRetryAt: new Date(this.now().getTime() + delayMs).toISOString(),
+    };
+    this.jobs.set(jobId, cloneIndexingJob(queued));
+    return cloneIndexingJob(queued);
+  }
+
+  async recoverStaleJobs(input: StaleIndexingJobRecoveryInput): Promise<IndexingJob[]> {
+    const leaseCutoff = Date.parse(input.leaseExpiresBefore ?? input.staleBefore);
+    const heartbeatCutoff = Date.parse(input.staleBefore);
+    const recovered: IndexingJob[] = [];
+    for (const job of [...this.jobs.values()].sort(byCreatedOrder)) {
+      if (!["claimed", "running"].includes(job.status)) continue;
+      const leaseExpired = job.leaseExpiresAt
+        ? Date.parse(job.leaseExpiresAt) <= leaseCutoff
+        : Date.parse(job.heartbeatAt ?? job.claimedAt ?? "") <= heartbeatCutoff;
+      if (!leaseExpired) continue;
+      const retryable = job.attempt < job.maxAttempts;
+      const failure: IndexingJobFailure = {
+        code: "abandoned_lease",
+        message: "Indexing worker lease expired before completion.",
+        retryable,
+      };
+      const failed = transitionIndexingJob(job, "failed", {
+        failure,
+        order: this.allocateOrder(),
+      });
+      if (!failed.ok) continue;
+      let result: IndexingJob = {
+        ...failed.job,
+        recoveryCount: (job.recoveryCount ?? 0) + 1,
+        leaseExpiresAt: null,
+      };
+      if (retryable) {
+        const queued = transitionIndexingJob(result, "queued");
+        if (!queued.ok) continue;
+        result = {
+          ...queued.job,
+          claimedAt: null,
+          startedAt: null,
+          heartbeatAt: null,
+          leaseExpiresAt: null,
+          nextRetryAt: new Date(this.now().getTime() + input.retryDelayMs).toISOString(),
+          recoveryCount: result.recoveryCount,
+        };
+      }
+      this.jobs.set(job.jobId, cloneIndexingJob(result));
+      recovered.push(cloneIndexingJob(result));
+    }
+    return recovered;
   }
 
   async updateJob(jobId: string, patch: IndexingJobPatch): Promise<IndexingJob | null> {
@@ -135,9 +251,13 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
     return cloneIndexingJob(updated);
   }
 
-  async markRunning(jobId: string, stage: IndexingJobStage = "clone"): Promise<IndexingJob | null> {
+  async markRunning(
+    jobId: string,
+    stage: IndexingJobStage = "clone",
+    workerId?: string,
+  ): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
-    if (!existing) return null;
+    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
 
     const transitioned = transitionIndexingJob(existing, "running", { stage });
     if (!transitioned.ok) return null;
@@ -150,16 +270,19 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
     jobId: string,
     progress: number,
     stage?: IndexingJobStage,
+    workerId?: string,
   ): Promise<IndexingJob | null> {
+    const existing = this.jobs.get(jobId);
+    if (workerId && existing?.claimedBy !== workerId) return null;
     return this.updateJob(jobId, {
       progress,
       currentStage: stage,
     });
   }
 
-  async markSucceeded(jobId: string): Promise<IndexingJob | null> {
+  async markSucceeded(jobId: string, workerId?: string): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
-    if (!existing) return null;
+    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
     if (existing.status === "succeeded") return cloneIndexingJob(existing);
 
     const transitioned = transitionIndexingJob(existing, "succeeded", {
@@ -168,16 +291,18 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
     });
     if (!transitioned.ok) return null;
 
-    this.jobs.set(jobId, cloneIndexingJob(transitioned.job));
-    return cloneIndexingJob(transitioned.job);
+    const succeeded = { ...transitioned.job, leaseExpiresAt: null };
+    this.jobs.set(jobId, cloneIndexingJob(succeeded));
+    return cloneIndexingJob(succeeded);
   }
 
   async markFailed(
     jobId: string,
     failure: IndexingJobFailure,
+    workerId?: string,
   ): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
-    if (!existing) return null;
+    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
 
     const transitioned = transitionIndexingJob(existing, "failed", {
       failure,
@@ -185,8 +310,9 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
     });
     if (!transitioned.ok) return null;
 
-    this.jobs.set(jobId, cloneIndexingJob(transitioned.job));
-    return cloneIndexingJob(transitioned.job);
+    const failed = { ...transitioned.job, leaseExpiresAt: null };
+    this.jobs.set(jobId, cloneIndexingJob(failed));
+    return cloneIndexingJob(failed);
   }
 
   async cancelJob(jobId: string): Promise<IndexingJob | null> {

@@ -98,6 +98,7 @@ export interface IndexingJobRepositoryStore {
 
 export interface ProcessNextIndexingJobInput {
   workerId: string;
+  leaseDurationMs?: number;
   jobStore: IndexingJobStore;
   repositoryStore?: IndexingJobRepositoryStore;
   repositoryAuthorizationStore?: Pick<RepositoryStore, "getRepository">;
@@ -510,6 +511,7 @@ export async function processNextIndexingJob(
 ): Promise<IndexingJobExecutionReport> {
   const {
     workerId,
+    leaseDurationMs,
     jobStore,
     repositoryStore = indexingJobRepositoryStore,
     repositoryAuthorizationStore = runtimeRepositoryStore,
@@ -523,7 +525,7 @@ export async function processNextIndexingJob(
     observer,
   } = input;
 
-  const claimed = await jobStore.claimNextJob(workerId);
+  const claimed = await jobStore.claimNextJob(workerId, leaseDurationMs);
   if (!claimed) {
     return {
       processed: false,
@@ -558,7 +560,7 @@ export async function processNextIndexingJob(
     await repositoryStore.markIndexing(claimed);
     const firstStage = "clone";
     currentStage = firstStage;
-    const running = await jobStore.markRunning(claimed.jobId, firstStage);
+    const running = await jobStore.markRunning(claimed.jobId, firstStage, workerId);
     if (!running) {
       throw new Error("Indexing job could not transition to running");
     }
@@ -575,6 +577,7 @@ export async function processNextIndexingJob(
         claimed.jobId,
         nextProgress,
         progress.stage,
+        workerId,
       );
       if (!updated) {
         throw new Error("Indexing job progress update failed");
@@ -602,7 +605,7 @@ export async function processNextIndexingJob(
 
     currentStage = "finalize";
     await repositoryStore.markIndexed(claimed, result);
-    const succeeded = await jobStore.markSucceeded(claimed.jobId);
+    const succeeded = await jobStore.markSucceeded(claimed.jobId, workerId);
     if (!succeeded) {
       throw new Error("Indexing job could not be marked succeeded");
     }
@@ -660,7 +663,7 @@ export async function processNextIndexingJob(
         reasonCode: "worker_job_repository_mismatch",
       });
     }
-    const failed = await jobStore.markFailed(claimed.jobId, failure);
+    const failed = await jobStore.markFailed(claimed.jobId, failure, workerId);
     logger.error("indexing_job_failed", {
       ...jobLogFields(claimed, workerId),
       failureCode: failure.code,

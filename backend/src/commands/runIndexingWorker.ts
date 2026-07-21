@@ -51,6 +51,7 @@ export async function runIndexingWorker(): Promise<0 | 1> {
     onShutdownTimeout: () => undefined,
     executeNext: ({ signal, observer }) => processNextIndexingJob({
       workerId: config.workerId,
+      leaseDurationMs: config.staleClaimMs,
       jobStore: runtimeIndexingJobStore,
       repositoryStore: indexingJobRepositoryStore,
       logger: stderrLogger,

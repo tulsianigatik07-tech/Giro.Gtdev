@@ -46,6 +46,7 @@ export interface IndexingJob {
   claimedAt?: string | null;
   startedAt?: string | null;
   heartbeatAt?: string | null;
+  leaseExpiresAt?: string | null;
   lastProgressAt?: string | null;
   completedAt?: string | null;
   failedAt?: string | null;
@@ -57,11 +58,12 @@ export interface IndexingJob {
 
 export interface StaleIndexingJobRecoveryInput {
   staleBefore: string;
+  leaseExpiresBefore?: string;
   retryDelayMs: number;
 }
 
 export interface SupervisedIndexingJobStore extends IndexingJobStore {
-  heartbeatJob(jobId: string, workerId: string): Promise<boolean>;
+  heartbeatJob(jobId: string, workerId: string, leaseDurationMs?: number): Promise<boolean>;
   scheduleRetry(
     jobId: string,
     workerId: string,
@@ -102,18 +104,20 @@ export interface IndexingJobStore {
   listJobs(filters?: IndexingJobListFilters): Promise<IndexingJob[]>;
   listRepositoryJobs(repositoryId: string): Promise<IndexingJob[]>;
   getLatestRepositoryJob(repositoryId: string): Promise<IndexingJob | null>;
-  claimNextJob(workerId: string): Promise<IndexingJob | null>;
+  claimNextJob(workerId: string, leaseDurationMs?: number): Promise<IndexingJob | null>;
   updateJob(jobId: string, patch: IndexingJobPatch): Promise<IndexingJob | null>;
-  markRunning(jobId: string, stage?: IndexingJobStage): Promise<IndexingJob | null>;
+  markRunning(jobId: string, stage?: IndexingJobStage, workerId?: string): Promise<IndexingJob | null>;
   updateProgress(
     jobId: string,
     progress: number,
     stage?: IndexingJobStage,
+    workerId?: string,
   ): Promise<IndexingJob | null>;
-  markSucceeded(jobId: string): Promise<IndexingJob | null>;
+  markSucceeded(jobId: string, workerId?: string): Promise<IndexingJob | null>;
   markFailed(
     jobId: string,
     failure: IndexingJobFailure,
+    workerId?: string,
   ): Promise<IndexingJob | null>;
   cancelJob(jobId: string): Promise<IndexingJob | null>;
   deleteJob(jobId: string): Promise<boolean>;

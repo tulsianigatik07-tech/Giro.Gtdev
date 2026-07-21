@@ -46,18 +46,18 @@ class SupervisedMemoryStore extends MemoryIndexingJobStore implements Supervised
   recoveries: StaleIndexingJobRecoveryInput[] = [];
   recovered: IndexingJob[] = [];
 
-  async heartbeatJob(jobId: string, workerId: string): Promise<boolean> {
+  override async heartbeatJob(jobId: string, workerId: string): Promise<boolean> {
     this.heartbeats.push({ jobId, workerId });
     return true;
   }
 
-  async scheduleRetry(jobId: string, workerId: string, failure: IndexingJobFailure, delayMs: number) {
+  override async scheduleRetry(jobId: string, workerId: string, failure: IndexingJobFailure, delayMs: number) {
     this.retries.push({ jobId, workerId, failure, delayMs });
     const job = await this.getJob(jobId);
     return job ? { ...job, status: "queued" as const, attempt: job.attempt + 1 } : null;
   }
 
-  async recoverStaleJobs(input: StaleIndexingJobRecoveryInput): Promise<IndexingJob[]> {
+  override async recoverStaleJobs(input: StaleIndexingJobRecoveryInput): Promise<IndexingJob[]> {
     this.recoveries.push(input);
     return this.recovered;
   }
@@ -119,6 +119,8 @@ test("continuous worker polls repeatedly and applies bounded idle backoff", asyn
   assert.ok(health.updates.some((update) => update.polled));
   assert.deepEqual(workerLogs.map((entry) => entry.event), [
     "indexing_worker_started",
+    "indexing_recovery_started",
+    "indexing_recovery_completed",
     "indexing_worker_shutdown_requested",
     "indexing_worker_finished",
   ]);

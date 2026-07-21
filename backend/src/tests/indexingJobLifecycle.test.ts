@@ -47,7 +47,7 @@ function job(overrides: Partial<IndexingJob> = {}): IndexingJob {
 test("allowed transitions match indexing job lifecycle table", () => {
   const expected: Record<IndexingJobStatus, IndexingJobStatus[]> = {
     queued: ["claimed", "cancelled"],
-    claimed: ["running", "cancelled"],
+    claimed: ["running", "failed", "cancelled"],
     running: ["succeeded", "failed"],
     succeeded: [],
     failed: ["queued"],

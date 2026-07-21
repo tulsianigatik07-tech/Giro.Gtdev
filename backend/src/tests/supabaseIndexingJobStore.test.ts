@@ -299,6 +299,7 @@ class FakeSupabaseClient implements SupabaseIndexingJobClient {
       queued.status = "claimed";
       queued.claimed_by = parameters.input_worker_id as string;
       queued.started_order = this.nextOrder++;
+      queued.lease_expires_at = "2026-07-11T00:05:00.000Z";
       return { data: [structuredClone(queued)], error: null };
     }
 
