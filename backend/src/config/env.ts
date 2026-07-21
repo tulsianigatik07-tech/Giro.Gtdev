@@ -6,6 +6,8 @@ import { z } from "zod";
 import { stderrLogger } from "../lib/logger.js";
 
 const DEVELOPMENT_JWT_SECRET = "dev-insecure-secret-change-me";
+const DEVELOPMENT_JWT_KEY_ID = "development-key";
+const JWT_KEY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 function integerEnvironmentValue(
   defaultValue: number,
@@ -50,6 +52,36 @@ const optionalNonEmptyString = z.preprocess(
   z.string().trim().min(1).optional(),
 );
 
+const jwtVerificationKeysEnvironmentValue = z
+  .string()
+  .default("{}")
+  .transform((value, context): Readonly<Record<string, string>> => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      context.addIssue({ code: "custom", message: "Verification keys must be a JSON object." });
+      return z.NEVER;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      context.addIssue({ code: "custom", message: "Verification keys must be a JSON object." });
+      return z.NEVER;
+    }
+    const keys: Record<string, string> = {};
+    for (const [keyId, secret] of Object.entries(parsed)) {
+      if (!JWT_KEY_ID_PATTERN.test(keyId)) {
+        context.addIssue({ code: "custom", message: "Verification key IDs are invalid." });
+        return z.NEVER;
+      }
+      if (typeof secret !== "string" || secret.length < 16) {
+        context.addIssue({ code: "custom", message: "Verification keys must contain sufficiently strong secrets." });
+        return z.NEVER;
+      }
+      keys[keyId] = secret;
+    }
+    return Object.freeze(keys);
+  });
+
 const EnvSchema = z
   .object({
     NODE_ENV: z
@@ -68,6 +100,12 @@ const EnvSchema = z
       .pipe(z.array(httpUrlEnvironmentValue).min(1)),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     JWT_SECRET: z.string().min(16).default(DEVELOPMENT_JWT_SECRET),
+    JWT_ISSUER: z.string().trim().min(1).max(256).default("giro-backend"),
+    JWT_AUDIENCE: z.string().trim().min(1).max(256).default("giro-api"),
+    JWT_ACCESS_TOKEN_TTL_SECONDS: integerEnvironmentValue(900, 60, 3_600),
+    JWT_CLOCK_SKEW_SECONDS: integerEnvironmentValue(30, 0, 300),
+    JWT_ACTIVE_KEY_ID: z.string().trim().regex(JWT_KEY_ID_PATTERN).default(DEVELOPMENT_JWT_KEY_ID),
+    JWT_VERIFICATION_KEYS: jwtVerificationKeysEnvironmentValue,
     SUPABASE_URL: httpUrlEnvironmentValue,
     SUPABASE_ANON_KEY: optionalNonEmptyString,
     SUPABASE_SERVICE_ROLE_KEY: optionalNonEmptyString,
@@ -184,6 +222,17 @@ const EnvSchema = z
           message: "Production JWT secret must be explicitly configured.",
         });
       }
+    }
+    const configuredPreviousActiveKey = value.JWT_VERIFICATION_KEYS[value.JWT_ACTIVE_KEY_ID];
+    if (
+      configuredPreviousActiveKey !== undefined &&
+      configuredPreviousActiveKey !== value.JWT_SECRET
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["JWT_VERIFICATION_KEYS"],
+        message: "The active key ID cannot map to different verification material.",
+      });
     }
     const resolvedRepositoryRoot = path.resolve(value.REPOSITORY_STORAGE_ROOT);
     if (resolvedRepositoryRoot === path.parse(resolvedRepositoryRoot).root) {

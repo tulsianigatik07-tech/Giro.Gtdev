@@ -22,6 +22,7 @@ test("valid configuration is parsed and normalized", () => {
     CORS_ORIGINS: "https://giro.dev, https://app.giro.dev",
     LOG_LEVEL: "warn",
     JWT_SECRET: "a-production-secret",
+    JWT_ACTIVE_KEY_ID: "current-key",
     EMBEDDINGS_PROVIDER: "openai",
     MODEL_NAME: "gpt-test",
     INDEXING_WORKER_ID: "worker-1",
@@ -34,6 +35,11 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.MODEL_NAME, "gpt-test");
   assert.equal(result.INDEXING_WORKER_ID, "worker-1");
   assert.equal(result.REPOSITORY_STORAGE_ROOT, "/tmp/giro-repositories-test");
+  assert.equal(result.JWT_ISSUER, "giro-backend");
+  assert.equal(result.JWT_AUDIENCE, "giro-api");
+  assert.equal(result.JWT_ACCESS_TOKEN_TTL_SECONDS, 900);
+  assert.equal(result.JWT_CLOCK_SKEW_SECONDS, 30);
+  assert.equal(result.JWT_ACTIVE_KEY_ID, "current-key");
   assert.equal(result.RETRIEVAL_CACHE_TTL_MS, 60_000);
   assert.equal(result.RETRIEVAL_CACHE_MAX_ENTRIES, 500);
   assert.equal(result.RETRIEVAL_STITCH_LINE_GAP, 0);
@@ -219,6 +225,12 @@ test("defaults preserve existing runtime behavior", () => {
   assert.deepEqual(result.CORS_ORIGINS, ["http://localhost:3000"]);
   assert.equal(result.LOG_LEVEL, "info");
   assert.equal(result.JWT_SECRET, "dev-insecure-secret-change-me");
+  assert.equal(result.JWT_ISSUER, "giro-backend");
+  assert.equal(result.JWT_AUDIENCE, "giro-api");
+  assert.equal(result.JWT_ACCESS_TOKEN_TTL_SECONDS, 900);
+  assert.equal(result.JWT_CLOCK_SKEW_SECONDS, 30);
+  assert.equal(result.JWT_ACTIVE_KEY_ID, "development-key");
+  assert.deepEqual(result.JWT_VERIFICATION_KEYS, {});
   assert.equal(result.EMBEDDINGS_PROVIDER, "mock");
   assert.equal(result.MODEL_NAME, "gpt-4.1-mini");
   assert.equal(result.REPOSITORY_STORAGE_ROOT, ".storage/repos");
@@ -340,6 +352,60 @@ test("timeout configuration is bounded", () => {
   assert.throws(() => validateEnv({ ...REQUIRED, REQUEST_TIMEOUT_MS: "1000.5" }));
   assert.throws(() => validateEnv({ ...REQUIRED, DATABASE_REQUEST_TIMEOUT_MS: "60001" }));
   assert.throws(() => validateEnv({ ...REQUIRED, REPOSITORY_CLONE_TIMEOUT_MS: "4000" }));
+});
+
+test("JWT claim and rotation configuration enforces safe bounds", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    JWT_ISSUER: "https://auth.giro.test",
+    JWT_AUDIENCE: "giro-api",
+    JWT_ACCESS_TOKEN_TTL_SECONDS: "60",
+    JWT_CLOCK_SKEW_SECONDS: "300",
+    JWT_ACTIVE_KEY_ID: "current-2026",
+    JWT_VERIFICATION_KEYS: JSON.stringify({
+      "previous-2025": "previous-secret-material",
+    }),
+  });
+  assert.equal(result.JWT_ISSUER, "https://auth.giro.test");
+  assert.equal(result.JWT_ACCESS_TOKEN_TTL_SECONDS, 60);
+  assert.equal(result.JWT_CLOCK_SKEW_SECONDS, 300);
+  assert.deepEqual(result.JWT_VERIFICATION_KEYS, {
+    "previous-2025": "previous-secret-material",
+  });
+
+  for (const input of [
+    { JWT_ISSUER: "" },
+    { JWT_AUDIENCE: "" },
+    { JWT_ACCESS_TOKEN_TTL_SECONDS: "59" },
+    { JWT_ACCESS_TOKEN_TTL_SECONDS: "3601" },
+    { JWT_CLOCK_SKEW_SECONDS: "-1" },
+    { JWT_CLOCK_SKEW_SECONDS: "301" },
+    { JWT_ACTIVE_KEY_ID: "" },
+    { JWT_ACTIVE_KEY_ID: "invalid key id" },
+    {
+      JWT_SECRET: "active-secret-material",
+      JWT_ACTIVE_KEY_ID: "current-2026",
+      JWT_VERIFICATION_KEYS: JSON.stringify({
+        "current-2026": "different-secret-material",
+      }),
+    },
+  ]) assert.throws(() => validateEnv({ ...REQUIRED, ...input }));
+});
+
+test("JWT verification key configuration errors never expose key material", () => {
+  const secret = "sensitive-previous-key-material";
+  assert.throws(
+    () => validateEnv({
+      ...REQUIRED,
+      JWT_VERIFICATION_KEYS: JSON.stringify({ "invalid key id": secret }),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.equal(error.message.includes(secret), false);
+      assert.equal(JSON.stringify(error.report).includes(secret), false);
+      return true;
+    },
+  );
 });
 
 test("rate limit configuration accepts positive integers", () => {
