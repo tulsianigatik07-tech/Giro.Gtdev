@@ -21,7 +21,10 @@
     "test": "pnpm test:ci",
     "test:node": "NODE_ENV=test node scripts/run-test-suite.mjs node",
     "test:vitest": "NODE_ENV=test node scripts/run-test-suite.mjs vitest",
-    "test:ci": "pnpm test:node && pnpm test:vitest"
+    "test:ci": "pnpm test:node && pnpm test:vitest",
+    "test:postgres": "node --test tests/postgres/*.test.mjs",
+    "verify:migrations": "node scripts/verify-postgres-migrations.mjs",
+    "validate:production": "pnpm build && pnpm typecheck && pnpm test && pnpm test:postgres && pnpm verify:migrations"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

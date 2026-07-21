@@ -58,6 +58,9 @@ pnpm indexing:worker        # node dist/commands/runIndexingWorker.js
 pnpm indexing:work-once:dev # one job directly from TypeScript
 pnpm indexing:work-once     # one job from compiled JavaScript
 pnpm typecheck  # tsc --noEmit
+pnpm test:postgres          # disposable real-Postgres integration suite
+pnpm verify:migrations      # apply and re-verify the complete migration chain
+pnpm validate:production    # build, typecheck, unit, Postgres, and migration checks
 ```
 
 ## Continuous indexing worker
@@ -98,6 +101,34 @@ pnpm build
 pnpm prune --prod
 pnpm start:worker
 ```
+
+## PostgreSQL integration validation
+
+The PostgreSQL integration suite creates a uniquely named disposable database,
+applies every file in `supabase/migrations/` in timestamp order, runs the live
+schema and concurrency checks, and drops the database after each test. The
+configured account must be able to create and drop databases, terminate sessions
+to its disposable databases, create extensions, and `SET ROLE` to `anon`,
+`authenticated`, and `service_role`. Those roles must already exist on the test
+cluster, and `vector` plus `pg_trgm` must be available.
+
+Set `GIRO_POSTGRES_TEST_URL` to an administrative database dedicated to tests.
+Its database name must contain `test`; non-loopback hosts are rejected unless
+`GIRO_POSTGRES_ALLOW_REMOTE_TEST_HOST=1` is also set. Never use a production URL
+or production credentials.
+
+```bash
+export GIRO_POSTGRES_TEST_URL=postgresql://postgres:postgres@127.0.0.1:5432/giro_test_admin
+pnpm test:postgres
+pnpm verify:migrations
+```
+
+When the URL is absent locally, both commands exit successfully with an explicit
+skip reason. CI that requires the database boundary must also set
+`GIRO_POSTGRES_INTEGRATION_REQUIRED=1`; a missing URL, unreachable server,
+missing role, missing extension, migration failure, or cleanup failure then
+fails the job. `pnpm validate:production` runs the complete production
+validation sequence.
 
 ## Endpoints
 
