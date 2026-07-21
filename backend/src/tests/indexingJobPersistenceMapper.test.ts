@@ -26,6 +26,7 @@ function job(overrides: Partial<IndexingJob> = {}): IndexingJob {
     currentStage: "pending",
     failure: null,
     claimedBy: null,
+    claimToken: null,
     createdOrder: 1,
     startedOrder: null,
     completedOrder: null,
@@ -54,6 +55,7 @@ function row(
     failure_message: null,
     failure_retryable: null,
     claimed_by: null,
+    claim_token: null,
     created_order: 1,
     started_order: null,
     completed_order: null,
@@ -82,6 +84,7 @@ test("maps a complete queued job to a snake_case insert row", () => {
     failure_message: null,
     failure_retryable: null,
     claimed_by: null,
+    claim_token: null,
     created_order: 1,
     started_order: null,
     completed_order: null,
@@ -115,6 +118,7 @@ test("maps claimed and running jobs without inventing order values", () => {
   const claimed = job({
     status: "claimed",
     claimedBy: "worker-1",
+    claimToken: "claim-token-1",
     startedOrder: 2,
   });
   const running = job({
@@ -122,6 +126,7 @@ test("maps claimed and running jobs without inventing order values", () => {
     currentStage: "scan",
     progress: 25,
     claimedBy: "worker-1",
+    claimToken: "claim-token-1",
     startedOrder: 2,
   });
 
@@ -137,6 +142,7 @@ test("maps claimed and running jobs without inventing order values", () => {
     failure_message: null,
     failure_retryable: null,
     claimed_by: "worker-1",
+    claim_token: "claim-token-1",
     started_order: 2,
     completed_order: null,
   });
@@ -148,6 +154,7 @@ test("maps succeeded job completion fields", () => {
     progress: 100,
     currentStage: "complete",
     claimedBy: "worker-1",
+    claimToken: "claim-token-1",
     startedOrder: 2,
     completedOrder: 3,
   }));
@@ -164,6 +171,7 @@ test("maps failed job structured failure fields", () => {
     currentStage: "embed",
     progress: 90,
     claimedBy: "worker-1",
+    claimToken: "claim-token-1",
     startedOrder: 2,
     completedOrder: 3,
     failure: {

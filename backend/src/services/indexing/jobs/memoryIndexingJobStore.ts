@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   cloneIndexingJob,
   isActiveIndexingJobStatus,
@@ -8,6 +9,7 @@ import type {
   CreateIndexingJobInput,
   IndexingJob,
   IndexingJobFailure,
+  IndexingJobClaim,
   IndexingJobListFilters,
   IndexingJobPatch,
   IndexingJobStage,
@@ -15,6 +17,7 @@ import type {
   StaleIndexingJobRecoveryInput,
   SupervisedIndexingJobStore,
 } from "./indexingJobStore.js";
+import { IndexingJobLeaseConflictError } from "./indexingJobStore.js";
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 
@@ -35,11 +38,13 @@ const DEFAULT_LEASE_DURATION_MS = 300_000;
 export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
   private readonly jobs = new Map<string, IndexingJob>();
   private readonly now: () => Date;
+  private readonly generateClaimToken: () => string;
   private nextSequence = 1;
   private nextOrder = 1;
 
-  constructor(options: { now?: () => Date } = {}) {
+  constructor(options: { now?: () => Date; generateClaimToken?: () => string } = {}) {
     this.now = options.now ?? (() => new Date());
+    this.generateClaimToken = options.generateClaimToken ?? randomUUID;
   }
 
   async createJob(input: CreateIndexingJobInput): Promise<IndexingJob> {
@@ -67,6 +72,7 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
       currentStage: "pending",
       failure: null,
       claimedBy: null,
+      claimToken: null,
       createdOrder,
       startedOrder: null,
       completedOrder: null,
@@ -124,6 +130,7 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
 
     const claimed = {
       ...transitioned.job,
+      claimToken: this.generateClaimToken(),
       claimedAt: now.toISOString(),
       heartbeatAt: now.toISOString(),
       leaseExpiresAt: new Date(now.getTime() + leaseDurationMs).toISOString(),
@@ -135,18 +142,13 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
 
   async heartbeatJob(
     jobId: string,
-    workerId: string,
+    claim: IndexingJobClaim,
     leaseDurationMs = DEFAULT_LEASE_DURATION_MS,
   ): Promise<boolean> {
     const job = this.jobs.get(jobId);
     const now = this.now();
-    if (
-      !job ||
-      !["claimed", "running"].includes(job.status) ||
-      job.claimedBy !== workerId ||
-      (job.leaseExpiresAt !== undefined && job.leaseExpiresAt !== null &&
-        Date.parse(job.leaseExpiresAt) <= now.getTime())
-    ) return false;
+    this.assertClaim(job, claim, ["claimed", "running"], true);
+    if (!job) throw new IndexingJobLeaseConflictError();
     this.jobs.set(jobId, cloneIndexingJob({
       ...job,
       heartbeatAt: now.toISOString(),
@@ -157,14 +159,14 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
 
   async scheduleRetry(
     jobId: string,
-    workerId: string,
+    claim: IndexingJobClaim,
     failure: IndexingJobFailure,
     delayMs: number,
   ): Promise<IndexingJob | null> {
     const job = this.jobs.get(jobId);
+    this.assertClaim(job, claim, ["failed"], false);
     if (
-      !job || job.status !== "failed" || job.claimedBy !== workerId ||
-      !failure.retryable || job.failure?.retryable !== true ||
+      !job || !failure.retryable || job.failure?.retryable !== true ||
       job.attempt >= job.maxAttempts
     ) return null;
     const transitioned = transitionIndexingJob(job, "queued");
@@ -226,8 +228,13 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
     return recovered;
   }
 
-  async updateJob(jobId: string, patch: IndexingJobPatch): Promise<IndexingJob | null> {
+  async updateJob(
+    jobId: string,
+    patch: IndexingJobPatch,
+    claim?: IndexingJobClaim,
+  ): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
+    if (claim) this.assertClaim(existing, claim, ["claimed", "running"], true);
     if (!existing) return null;
 
     const progress = patch.progress ?? existing.progress;
@@ -254,10 +261,11 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
   async markRunning(
     jobId: string,
     stage: IndexingJobStage = "clone",
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
-    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
+    if (claim) this.assertClaim(existing, claim, ["claimed"], true);
+    if (!existing) return null;
 
     const transitioned = transitionIndexingJob(existing, "running", { stage });
     if (!transitioned.ok) return null;
@@ -270,19 +278,24 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
     jobId: string,
     progress: number,
     stage?: IndexingJobStage,
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
-    if (workerId && existing?.claimedBy !== workerId) return null;
+    if (claim) this.assertClaim(existing, claim, ["running"], true);
     return this.updateJob(jobId, {
       progress,
       currentStage: stage,
-    });
+    }, claim);
   }
 
-  async markSucceeded(jobId: string, workerId?: string): Promise<IndexingJob | null> {
+  async markSucceeded(jobId: string, claim?: IndexingJobClaim): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
-    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
+    if (claim && existing?.status !== "succeeded") {
+      this.assertClaim(existing, claim, ["running"], true);
+    } else if (claim) {
+      this.assertClaim(existing, claim, ["succeeded"], false);
+    }
+    if (!existing) return null;
     if (existing.status === "succeeded") return cloneIndexingJob(existing);
 
     const transitioned = transitionIndexingJob(existing, "succeeded", {
@@ -299,10 +312,11 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
   async markFailed(
     jobId: string,
     failure: IndexingJobFailure,
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
-    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
+    if (claim) this.assertClaim(existing, claim, ["claimed", "running"], true);
+    if (!existing) return null;
 
     const transitioned = transitionIndexingJob(existing, "failed", {
       failure,
@@ -315,8 +329,9 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
     return cloneIndexingJob(failed);
   }
 
-  async cancelJob(jobId: string): Promise<IndexingJob | null> {
+  async cancelJob(jobId: string, claim?: IndexingJobClaim): Promise<IndexingJob | null> {
     const existing = this.jobs.get(jobId);
+    if (claim) this.assertClaim(existing, claim, ["claimed"], true);
     if (!existing) return null;
 
     const transitioned = transitionIndexingJob(existing, "cancelled", {
@@ -352,6 +367,24 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
     const order = this.nextOrder;
     this.nextOrder += 1;
     return order;
+  }
+
+  private assertClaim(
+    job: IndexingJob | undefined,
+    claim: IndexingJobClaim,
+    statuses: readonly IndexingJob["status"][],
+    requireActiveLease: boolean,
+  ): asserts job is IndexingJob {
+    const leaseExpired = requireActiveLease && (
+      !job?.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= this.now().getTime()
+    );
+    if (
+      !job ||
+      job.claimedBy !== claim.workerId ||
+      job.claimToken !== claim.claimToken ||
+      !statuses.includes(job.status) ||
+      leaseExpired
+    ) throw new IndexingJobLeaseConflictError();
   }
 }
 

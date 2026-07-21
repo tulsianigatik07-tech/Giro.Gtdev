@@ -176,6 +176,10 @@ export function transitionIndexingJob(
           : nextStatus === "queued" || nextStatus === "cancelled"
             ? null
             : job.claimedBy,
+      claimToken:
+        nextStatus === "queued" || nextStatus === "cancelled"
+          ? null
+          : job.claimToken,
       startedOrder:
         retrying
           ? null

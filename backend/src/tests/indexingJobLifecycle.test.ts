@@ -37,6 +37,7 @@ function job(overrides: Partial<IndexingJob> = {}): IndexingJob {
     currentStage: "pending",
     failure: null,
     claimedBy: null,
+    claimToken: null,
     createdOrder: 1,
     startedOrder: null,
     completedOrder: null,

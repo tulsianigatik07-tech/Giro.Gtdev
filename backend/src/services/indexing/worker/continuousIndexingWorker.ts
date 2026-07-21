@@ -6,6 +6,7 @@ import type {
 } from "../jobs/indexingJobWorker.js";
 import type { IndexingWorkerStateStore } from "./indexingWorkerStateStore.js";
 import { parseTraceparent } from "../../../observability/tracing.js";
+import { INDEXING_JOB_LEASE_CONFLICT, indexingJobClaim } from "../jobs/indexingJobStore.js";
 
 export interface ContinuousIndexingWorkerConfig {
   workerId: string;
@@ -158,7 +159,7 @@ export class ContinuousIndexingWorker {
           );
           const retried = await this.jobStore.scheduleRetry(
             report.jobId,
-            this.config.workerId,
+            indexingJobClaim(claimed),
             report.failure,
             delay,
           );
@@ -241,7 +242,7 @@ export class ContinuousIndexingWorker {
         try {
           const renewed = await this.jobStore.heartbeatJob(
             job.jobId,
-            this.config.workerId,
+            indexingJobClaim(job),
             this.config.staleClaimMs,
           );
           if (!renewed) {
@@ -258,7 +259,20 @@ export class ContinuousIndexingWorker {
             state: this.stopping ? "stopping" : "running",
             activeJobId: job.jobId,
           });
-        } catch {
+        } catch (error) {
+          if (
+            error && typeof error === "object" &&
+            (error as { code?: unknown }).code === INDEXING_JOB_LEASE_CONFLICT
+          ) {
+            this.logger.error("indexing_job_lease_lost", {
+              workerId: this.config.workerId,
+              jobId: job.jobId,
+              repositoryId: job.repositoryId,
+              attempt: job.attempt,
+            });
+            this.activeController?.abort(new Error("Indexing job lease was lost."));
+            break;
+          }
           this.logger.error("indexing_job_heartbeat_failed", {
             workerId: this.config.workerId,
             jobId: job.jobId,

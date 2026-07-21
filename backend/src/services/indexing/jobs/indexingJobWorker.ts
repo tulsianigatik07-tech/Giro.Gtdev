@@ -34,6 +34,7 @@ import type {
   IndexingJobStage,
   IndexingJobStore,
 } from "./indexingJobStore.js";
+import { INDEXING_JOB_LEASE_CONFLICT, indexingJobClaim } from "./indexingJobStore.js";
 import type { IndexingMetricStatus, RetryMetricCategory, RetryMetricResult, TimeoutMetricCategory } from "../../../observability/metrics.js";
 import { env } from "../../../config/env.js";
 import { createDeadline } from "../../../runtime/deadline.js";
@@ -362,6 +363,7 @@ export async function executeRepositoryIndexingPipeline(
     branch: cloned.branch,
     jobId: job.jobId,
     workerId: job.claimedBy ?? "",
+    claimToken: job.claimToken ?? "",
   };
   const staged = await snapshotStore.begin(identity);
   if (staged.alreadyPublished && staged.counts) {
@@ -537,6 +539,7 @@ export async function processNextIndexingJob(
     };
   }
   const workerTrace = createTraceContext(parseTraceparent(claimed.createdByTraceparent));
+  const claim = indexingJobClaim(claimed);
   return runWithTraceContext(workerTrace, () => runWithLogContext({
     ...currentLogContext(),
     requestId: claimed.createdByRequestId,
@@ -557,12 +560,14 @@ export async function processNextIndexingJob(
   try {
     await authorizeIndexingJob(claimed, repositoryAuthorizationStore);
     repositoryAuthorized = true;
-    await repositoryStore.markIndexing(claimed);
     const firstStage = "clone";
     currentStage = firstStage;
-    const running = await jobStore.markRunning(claimed.jobId, firstStage, workerId);
+    const running = await jobStore.markRunning(claimed.jobId, firstStage, claim);
     if (!running) {
       throw new Error("Indexing job could not transition to running");
+    }
+    if (!jobStore.repositoryStateHandledByJobStore) {
+      await repositoryStore.markIndexing(claimed);
     }
     logger.info("indexing_job_started", jobLogFields(claimed, workerId));
     await observer?.onStarted?.(running);
@@ -577,7 +582,7 @@ export async function processNextIndexingJob(
         claimed.jobId,
         nextProgress,
         progress.stage,
-        workerId,
+        claim,
       );
       if (!updated) {
         throw new Error("Indexing job progress update failed");
@@ -604,8 +609,10 @@ export async function processNextIndexingJob(
     });
 
     currentStage = "finalize";
-    await repositoryStore.markIndexed(claimed, result);
-    const succeeded = await jobStore.markSucceeded(claimed.jobId, workerId);
+    if (!jobStore.repositoryStateHandledByJobStore) {
+      await repositoryStore.markIndexed(claimed, result);
+    }
+    const succeeded = await jobStore.markSucceeded(claimed.jobId, claim);
     if (!succeeded) {
       throw new Error("Indexing job could not be marked succeeded");
     }
@@ -634,6 +641,7 @@ export async function processNextIndexingJob(
       failure: null,
     };
   } catch (error) {
+    if (isIndexingJobLeaseConflict(error)) throw error;
     if (isDeadlineExceeded(error)) {
       const timedOutStage = currentStage as IndexingJobStage | null;
       const category = timedOutStage === "clone"
@@ -651,19 +659,19 @@ export async function processNextIndexingJob(
       repositoryId: claimed.repositoryId,
       stage: currentStage,
     });
-    if (repositoryAuthorized) {
+    const failed = await jobStore.markFailed(claimed.jobId, failure, claim);
+    if (!repositoryAuthorized) {
+      logger.error("indexing_job_repository_mismatch", {
+        ...jobLogFields(claimed, workerId),
+        reasonCode: "worker_job_repository_mismatch",
+      });
+    } else if (failed && !jobStore.repositoryStateHandledByJobStore) {
       try {
         await repositoryStore.markFailed(claimed, failure);
       } catch {
         // Preserve the original indexing failure in the job/report.
       }
-    } else {
-      logger.error("indexing_job_repository_mismatch", {
-        ...jobLogFields(claimed, workerId),
-        reasonCode: "worker_job_repository_mismatch",
-      });
     }
-    const failed = await jobStore.markFailed(claimed.jobId, failure, workerId);
     logger.error("indexing_job_failed", {
       ...jobLogFields(claimed, workerId),
       failureCode: failure.code,
@@ -684,4 +692,11 @@ export async function processNextIndexingJob(
     };
   }
   }));
+}
+
+function isIndexingJobLeaseConflict(error: unknown): boolean {
+  return Boolean(
+    error && typeof error === "object" &&
+    (error as { code?: unknown }).code === INDEXING_JOB_LEASE_CONFLICT,
+  );
 }

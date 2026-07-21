@@ -47,12 +47,13 @@ test("supervision adapter uses the authoritative RPC input contracts", async () 
     },
   };
   const store = new SupabaseIndexingJobStore({ client });
-  assert.equal(await store.heartbeatJob("job-1", "worker-1"), true);
-  assert.equal(await store.scheduleRetry(
-    "job-1", "worker-1",
+  const claim = { workerId: "worker-1", claimToken: "claim-token-1" };
+  assert.equal(await store.heartbeatJob("job-1", claim), true);
+  await assert.rejects(() => store.scheduleRetry(
+    "job-1", claim,
     { code: "clone_failed", message: "Repository clone failed.", retryable: true },
     5_000,
-  ), null);
+  ), { code: "indexing_job_lease_conflict" });
   assert.deepEqual(await store.recoverStaleJobs({
     staleBefore: "2026-07-19T00:00:00.000Z",
     retryDelayMs: 5_000,

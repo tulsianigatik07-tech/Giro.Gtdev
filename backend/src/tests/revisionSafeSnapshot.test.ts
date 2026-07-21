@@ -17,6 +17,7 @@ const IDENTITY: RepositorySnapshotIdentity = {
   branch: "main",
   jobId: "indexing-job-2",
   workerId: "worker-1",
+  claimToken: "snapshot-claim-token",
 };
 
 test("clone checkout resolves one detached immutable revision", async () => {
@@ -84,11 +85,11 @@ test("snapshot adapter scopes summary, publication, and rollback to one revision
 
   assert.deepEqual(calls.map((call) => call.name), [
     "begin_repository_snapshot",
-    "repository_summaries",
+    "save_repository_snapshot_summary",
     "publish_repository_snapshot",
     "discard_repository_snapshot",
   ]);
-  assert.equal(calls[1]?.values.repository_revision, REVISION_B);
+  assert.equal(calls[1]?.values.input_revision, REVISION_B);
   assert.equal(calls[2]?.values.input_revision, REVISION_B);
   assert.equal(calls[3]?.values.input_revision, REVISION_B);
 });

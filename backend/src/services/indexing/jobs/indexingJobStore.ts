@@ -40,6 +40,7 @@ export interface IndexingJob {
   currentStage: IndexingJobStage;
   failure: IndexingJobFailure | null;
   claimedBy: string | null;
+  claimToken: string | null;
   createdOrder: number;
   startedOrder: number | null;
   completedOrder: number | null;
@@ -56,6 +57,27 @@ export interface IndexingJob {
   createdByTraceparent?: string;
 }
 
+export const INDEXING_JOB_LEASE_CONFLICT = "indexing_job_lease_conflict" as const;
+
+export class IndexingJobLeaseConflictError extends Error {
+  readonly code = INDEXING_JOB_LEASE_CONFLICT;
+
+  constructor() {
+    super("Indexing job lease authority was lost.");
+    this.name = "IndexingJobLeaseConflictError";
+  }
+}
+
+export interface IndexingJobClaim {
+  workerId: string;
+  claimToken: string;
+}
+
+export function indexingJobClaim(job: IndexingJob): IndexingJobClaim {
+  if (!job.claimedBy || !job.claimToken) throw new IndexingJobLeaseConflictError();
+  return Object.freeze({ workerId: job.claimedBy, claimToken: job.claimToken });
+}
+
 export interface StaleIndexingJobRecoveryInput {
   staleBefore: string;
   leaseExpiresBefore?: string;
@@ -63,10 +85,10 @@ export interface StaleIndexingJobRecoveryInput {
 }
 
 export interface SupervisedIndexingJobStore extends IndexingJobStore {
-  heartbeatJob(jobId: string, workerId: string, leaseDurationMs?: number): Promise<boolean>;
+  heartbeatJob(jobId: string, claim: IndexingJobClaim, leaseDurationMs?: number): Promise<boolean>;
   scheduleRetry(
     jobId: string,
-    workerId: string,
+    claim: IndexingJobClaim,
     failure: IndexingJobFailure,
     delayMs: number,
   ): Promise<IndexingJob | null>;
@@ -99,27 +121,28 @@ export interface IndexingJobPatch {
 }
 
 export interface IndexingJobStore {
+  readonly repositoryStateHandledByJobStore?: boolean;
   createJob(input: CreateIndexingJobInput): Promise<IndexingJob>;
   getJob(jobId: string): Promise<IndexingJob | null>;
   listJobs(filters?: IndexingJobListFilters): Promise<IndexingJob[]>;
   listRepositoryJobs(repositoryId: string): Promise<IndexingJob[]>;
   getLatestRepositoryJob(repositoryId: string): Promise<IndexingJob | null>;
   claimNextJob(workerId: string, leaseDurationMs?: number): Promise<IndexingJob | null>;
-  updateJob(jobId: string, patch: IndexingJobPatch): Promise<IndexingJob | null>;
-  markRunning(jobId: string, stage?: IndexingJobStage, workerId?: string): Promise<IndexingJob | null>;
+  updateJob(jobId: string, patch: IndexingJobPatch, claim?: IndexingJobClaim): Promise<IndexingJob | null>;
+  markRunning(jobId: string, stage?: IndexingJobStage, claim?: IndexingJobClaim): Promise<IndexingJob | null>;
   updateProgress(
     jobId: string,
     progress: number,
     stage?: IndexingJobStage,
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null>;
-  markSucceeded(jobId: string, workerId?: string): Promise<IndexingJob | null>;
+  markSucceeded(jobId: string, claim?: IndexingJobClaim): Promise<IndexingJob | null>;
   markFailed(
     jobId: string,
     failure: IndexingJobFailure,
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null>;
-  cancelJob(jobId: string): Promise<IndexingJob | null>;
+  cancelJob(jobId: string, claim?: IndexingJobClaim): Promise<IndexingJob | null>;
   deleteJob(jobId: string): Promise<boolean>;
   clear(): Promise<void>;
 }

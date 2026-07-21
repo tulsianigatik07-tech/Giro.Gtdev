@@ -12,6 +12,7 @@ import {
 import type {
   CreateIndexingJobInput,
   IndexingJob,
+  IndexingJobClaim,
   IndexingJobFailure,
   IndexingJobListFilters,
   IndexingJobPatch,
@@ -29,6 +30,7 @@ export type IndexingJobPersistenceErrorCode =
   | "duplicate_active_job"
   | "job_not_found"
   | "invalid_transition"
+  | "indexing_job_lease_conflict"
   | "supabase_unavailable"
   | "database_failure";
 
@@ -90,6 +92,7 @@ function persistenceError(
     duplicate_active_job: "An active indexing job already exists.",
     job_not_found: "Indexing job was not found.",
     invalid_transition: "Indexing job update is invalid.",
+    indexing_job_lease_conflict: "Indexing job lease authority was lost.",
     supabase_unavailable: "Indexing job persistence is unavailable.",
     database_failure: "Indexing job persistence failed.",
   };
@@ -116,6 +119,9 @@ export function normalizeIndexingJobPersistenceError(
 
   const code = errorCode(error);
   const message = errorText(error);
+  if (code === "40001" && message.includes("indexing_job_lease_conflict")) {
+    return persistenceError("indexing_job_lease_conflict", error);
+  }
   if (code === "23505") return persistenceError("duplicate_active_job", error);
   if (code === "PGRST116") return persistenceError("job_not_found", error);
   if (code === "23514" || code === "22P02" || code === "P0001") {
@@ -162,6 +168,7 @@ function cloneFailure(failure: IndexingJobFailure | null): IndexingJobFailure | 
 }
 
 export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
+  readonly repositoryStateHandledByJobStore = true;
   private readonly client: SupabaseIndexingJobClient;
   private readonly defaultMaxAttempts: number;
 
@@ -278,17 +285,20 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
 
   async heartbeatJob(
     jobId: string,
-    workerId: string,
+    claim: IndexingJobClaim,
     leaseDurationMs = DEFAULT_LEASE_DURATION_MS,
   ): Promise<boolean> {
     try {
       const { data, error } = await this.client.rpc("heartbeat_indexing_job", {
         input_job_id: jobId,
-        input_worker_id: workerId,
+        input_worker_id: claim.workerId,
+        input_claim_token: claim.claimToken,
         input_lease_ms: leaseDurationMs,
       });
       throwIfError(error);
-      return data === true || (Array.isArray(data) && data[0] === true);
+      const renewed = data === true || (Array.isArray(data) && data[0] === true);
+      if (!renewed) throw persistenceError("indexing_job_lease_conflict");
+      return true;
     } catch (error) {
       throw normalizeIndexingJobPersistenceError(error);
     }
@@ -296,21 +306,23 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
 
   async scheduleRetry(
     jobId: string,
-    workerId: string,
+    claim: IndexingJobClaim,
     failure: IndexingJobFailure,
     delayMs: number,
   ): Promise<IndexingJob | null> {
     try {
       const { data, error } = await this.client.rpc("schedule_indexing_job_retry", {
         input_job_id: jobId,
-        input_worker_id: workerId,
+        input_worker_id: claim.workerId,
+        input_claim_token: claim.claimToken,
         input_failure_code: failure.code,
         input_failure_message: failure.message,
         input_delay_ms: delayMs,
       });
       throwIfError(error);
       const row = rowFromData(data);
-      return row ? indexingJobRowToDomain(row) : null;
+      if (!row) throw persistenceError("indexing_job_lease_conflict");
+      return indexingJobRowToDomain(row);
     } catch (error) {
       throw normalizeIndexingJobPersistenceError(error);
     }
@@ -333,10 +345,24 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
   async updateJob(
     jobId: string,
     patch: IndexingJobPatch,
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null> {
+    if (claim) {
+      if (
+        patch.progress === undefined ||
+        patch.failure !== undefined ||
+        patch.maxAttempts !== undefined
+      ) throw persistenceError("invalid_transition");
+      return this.fencedMutation("update_indexing_job_progress", {
+        input_job_id: jobId,
+        input_worker_id: claim.workerId,
+        input_claim_token: claim.claimToken,
+        input_progress: patch.progress,
+        input_stage: patch.currentStage ?? null,
+      });
+    }
     const existing = await this.getJob(jobId);
-    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
+    if (!existing) return null;
 
     const progress = patch.progress ?? existing.progress;
     if (validateIndexingJobProgress(existing, progress)) return null;
@@ -350,42 +376,65 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
         : cloneFailure(patch.failure),
       maxAttempts: patch.maxAttempts ?? existing.maxAttempts,
     };
-    return this.compareAndSet(existing, updated, workerId);
+    return this.compareAndSet(existing, updated);
   }
 
   async markRunning(
     jobId: string,
     stage: IndexingJobStage = "clone",
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null> {
-    return this.transition(jobId, "running", { stage }, workerId);
+    if (claim) return this.fencedMutation("mark_indexing_job_running", {
+      input_job_id: jobId,
+      input_worker_id: claim.workerId,
+      input_claim_token: claim.claimToken,
+      input_stage: stage,
+    });
+    return this.transition(jobId, "running", { stage });
   }
 
   async updateProgress(
     jobId: string,
     progress: number,
     stage?: IndexingJobStage,
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null> {
-    return this.updateJob(jobId, { progress, currentStage: stage }, workerId);
+    return this.updateJob(jobId, { progress, currentStage: stage }, claim);
   }
 
-  async markSucceeded(jobId: string, workerId?: string): Promise<IndexingJob | null> {
+  async markSucceeded(jobId: string, claim?: IndexingJobClaim): Promise<IndexingJob | null> {
+    if (claim) return this.fencedMutation("complete_indexing_job", {
+      input_job_id: jobId,
+      input_worker_id: claim.workerId,
+      input_claim_token: claim.claimToken,
+    });
     const existing = await this.getJob(jobId);
-    if (workerId && existing?.claimedBy !== workerId) return null;
     if (existing?.status === "succeeded") return existing;
-    return this.transition(jobId, "succeeded", {}, workerId);
+    return this.transition(jobId, "succeeded");
   }
 
   async markFailed(
     jobId: string,
     failure: IndexingJobFailure,
-    workerId?: string,
+    claim?: IndexingJobClaim,
   ): Promise<IndexingJob | null> {
-    return this.transition(jobId, "failed", { failure }, workerId);
+    if (claim) return this.fencedMutation("fail_indexing_job", {
+      input_job_id: jobId,
+      input_worker_id: claim.workerId,
+      input_claim_token: claim.claimToken,
+      input_failure_code: failure.code,
+      input_failure_message: failure.message,
+      input_failure_retryable: failure.retryable,
+    });
+    return this.transition(jobId, "failed", { failure });
   }
 
-  async cancelJob(jobId: string): Promise<IndexingJob | null> {
+  async cancelJob(jobId: string, claim?: IndexingJobClaim): Promise<IndexingJob | null> {
+    if (claim) return this.fencedMutation("cancel_claimed_indexing_job", {
+      input_job_id: jobId,
+      input_worker_id: claim.workerId,
+      input_claim_token: claim.claimToken,
+    });
     return this.transition(jobId, "cancelled");
   }
 
@@ -419,19 +468,17 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
     jobId: string,
     nextStatus: IndexingJob["status"],
     options: { stage?: IndexingJobStage; failure?: IndexingJobFailure } = {},
-    workerId?: string,
   ): Promise<IndexingJob | null> {
     const existing = await this.getJob(jobId);
-    if (!existing || (workerId && existing.claimedBy !== workerId)) return null;
+    if (!existing) return null;
     const transitioned = transitionIndexingJob(existing, nextStatus, options);
     if (!transitioned.ok) return null;
-    return this.compareAndSet(existing, transitioned.job, workerId);
+    return this.compareAndSet(existing, transitioned.job);
   }
 
   private async compareAndSet(
     existing: IndexingJob,
     updated: IndexingJob,
-    workerId?: string,
   ): Promise<IndexingJob | null> {
     try {
       let query = this.client
@@ -440,7 +487,6 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
         .eq("job_id", existing.jobId)
         .eq("status", existing.status)
         .eq("progress", existing.progress);
-      if (workerId) query = query.eq("claimed_by", workerId);
       const { data, error } = await query
         .select("*")
         .maybeSingle();
@@ -452,6 +498,21 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
       if (error instanceof IndexingJobPersistenceError && error.code === "job_not_found") {
         return null;
       }
+      throw normalizeIndexingJobPersistenceError(error);
+    }
+  }
+
+  private async fencedMutation(
+    functionName: string,
+    parameters: Record<string, unknown>,
+  ): Promise<IndexingJob> {
+    try {
+      const { data, error } = await this.client.rpc(functionName, parameters);
+      throwIfError(error);
+      const row = rowFromData(data);
+      if (!row) throw persistenceError("indexing_job_lease_conflict");
+      return indexingJobRowToDomain(row);
+    } catch (error) {
       throw normalizeIndexingJobPersistenceError(error);
     }
   }

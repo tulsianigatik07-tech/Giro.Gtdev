@@ -5,6 +5,7 @@ import { MemoryIndexingJobStore } from "../services/indexing/jobs/memoryIndexing
 import type {
   IndexingJob,
   IndexingJobFailure,
+  IndexingJobClaim,
   StaleIndexingJobRecoveryInput,
   SupervisedIndexingJobStore,
 } from "../services/indexing/jobs/indexingJobStore.js";
@@ -41,18 +42,18 @@ const IDLE: IndexingJobExecutionReport = {
 };
 
 class SupervisedMemoryStore extends MemoryIndexingJobStore implements SupervisedIndexingJobStore {
-  heartbeats: Array<{ jobId: string; workerId: string }> = [];
-  retries: Array<{ jobId: string; workerId: string; failure: IndexingJobFailure; delayMs: number }> = [];
+  heartbeats: Array<{ jobId: string; claim: IndexingJobClaim }> = [];
+  retries: Array<{ jobId: string; claim: IndexingJobClaim; failure: IndexingJobFailure; delayMs: number }> = [];
   recoveries: StaleIndexingJobRecoveryInput[] = [];
   recovered: IndexingJob[] = [];
 
-  override async heartbeatJob(jobId: string, workerId: string): Promise<boolean> {
-    this.heartbeats.push({ jobId, workerId });
+  override async heartbeatJob(jobId: string, claim: IndexingJobClaim): Promise<boolean> {
+    this.heartbeats.push({ jobId, claim });
     return true;
   }
 
-  override async scheduleRetry(jobId: string, workerId: string, failure: IndexingJobFailure, delayMs: number) {
-    this.retries.push({ jobId, workerId, failure, delayMs });
+  override async scheduleRetry(jobId: string, claim: IndexingJobClaim, failure: IndexingJobFailure, delayMs: number) {
+    this.retries.push({ jobId, claim, failure, delayMs });
     const job = await this.getJob(jobId);
     return job ? { ...job, status: "queued" as const, attempt: job.attempt + 1 } : null;
   }
@@ -85,7 +86,12 @@ async function createClaimedJob(store: SupervisedMemoryStore, maxAttempts = 3) {
     repositoryUrl: "https://github.com/acme/repo",
     maxAttempts,
   });
-  return { ...created, status: "claimed" as const, claimedBy: CONFIG.workerId };
+  return {
+    ...created,
+    status: "claimed" as const,
+    claimedBy: CONFIG.workerId,
+    claimToken: "continuous-worker-claim",
+  };
 }
 
 test("continuous worker polls repeatedly and applies bounded idle backoff", async () => {

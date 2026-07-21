@@ -23,6 +23,7 @@ export interface IndexingJobPersistenceRow {
   failure_message: string | null;
   failure_retryable: boolean | null;
   claimed_by: string | null;
+  claim_token?: string | null;
   created_order: number;
   started_order: number | null;
   completed_order: number | null;
@@ -57,6 +58,7 @@ export type IndexingJobUpdateRow = Pick<
   | "failure_message"
   | "failure_retryable"
   | "claimed_by"
+  | "claim_token"
   | "started_order"
   | "completed_order"
 >;
@@ -96,6 +98,7 @@ export function indexingJobToInsertRow(job: IndexingJob): IndexingJobInsertRow {
     current_stage: job.currentStage,
     ...failureColumns(job.failure),
     claimed_by: job.claimedBy ?? null,
+    claim_token: job.claimToken ?? null,
     created_order: job.createdOrder,
     started_order: job.startedOrder ?? null,
     completed_order: job.completedOrder ?? null,
@@ -117,6 +120,7 @@ export function indexingJobToUpdateRow(job: IndexingJob): IndexingJobUpdateRow {
     current_stage: job.currentStage,
     ...failureColumns(job.failure),
     claimed_by: job.claimedBy ?? null,
+    claim_token: job.claimToken ?? null,
     started_order: job.startedOrder ?? null,
     completed_order: job.completedOrder ?? null,
   };
@@ -158,6 +162,7 @@ export function indexingJobRowToDomain(row: IndexingJobPersistenceRow): Indexing
     currentStage: row.current_stage,
     failure,
     claimedBy: row.claimed_by ?? null,
+    claimToken: row.claim_token ?? null,
     createdOrder: row.created_order,
     startedOrder: row.started_order ?? null,
     completedOrder: row.completed_order ?? null,

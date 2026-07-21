@@ -133,7 +133,8 @@ test("owner can read queued job", async () => {
 
 test("owner can read running job", async () => {
   const job = await createOwnedJob();
-  await indexingJobStore.claimNextJob("worker-1");
+  const claimed = await indexingJobStore.claimNextJob("worker-1");
+  assert.ok(claimed?.claimToken);
   await indexingJobStore.markRunning(job.jobId, "scan");
   await indexingJobStore.updateProgress(job.jobId, 25, "scan");
 
@@ -143,6 +144,8 @@ test("owner can read running job", async () => {
   assert.equal(result.body.data?.status, "running");
   assert.equal(result.body.data?.progress, 25);
   assert.equal(result.body.data?.currentStage, "scan");
+  assert.equal(JSON.stringify(result.body).includes(claimed.claimToken), false);
+  assert.equal("claimToken" in (result.body.data ?? {}), false);
 });
 
 test("owner can read succeeded job", async () => {

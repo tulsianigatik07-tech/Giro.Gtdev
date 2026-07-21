@@ -298,9 +298,47 @@ class FakeSupabaseClient implements SupabaseIndexingJobClient {
       if (!queued) return { data: [], error: null };
       queued.status = "claimed";
       queued.claimed_by = parameters.input_worker_id as string;
+      queued.claim_token = `claim-token-${this.nextOrder}`;
       queued.started_order = this.nextOrder++;
       queued.lease_expires_at = "2026-07-11T00:05:00.000Z";
       return { data: [structuredClone(queued)], error: null };
+    }
+
+    const fenced = this.rows.find((item) =>
+      item.job_id === parameters.input_job_id
+      && item.claimed_by === parameters.input_worker_id
+      && item.claim_token === parameters.input_claim_token
+    );
+    if (functionName === "mark_indexing_job_running") {
+      if (!fenced || fenced.status !== "claimed") return { data: [], error: null };
+      fenced.status = "running";
+      fenced.current_stage = parameters.input_stage as IndexingJobPersistenceRow["current_stage"];
+      return { data: [structuredClone(fenced)], error: null };
+    }
+    if (functionName === "update_indexing_job_progress") {
+      if (!fenced || fenced.status !== "running") return { data: [], error: null };
+      fenced.progress = parameters.input_progress as number;
+      fenced.current_stage = parameters.input_stage as IndexingJobPersistenceRow["current_stage"];
+      return { data: [structuredClone(fenced)], error: null };
+    }
+    if (functionName === "complete_indexing_job") {
+      if (!fenced || fenced.status !== "running") return { data: [], error: null };
+      fenced.status = "succeeded";
+      fenced.progress = 100;
+      fenced.current_stage = "complete";
+      fenced.completed_order = this.nextOrder++;
+      return { data: [structuredClone(fenced)], error: null };
+    }
+    if (functionName === "fail_indexing_job") {
+      if (!fenced || !["claimed", "running"].includes(fenced.status)) {
+        return { data: [], error: null };
+      }
+      fenced.status = "failed";
+      fenced.failure_code = parameters.input_failure_code as string;
+      fenced.failure_message = parameters.input_failure_message as string;
+      fenced.failure_retryable = parameters.input_failure_retryable as boolean;
+      fenced.completed_order = this.nextOrder++;
+      return { data: [structuredClone(fenced)], error: null };
     }
 
     return { data: null, error: { code: "42883", message: "unknown rpc" } };

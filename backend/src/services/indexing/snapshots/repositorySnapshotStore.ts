@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabase.js";
 import type { IndexedCounts, SetRepositoryIndexedOptions } from "../../repository/indexingService.js";
 import type { RepositorySummary } from "../../repositorySummary/summaryTypes.js";
+import { IndexingJobLeaseConflictError } from "../jobs/indexingJobStore.js";
 
 export interface RepositorySnapshotIdentity {
   repositoryId: string;
@@ -9,6 +10,7 @@ export interface RepositorySnapshotIdentity {
   branch: string | null;
   jobId: string;
   workerId: string;
+  claimToken: string;
 }
 
 export interface BeginRepositorySnapshotResult {
@@ -29,13 +31,21 @@ export interface RepositorySnapshotStore {
 }
 
 interface DatabaseClient {
-  from(table: string): {
-    upsert(values: unknown, options?: unknown): PromiseLike<{ error: { message?: string } | null }>;
-  };
   rpc(name: string, parameters: Record<string, unknown>): PromiseLike<{
     data: unknown;
-    error: { message?: string } | null;
+    error: { code?: string; message?: string } | null;
   }>;
+}
+
+function throwSnapshotError(
+  error: { code?: string; message?: string } | null,
+  fallbackMessage: string,
+): void {
+  if (!error) return;
+  if (error.code === "40001" || error.message === "indexing_job_lease_conflict") {
+    throw new IndexingJobLeaseConflictError();
+  }
+  throw new Error(fallbackMessage);
 }
 
 function firstRow(data: unknown): Record<string, unknown> | null {
@@ -68,8 +78,9 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
       input_branch: identity.branch,
       input_job_id: identity.jobId,
       input_worker_id: identity.workerId,
+      input_claim_token: identity.claimToken,
     });
-    if (error) throw new Error("Repository snapshot staging failed.");
+    throwSnapshotError(error, "Repository snapshot staging failed.");
     const row = firstRow(data);
     if (!row) throw new Error("Repository snapshot staging returned no state.");
     const alreadyPublished = row.already_published === true;
@@ -80,14 +91,15 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
   }
 
   async saveSummary(identity: RepositorySnapshotIdentity, summary: RepositorySummary): Promise<void> {
-    const { error } = await this.client.from("repository_summaries").upsert({
-      repository: identity.repositoryId,
-      repository_revision: identity.revision,
-      summary_kind: "architecture",
-      summary,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "repository,repository_revision,summary_kind" });
-    if (error) throw new Error("Repository snapshot summary persistence failed.");
+    const { error } = await this.client.rpc("save_repository_snapshot_summary", {
+      input_repository_id: identity.repositoryId,
+      input_revision: identity.revision,
+      input_job_id: identity.jobId,
+      input_worker_id: identity.workerId,
+      input_claim_token: identity.claimToken,
+      input_summary: summary,
+    });
+    throwSnapshotError(error, "Repository snapshot summary persistence failed.");
   }
 
   async publish(input: PublishRepositorySnapshotInput): Promise<void> {
@@ -97,6 +109,7 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
       input_branch: input.branch,
       input_job_id: input.jobId,
       input_worker_id: input.workerId,
+      input_claim_token: input.claimToken,
       input_chunk_count: input.counts.chunkCount,
       input_file_count: input.counts.fileCount,
       input_symbol_count: input.counts.symbolCount,
@@ -106,7 +119,7 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
       input_index_mode: input.indexOptions?.indexMode ?? "full",
       input_changed_file_count: input.indexOptions?.changedFileCount ?? input.counts.fileCount,
     });
-    if (error) throw new Error("Repository snapshot publication failed.");
+    throwSnapshotError(error, "Repository snapshot publication failed.");
   }
 
   async discard(identity: RepositorySnapshotIdentity): Promise<void> {
@@ -115,8 +128,9 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
       input_revision: identity.revision,
       input_job_id: identity.jobId,
       input_worker_id: identity.workerId,
+      input_claim_token: identity.claimToken,
     });
-    if (error) throw new Error("Repository snapshot rollback failed.");
+    throwSnapshotError(error, "Repository snapshot rollback failed.");
   }
 }
 
