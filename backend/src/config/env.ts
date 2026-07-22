@@ -209,6 +209,10 @@ const EnvSchema = z
     SESSION_LIST_DEFAULT_PAGE_SIZE: integerEnvironmentValue(50, 1, 500),
     SESSION_LIST_MAX_PAGE_SIZE: integerEnvironmentValue(200, 1, 1_000),
     SESSION_TURN_IDEMPOTENCY_RETENTION_MS: durationEnvironmentValue(86_400_000, 60_000, 2_592_000_000),
+    REPOSITORY_HISTORY_DEFAULT_PAGE_SIZE: integerEnvironmentValue(100, 1, 500),
+    REPOSITORY_HISTORY_MAX_PAGE_SIZE: integerEnvironmentValue(500, 1, 1_000),
+    REPOSITORY_HISTORY_MAX_RECORDS_PER_TYPE: integerEnvironmentValue(500, 1, 10_000),
+    REPOSITORY_HISTORY_MAX_AGE_MS: durationEnvironmentValue(7_776_000_000, 86_400_000, 31_536_000_000),
     REPOSITORY_CLONE_TIMEOUT_MS: durationEnvironmentValue(120_000, 5_000, 600_000),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
     EMBEDDING_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
@@ -254,6 +258,9 @@ const EnvSchema = z
     }
     if (value.SESSION_LIST_DEFAULT_PAGE_SIZE > value.SESSION_LIST_MAX_PAGE_SIZE) {
       context.addIssue({ code: "custom", path: ["SESSION_LIST_DEFAULT_PAGE_SIZE"], message: "Default session page size cannot exceed the maximum." });
+    }
+    if (value.REPOSITORY_HISTORY_DEFAULT_PAGE_SIZE > value.REPOSITORY_HISTORY_MAX_PAGE_SIZE) {
+      context.addIssue({ code: "custom", path: ["REPOSITORY_HISTORY_DEFAULT_PAGE_SIZE"], message: "Default repository history page size cannot exceed the maximum." });
     }
     if (!value.SUPABASE_SERVICE_ROLE_KEY && !value.SUPABASE_ANON_KEY) {
       context.addIssue({
