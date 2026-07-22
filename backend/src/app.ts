@@ -34,6 +34,8 @@ import {
   type RequestTimeoutOptions,
 } from "./middleware/requestTimeout.js";
 import { TRACEPARENT_HEADER } from "./observability/tracing.js";
+import type { RateLimitStore } from "./services/rateLimit/rateLimitStore.js";
+import { MemoryRateLimitStore } from "./services/rateLimit/memoryRateLimitStore.js";
 
 type Variables = RequestContextVariables & RequestDeadlineVariables & {
   indexingJobStore: IndexingJobStore;
@@ -55,12 +57,17 @@ export interface CreateAppOptions {
   workerModeEnabled?: boolean;
   healthClock?: Pick<HealthRouteOptions, "uptime" | "now">;
   rateLimitPolicy?: RateLimitPolicy;
+  rateLimitStore?: RateLimitStore;
+  trustedProxyCidrs?: readonly string[];
   requestTimeout?: Omit<RequestTimeoutOptions, "timeoutMs"> & {
     timeoutMs?: number;
   };
 }
 
 export function createApp(options: CreateAppOptions = {}) {
+  const rateLimitStore = options.rateLimitStore ?? (
+    env.NODE_ENV === "test" ? new MemoryRateLimitStore() : undefined
+  );
   const indexingJobStore = options.indexingJobStore ?? runtimeIndexingJobStore;
   const metrics = options.metrics ?? runtimeMetrics;
   const indexingProgressPublisher = options.indexingProgressPublisher ?? (
@@ -144,6 +151,8 @@ export function createApp(options: CreateAppOptions = {}) {
     { productionHealthCheck, productionReadinessCheck, ...options.healthClock },
     metrics,
     options.rateLimitPolicy,
+    rateLimitStore,
+    options.trustedProxyCidrs,
   ));
 
   app.notFound(onNotFound);

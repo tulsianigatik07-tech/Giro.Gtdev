@@ -18,6 +18,7 @@ import { stopRegisteredIndexingWorkers } from "./runtime/indexingWorkerShutdown.
 import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexingJobStore.js";
 import { recoverIndexingJobsOnStartup } from "./services/indexing/jobs/indexingJobStartupRecovery.js";
 import { runtimeRepositoryDeletionService } from "./services/repository/repositoryDeletionService.js";
+import { rateLimitBackend, runtimeRateLimitStore } from "./services/rateLimit/runtimeRateLimitStore.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -34,6 +35,19 @@ const app = createApp({
   isShuttingDown: coordinator.isShuttingDown,
   isStartupComplete: () => startupCompleted,
 });
+
+try {
+  await runtimeRateLimitStore.verify();
+  logger.info("rate_limit_backend_verified", { backend: rateLimitBackend });
+} catch {
+  logger.error("rate_limit_backend_verification_failed", {
+    source: "backend_startup",
+    backend: rateLimitBackend,
+    reasonCode: "rate_limit_backend_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
 
 try {
   await recoverIndexingJobsOnStartup({

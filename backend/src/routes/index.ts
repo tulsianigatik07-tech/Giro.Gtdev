@@ -25,6 +25,8 @@ import {
 import type { MetricsRegistry } from "../observability/metrics.js";
 import { createMetricsRoute } from "./metrics.js";
 import repositoryIndexingEventsRouter from "./repositoryIndexingEvents.js";
+import type { RateLimitStore } from "../services/rateLimit/rateLimitStore.js";
+import { runtimeRateLimitStore } from "../services/rateLimit/runtimeRateLimitStore.js";
 
 export function createRoutes(
   readinessCheck: ReadinessCheck,
@@ -32,30 +34,38 @@ export function createRoutes(
   metrics: MetricsRegistry,
   rateLimitPolicy: RateLimitPolicy = {
     authentication: {
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      windowMs: env.RATE_LIMIT_AUTH_WINDOW_MS ?? env.RATE_LIMIT_WINDOW_MS,
       maxRequests: env.RATE_LIMIT_AUTH_MAX_REQUESTS,
+      burst: env.RATE_LIMIT_AUTH_BURST,
     },
     repositoryConnect: {
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      windowMs: env.RATE_LIMIT_REPOSITORY_CONNECT_WINDOW_MS ?? env.RATE_LIMIT_WINDOW_MS,
       maxRequests: env.RATE_LIMIT_REPOSITORY_CONNECT_MAX_REQUESTS,
+      burst: env.RATE_LIMIT_REPOSITORY_CONNECT_BURST,
     },
     askGiro: {
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      windowMs: env.RATE_LIMIT_ASK_GIRO_WINDOW_MS ?? env.RATE_LIMIT_WINDOW_MS,
       maxRequests: env.RATE_LIMIT_ASK_GIRO_MAX_REQUESTS,
+      burst: env.RATE_LIMIT_ASK_GIRO_BURST,
     },
     retrievalSearch: {
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      windowMs: env.RATE_LIMIT_RETRIEVAL_SEARCH_WINDOW_MS ?? env.RATE_LIMIT_WINDOW_MS,
       maxRequests: env.RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS,
+      burst: env.RATE_LIMIT_RETRIEVAL_SEARCH_BURST,
     },
     indexingOperations: {
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      windowMs: env.RATE_LIMIT_INDEXING_WINDOW_MS ?? env.RATE_LIMIT_WINDOW_MS,
       maxRequests: env.RATE_LIMIT_INDEXING_MAX_REQUESTS,
+      burst: env.RATE_LIMIT_INDEXING_BURST,
     },
     defaultApi: {
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      windowMs: env.RATE_LIMIT_DEFAULT_WINDOW_MS ?? env.RATE_LIMIT_WINDOW_MS,
       maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+      burst: env.RATE_LIMIT_DEFAULT_BURST,
     },
   },
+  rateLimitStore: RateLimitStore = runtimeRateLimitStore,
+  trustedProxyCidrs: readonly string[] = env.TRUSTED_PROXY_CIDRS,
 ) {
   const routes = new Hono();
 
@@ -78,6 +88,8 @@ export function createRoutes(
 
   const apiRateLimiter = createRateLimitMiddleware({
     policy: rateLimitPolicy,
+    store: rateLimitStore,
+    trustedProxyCidrs,
     onRejected: () => metrics.incrementRateLimitRejections(),
   });
   routes.use("/auth/*", apiRateLimiter);

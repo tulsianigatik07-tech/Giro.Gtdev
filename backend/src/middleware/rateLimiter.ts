@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
 import type { Context, MiddlewareHandler } from "hono";
 import { fail } from "../lib/response.js";
 import { logger as defaultLogger, type StructuredLogger } from "../lib/logger.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
+import { MemoryRateLimitStore } from "../services/rateLimit/memoryRateLimitStore.js";
+import type { RateLimitStore } from "../services/rateLimit/rateLimitStore.js";
+import { resolveClientIp, validateTrustedProxyCidrs } from "./trustedProxy.js";
 
 type RateLimitCallback = (c: Context) => string | Promise<string>;
 type RateLimitSkipCallback = (c: Context) => boolean | Promise<boolean>;
@@ -17,6 +21,7 @@ export type RateLimitBucket =
 export interface RateLimitRule {
   windowMs: number;
   maxRequests: number;
+  burst?: number;
 }
 
 export type RateLimitPolicy = Readonly<Record<RateLimitBucket, RateLimitRule>>;
@@ -28,6 +33,8 @@ export interface CentralRateLimiterOptions {
   skip?: RateLimitSkipCallback;
   message?: string;
   now?: () => number;
+  store?: RateLimitStore;
+  trustedProxyCidrs?: readonly string[];
   onRejected?: (bucket: RateLimitBucket) => void;
   logger?: Pick<StructuredLogger, "warn">;
 }
@@ -37,17 +44,10 @@ export interface RateLimiterOptions extends RateLimitRule {
   skip?: RateLimitSkipCallback;
   message?: string;
   now?: () => number;
+  store?: RateLimitStore;
+  trustedProxyCidrs?: readonly string[];
   onRejected?: () => void;
   logger?: Pick<StructuredLogger, "warn">;
-}
-
-type RateLimitEntry = {
-  count: number;
-  resetAt: number;
-};
-
-function firstForwardedAddress(value: string | undefined): string | undefined {
-  return value?.split(",", 1)[0]?.trim() || undefined;
 }
 
 function requestIp(c: Context): string | undefined {
@@ -58,17 +58,13 @@ function requestIp(c: Context): string | undefined {
   return environment?.incoming?.socket?.remoteAddress ?? environment?.remoteAddress;
 }
 
-function normalizedIp(c: Context): string {
-  return firstForwardedAddress(c.req.header("x-forwarded-for")) ??
-    c.req.header("cf-connecting-ip")?.trim() ??
-    requestIp(c)?.trim() ??
-    "localhost";
-}
-
 export function defaultRateLimitKeyGenerator(c: Context): string {
-  const ipKey = `ip:${normalizedIp(c)}`;
   const user = getAuthenticatedUser(c);
-  return user?.userId ? `${ipKey}|user:${user.userId}` : ipKey;
+  return user?.userId ? `user:${user.userId}` : `ip:${resolveClientIp({
+    remoteAddress: requestIp(c),
+    forwardedFor: c.req.header("x-forwarded-for"),
+    trustedProxyCidrs: [],
+  })}`;
 }
 
 function routeMatches(path: string, prefix: string): boolean {
@@ -108,6 +104,9 @@ function validatePolicy(policy: RateLimitPolicy): void {
   for (const [bucket, rule] of Object.entries(policy)) {
     assertPositiveInteger(rule.windowMs, `${bucket}.windowMs`);
     assertPositiveInteger(rule.maxRequests, `${bucket}.maxRequests`);
+    if (rule.burst !== undefined && (!Number.isSafeInteger(rule.burst) || rule.burst < 0)) {
+      throw new TypeError(`${bucket}.burst must be a non-negative integer`);
+    }
   }
 }
 
@@ -119,16 +118,21 @@ export function createRateLimitMiddleware(
   options: CentralRateLimiterOptions,
 ): MiddlewareHandler {
   validatePolicy(options.policy);
-  const entries = new Map<string, RateLimitEntry>();
+  const store = options.store ?? new MemoryRateLimitStore();
   const classify = options.classify ?? classifyRateLimitBucket;
-  const keyGenerator = options.keyGenerator ?? defaultRateLimitKeyGenerator;
+  const trustedProxyCidrs = options.trustedProxyCidrs ?? [];
+  validateTrustedProxyCidrs(trustedProxyCidrs);
+  const keyGenerator = options.keyGenerator ?? ((c: Context) => {
+    const user = getAuthenticatedUser(c);
+    return user?.userId ? `user:${user.userId}` : `ip:${resolveClientIp({
+      remoteAddress: requestIp(c),
+      forwardedFor: c.req.header("x-forwarded-for"),
+      trustedProxyCidrs,
+    })}`;
+  });
   const now = options.now ?? Date.now;
   const message = options.message ?? "Too many requests. Please try again later.";
   const log = options.logger ?? defaultLogger;
-  let nextCleanupAt = 0;
-  const longestWindowMs = Math.max(
-    ...Object.values(options.policy).map((rule) => rule.windowMs),
-  );
 
   return async (c, next) => {
     if (await options.skip?.(c)) {
@@ -137,30 +141,20 @@ export function createRateLimitMiddleware(
     }
 
     const timestamp = now();
-    if (timestamp >= nextCleanupAt) {
-      for (const [key, entry] of entries) {
-        if (entry.resetAt <= timestamp) entries.delete(key);
-      }
-      nextCleanupAt = timestamp + longestWindowMs;
-    }
-
     const bucket = classify(c);
     const rule = options.policy[bucket];
     const identity = await keyGenerator(c);
-    const storageKey = `${bucket}\u0000${identity}`;
-    const current = entries.get(storageKey);
-    const entry = !current || current.resetAt <= timestamp
-      ? { count: 1, resetAt: timestamp + rule.windowMs }
-      : { count: current.count + 1, resetAt: current.resetAt };
-    entries.set(storageKey, entry);
+    const storageKey = createHash("sha256").update(`${bucket}\u0000${identity}`).digest("hex");
+    const entry = await store.increment({ key: storageKey, windowMs: rule.windowMs, nowMs: timestamp });
+    const effectiveLimit = rule.maxRequests + (rule.burst ?? 0);
 
-    const remaining = Math.max(0, rule.maxRequests - entry.count);
+    const remaining = Math.max(0, effectiveLimit - entry.count);
     const retryAfter = Math.max(1, Math.ceil((entry.resetAt - timestamp) / 1_000));
-    c.header("X-RateLimit-Limit", String(rule.maxRequests));
+    c.header("X-RateLimit-Limit", String(effectiveLimit));
     c.header("X-RateLimit-Remaining", String(remaining));
     c.header("Retry-After", String(retryAfter));
 
-    if (entry.count > rule.maxRequests) {
+    if (entry.count > effectiveLimit) {
       options.onRejected?.(bucket);
       const user = getAuthenticatedUser(c);
       log.warn("rate_limit_exceeded", {
@@ -169,7 +163,7 @@ export function createRateLimitMiddleware(
         rateLimitBucket: bucket,
         method: c.req.method,
         route: c.req.path,
-        limit: rule.maxRequests,
+        limit: effectiveLimit,
         windowMs: rule.windowMs,
       });
       return fail(c, { code: "rate_limit_exceeded", message }, 429);
@@ -183,6 +177,7 @@ export function rateLimiter(options: RateLimiterOptions): MiddlewareHandler {
   const rule = Object.freeze({
     windowMs: options.windowMs,
     maxRequests: options.maxRequests,
+    burst: options.burst,
   });
   const policy = Object.freeze({
     authentication: rule,
@@ -201,5 +196,7 @@ export function rateLimiter(options: RateLimiterOptions): MiddlewareHandler {
     now: options.now,
     onRejected: options.onRejected,
     logger: options.logger,
+    store: options.store,
+    trustedProxyCidrs: options.trustedProxyCidrs,
   });
 }

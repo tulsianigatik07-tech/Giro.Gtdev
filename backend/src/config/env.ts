@@ -4,6 +4,7 @@ import "dotenv/config";
 import path from "node:path";
 import { z } from "zod";
 import { stderrLogger } from "../lib/logger.js";
+import { validateTrustedProxyCidrs } from "../middleware/trustedProxy.js";
 
 const DEVELOPMENT_JWT_SECRET = "dev-insecure-secret-change-me";
 const DEVELOPMENT_JWT_KEY_ID = "development-key";
@@ -25,11 +26,22 @@ function durationEnvironmentValue(
   return integerEnvironmentValue(defaultValue, minimum, maximum);
 }
 
+function optionalDurationEnvironmentValue(minimum: number, maximum: number) {
+  return z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.coerce.number().int().min(minimum).max(maximum).optional(),
+  );
+}
+
 function booleanEnvironmentValue(defaultValue: boolean) {
   return z
     .enum(["true", "false"])
     .default(defaultValue ? "true" : "false")
     .transform((value) => value === "true");
+}
+
+function nonNegativeIntegerEnvironmentValue(defaultValue: number, maximum: number) {
+  return z.coerce.number().int().min(0).max(maximum).default(defaultValue);
 }
 
 const httpUrlEnvironmentValue = z.string().trim().url().refine((value) => {
@@ -147,12 +159,35 @@ const EnvSchema = z
     RETRIEVAL_MIN_ANSWERABLE_SCORE: z.coerce.number().min(0).max(1).default(0.35),
     SHUTDOWN_TIMEOUT_MS: durationEnvironmentValue(10_000, 1_000, 60_000),
     RATE_LIMIT_WINDOW_MS: durationEnvironmentValue(60_000, 1_000, 3_600_000),
+    RATE_LIMIT_BACKEND: z.enum(["memory", "supabase"]).optional(),
+    TRUSTED_PROXY_CIDRS: z.string().default("").transform((value, context) => {
+      const cidrs = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+      try {
+        validateTrustedProxyCidrs(cidrs);
+      } catch {
+        context.addIssue({ code: "custom", message: "Trusted proxy CIDRs are invalid." });
+        return z.NEVER;
+      }
+      return Object.freeze(cidrs);
+    }),
     RATE_LIMIT_MAX_REQUESTS: integerEnvironmentValue(100, 1, 1_000_000),
+    RATE_LIMIT_DEFAULT_BURST: nonNegativeIntegerEnvironmentValue(0, 1_000_000),
+    RATE_LIMIT_DEFAULT_WINDOW_MS: optionalDurationEnvironmentValue(1_000, 3_600_000),
     RATE_LIMIT_AUTH_MAX_REQUESTS: integerEnvironmentValue(20, 1, 1_000_000),
+    RATE_LIMIT_AUTH_BURST: nonNegativeIntegerEnvironmentValue(0, 1_000_000),
+    RATE_LIMIT_AUTH_WINDOW_MS: optionalDurationEnvironmentValue(1_000, 3_600_000),
     RATE_LIMIT_REPOSITORY_CONNECT_MAX_REQUESTS: integerEnvironmentValue(10, 1, 1_000_000),
+    RATE_LIMIT_REPOSITORY_CONNECT_BURST: nonNegativeIntegerEnvironmentValue(0, 1_000_000),
+    RATE_LIMIT_REPOSITORY_CONNECT_WINDOW_MS: optionalDurationEnvironmentValue(1_000, 3_600_000),
     RATE_LIMIT_ASK_GIRO_MAX_REQUESTS: integerEnvironmentValue(20, 1, 1_000_000),
+    RATE_LIMIT_ASK_GIRO_BURST: nonNegativeIntegerEnvironmentValue(0, 1_000_000),
+    RATE_LIMIT_ASK_GIRO_WINDOW_MS: optionalDurationEnvironmentValue(1_000, 3_600_000),
     RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS: integerEnvironmentValue(60, 1, 1_000_000),
+    RATE_LIMIT_RETRIEVAL_SEARCH_BURST: nonNegativeIntegerEnvironmentValue(0, 1_000_000),
+    RATE_LIMIT_RETRIEVAL_SEARCH_WINDOW_MS: optionalDurationEnvironmentValue(1_000, 3_600_000),
     RATE_LIMIT_INDEXING_MAX_REQUESTS: integerEnvironmentValue(30, 1, 1_000_000),
+    RATE_LIMIT_INDEXING_BURST: nonNegativeIntegerEnvironmentValue(0, 1_000_000),
+    RATE_LIMIT_INDEXING_WINDOW_MS: optionalDurationEnvironmentValue(1_000, 3_600_000),
     REQUEST_TIMEOUT_MS: durationEnvironmentValue(30_000, 1_000, 120_000),
     AI_REQUEST_TIMEOUT_MS: durationEnvironmentValue(30_000, 1_000, 120_000),
     EMBEDDING_REQUEST_TIMEOUT_MS: durationEnvironmentValue(30_000, 1_000, 120_000),
@@ -206,6 +241,13 @@ const EnvSchema = z
         code: "custom",
         path: ["SUPABASE_SERVICE_ROLE_KEY"],
         message: "The service-role key is required for durable backend persistence in production.",
+      });
+    }
+    if (value.NODE_ENV === "production" && value.RATE_LIMIT_BACKEND === "memory") {
+      context.addIssue({
+        code: "custom",
+        path: ["RATE_LIMIT_BACKEND"],
+        message: "Production rate limiting must use the Supabase backend.",
       });
     }
     if (value.NODE_ENV === "production") {
