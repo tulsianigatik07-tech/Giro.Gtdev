@@ -204,6 +204,8 @@ const EnvSchema = z
     AI_REQUEST_TIMEOUT_MS: durationEnvironmentValue(30_000, 1_000, 120_000),
     EMBEDDING_REQUEST_TIMEOUT_MS: durationEnvironmentValue(30_000, 1_000, 120_000),
     DATABASE_REQUEST_TIMEOUT_MS: durationEnvironmentValue(10_000, 500, 60_000),
+    DATABASE_STATEMENT_TIMEOUT_MS: durationEnvironmentValue(15_000, 500, 120_000),
+    REPOSITORY_CONNECTION_IDEMPOTENCY_RETENTION_MS: durationEnvironmentValue(86_400_000, 60_000, 2_592_000_000),
     REPOSITORY_CLONE_TIMEOUT_MS: durationEnvironmentValue(120_000, 5_000, 600_000),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
     EMBEDDING_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
