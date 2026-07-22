@@ -25,9 +25,12 @@ import { searchRepositoryFiles } from "../services/fileSearch/index.js";
 import { saveRepositoryIntelligence } from "../services/repository/repositoryIntelligenceHistory.js";
 import { buildRepositoryIntelligenceApiResponse } from "../services/repository/repositoryIntelligenceApiResponse.js";
 import {
-  cleanupRepository,
   getRepositorySummary,
 } from "../services/repository/repositoryLifecycleManager.js";
+import { buildRepositoryCleanupPlanAsync } from "../services/repository/repositoryCleanupPlanner.js";
+import { describeRepositoryCleanupPlan, executeRepositoryCleanupPlan } from "../services/repository/repositoryCleanupExecutor.js";
+import { buildRepositoryCleanupReport } from "../services/repository/repositoryCleanupReport.js";
+import { runtimeRepositoryDeletionService } from "../services/repository/repositoryDeletionService.js";
 import {
   buildRepositoryDashboardIntelligenceBundleForRepository,
 } from "../services/repository/repositoryDashboardIntelligenceBundle.js";
@@ -49,10 +52,8 @@ import {
 import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
 import type { IndexingProgressPublisher } from "../services/indexing/events/indexingProgressPublisher.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
-import { deleteRepositoryRetrievalData } from "../services/embeddings/store.js";
-import { env } from "../config/env.js";
 import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
-import { isRepositoryPathSecurityError, removeRepositoryCheckout } from "../services/security/repositoryPaths.js";
+import { isRepositoryPathSecurityError } from "../services/security/repositoryPaths.js";
 import { repositoryStore } from "../services/repository/store/runtimeRepositoryStore.js";
 import { currentTraceContext, formatTraceparent } from "../observability/tracing.js";
 
@@ -476,24 +477,46 @@ repositoriesRoute.delete("/:owner/:repo", async (c) => {
   const { owner, repo } = parsedParams.data;
 
   const repoId = `${owner}/${repo}`;
+  const user = getAuthenticatedUser(c);
+  if (!user) return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  const existingTombstone = await runtimeRepositoryDeletionService.tombstone(repoId);
+  if (existingTombstone) {
+    if (existingTombstone.ownerUserId !== user.userId) {
+      return fail(c, { code: "repo_not_connected", message: "Repository not connected. Call POST /repos/connect first." }, 404);
+    }
+    const repeated = await runtimeRepositoryDeletionService.delete({
+      repositoryId: repoId,
+      ownerUserId: user.userId,
+      expectedVersion: existingTombstone.deletedRepositoryVersion,
+      report: existingTombstone.responseReport as ReturnType<typeof buildRepositoryCleanupReport>,
+    });
+    return ok(c, repeated.report);
+  }
   const access = await authorizeRepositoryRequest(c, repoId, "repository_delete");
   if (!access.ok) return access.response;
-
+  const record = await repositoryStore.getRepository(repoId);
+  if (!record) return fail(c, { code: "repo_not_connected", message: "Repository not connected. Call POST /repos/connect first." }, 404);
+  const plan = await buildRepositoryCleanupPlanAsync(owner, repo);
+  const report = buildRepositoryCleanupReport(describeRepositoryCleanupPlan(plan));
   try {
-    await removeRepositoryCheckout(access.repository.repositoryId);
-  } catch {
-    logger.warn("repository_cleanup_rejected", {
+    await runtimeRepositoryDeletionService.delete({
+      repositoryId: repoId,
+      ownerUserId: user.userId,
+      expectedVersion: record.persistenceVersion ?? 1,
+      report,
+    });
+  } catch (error) {
+    logger.error("repository_deletion_transaction_failed", {
       requestId: c.get("requestId"),
       userId: access.repository.authenticatedUserId,
       repositoryId: access.repository.repositoryId,
       route: c.req.path,
       operation: "repository_delete",
-      reasonCode: "unsafe_cleanup_rejection",
+      reasonCode: "durable_deletion_failed",
     });
-    return fail(c, { code: "repository_cleanup_rejected", message: "Repository checkout cleanup was rejected." }, 409);
+    return fail(c, { code: "repository_deletion_failed", message: "Repository deletion could not be completed." }, 500);
   }
-  const report = await cleanupRepository({ owner, repo });
-  if (env.NODE_ENV !== "test") await deleteRepositoryRetrievalData(repoId);
+  executeRepositoryCleanupPlan(plan);
   try {
     c.get("retrievalCache").invalidateRepository(repoId, "repository_deleted");
   } catch {

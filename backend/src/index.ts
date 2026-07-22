@@ -17,6 +17,7 @@ import {
 import { stopRegisteredIndexingWorkers } from "./runtime/indexingWorkerShutdown.js";
 import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexingJobStore.js";
 import { recoverIndexingJobsOnStartup } from "./services/indexing/jobs/indexingJobStartupRecovery.js";
+import { runtimeRepositoryDeletionService } from "./services/repository/repositoryDeletionService.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -45,6 +46,17 @@ try {
   logger.error("indexing_recovery_failed", {
     source: "backend_startup",
     reasonCode: "durable_recovery_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryDeletionService.recoverPendingFilesystemCleanup();
+} catch {
+  logger.error("repository_deletion_recovery_failed", {
+    source: "backend_startup",
+    reasonCode: "durable_cleanup_recovery_unavailable",
   });
   await flushLogs();
   process.exit(1);

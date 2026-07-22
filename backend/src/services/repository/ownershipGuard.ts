@@ -1,5 +1,5 @@
 import { logger } from "../../lib/logger.js";
-import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
+import { flatMapMaybePromise, mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
 import {
   RepositoryPathSecurityError,
   repositoryCheckoutKey,
@@ -152,7 +152,18 @@ export function authorizeRepositoryConnection(input: {
 }): MaybePromise<RepositoryConnectionAuthorization> {
   const identity = normalizeRepositoryId(input.repositoryId);
   const store = input.store ?? runtimeRepositoryStore;
-  return mapMaybePromise(store.getRepository(identity.repositoryId), (record) => {
+  const tombstone = store.getDeletionTombstone?.(identity.repositoryId) ?? null;
+  return flatMapMaybePromise(tombstone, (deleted) => {
+    if (deleted) {
+      return denial(
+        403,
+        "repo_not_owned",
+        "You do not have access to this repository.",
+        { ...input, repositoryId: identity.repositoryId },
+        "repository_deleted",
+      ) as Extract<RepositoryConnectionAuthorization, { ok: false }>;
+    }
+    return mapMaybePromise(store.getRepository(identity.repositoryId), (record) => {
     if (!record) return { ok: true, identity, existing: null };
     if (!recordMatchesIdentity(record, identity) || !record.ownerUserId || record.ownerUserId !== input.userId) {
       return denial(
@@ -177,5 +188,6 @@ export function authorizeRepositoryConnection(input: {
         lifecycleState: record.status,
       }),
     };
+    });
   });
 }
