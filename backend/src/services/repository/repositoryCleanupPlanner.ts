@@ -80,16 +80,37 @@ export function buildRepositoryCleanupPlan(
   owner: string,
   repo: string,
 ): RepositoryCleanupPlan {
-  const repoId = `${owner}/${repo}`;
   const metadata = getRepositoryIndexMetadata(owner, repo);
+  const sessions = listAllSessions().filter(
+    (session) => session.owner === owner && session.repo === repo,
+  );
+  return buildPlan(owner, repo, metadata, sessions);
+}
+
+export async function buildRepositoryCleanupPlanAsync(
+  owner: string,
+  repo: string,
+): Promise<RepositoryCleanupPlan> {
+  const [metadata, allSessions] = await Promise.all([
+    Promise.resolve(getRepositoryIndexMetadata(owner, repo)),
+    Promise.resolve(listAllSessions()),
+  ]);
+  return buildPlan(owner, repo, metadata, allSessions.filter(
+    (session) => session.owner === owner && session.repo === repo,
+  ));
+}
+
+function buildPlan(
+  owner: string,
+  repo: string,
+  metadata: RepositoryIndexMetadata | null,
+  sessions: Awaited<ReturnType<typeof listAllSessions>>,
+): RepositoryCleanupPlan {
+  const repoId = `${owner}/${repo}`;
   const snapshot = getRepositoryFileSnapshot(repoId);
   const symbols = getRepositorySymbols(repoId);
   const graphMaps = getFileSymbolMaps(repoId);
   const intelligenceHistory = getRepositoryIntelligenceHistory(repoId);
-  const sessions = listAllSessions().filter(
-    (session) => session.owner === owner && session.repo === repo,
-  );
-
   const repositoryMetadata = metadataSection(metadata);
   const fileSnapshots = section(
     snapshot?.files.map((file) => file.filePath) ?? [],

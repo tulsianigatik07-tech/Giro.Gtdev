@@ -37,6 +37,7 @@ const DEFAULT_LEASE_DURATION_MS = 300_000;
 
 export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
   private readonly jobs = new Map<string, IndexingJob>();
+  private readonly deletedRepositories = new Set<string>();
   private readonly now: () => Date;
   private readonly generateClaimToken: () => string;
   private nextSequence = 1;
@@ -48,6 +49,7 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
   }
 
   async createJob(input: CreateIndexingJobInput): Promise<IndexingJob> {
+    if (this.deletedRepositories.has(input.repositoryId)) throw new Error("repository_deleting_or_deleted");
     const active = this.findActiveRepositoryJob(input.repositoryId);
     if (active) return cloneIndexingJob(active);
 
@@ -117,6 +119,7 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
     const next = [...this.jobs.values()]
       .filter((job) =>
         job.status === "queued" &&
+        !this.deletedRepositories.has(job.repositoryId) &&
         (!job.nextRetryAt || Date.parse(job.nextRetryAt) <= now.getTime())
       )
       .sort(byCreatedOrder)[0];
@@ -347,8 +350,20 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
     return this.jobs.delete(jobId);
   }
 
+  async fenceAndDeleteRepositoryJobs(repositoryId: string): Promise<number> {
+    this.deletedRepositories.add(repositoryId);
+    let deleted = 0;
+    for (const [jobId, job] of this.jobs) {
+      if (job.repositoryId !== repositoryId) continue;
+      this.jobs.delete(jobId);
+      deleted += 1;
+    }
+    return deleted;
+  }
+
   async clear(): Promise<void> {
     this.jobs.clear();
+    this.deletedRepositories.clear();
     this.nextSequence = 1;
     this.nextOrder = 1;
   }

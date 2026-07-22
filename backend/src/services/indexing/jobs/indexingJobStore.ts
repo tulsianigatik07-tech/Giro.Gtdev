@@ -144,5 +144,6 @@ export interface IndexingJobStore {
   ): Promise<IndexingJob | null>;
   cancelJob(jobId: string, claim?: IndexingJobClaim): Promise<IndexingJob | null>;
   deleteJob(jobId: string): Promise<boolean>;
+  fenceAndDeleteRepositoryJobs?(repositoryId: string): Promise<number>;
   clear(): Promise<void>;
 }

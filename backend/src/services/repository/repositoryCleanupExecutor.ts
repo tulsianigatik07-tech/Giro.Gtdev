@@ -14,6 +14,30 @@ export interface RepositoryCleanupExecutionReport {
   totalSkipped: number;
 }
 
+export function describeRepositoryCleanupPlan(
+  plan: RepositoryCleanupPlan,
+): RepositoryCleanupExecutionReport {
+  const executedResourceIdentifiers: string[] = [];
+  const skippedResourceIdentifiers: string[] = [];
+  const { repoId } = plan.repository;
+  if (plan.sections.repositoryMetadata.exists) executedResourceIdentifiers.push(`repositoryMetadata:${repoId}`);
+  if (plan.sections.fileSnapshots.exists) addExecuted(executedResourceIdentifiers, "fileSnapshots", plan.sections.fileSnapshots.identifiers);
+  if (plan.sections.symbolRecords.exists) addExecuted(executedResourceIdentifiers, "symbolRecords", plan.sections.symbolRecords.identifiers);
+  if (plan.sections.graphMetadata.exists) addExecuted(executedResourceIdentifiers, "graphMetadata", plan.sections.graphMetadata.identifiers);
+  if (plan.sections.repositoryIntelligenceHistory.exists) addExecuted(executedResourceIdentifiers, "repositoryIntelligenceHistory", plan.sections.repositoryIntelligenceHistory.identifiers);
+  if (!plan.sections.cachedRetrievalArtifacts.supported) skippedResourceIdentifiers.push("cachedRetrievalArtifacts:unsupported");
+  if (plan.sections.sessionReferences.exists) addExecuted(executedResourceIdentifiers, "sessionReferences", plan.sections.sessionReferences.identifiers);
+  executedResourceIdentifiers.sort((a, b) => a.localeCompare(b));
+  skippedResourceIdentifiers.sort((a, b) => a.localeCompare(b));
+  return {
+    repositoryId: repoId,
+    executedResourceIdentifiers,
+    skippedResourceIdentifiers,
+    totalExecuted: executedResourceIdentifiers.length,
+    totalSkipped: skippedResourceIdentifiers.length,
+  };
+}
+
 function prefixed(
   resource: string,
   identifiers: readonly string[],
