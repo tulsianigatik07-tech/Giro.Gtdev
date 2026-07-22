@@ -571,6 +571,24 @@ test("anon key remains a valid fallback when service role is absent", () => {
   assert.equal(result.SUPABASE_ANON_KEY, "anon-key");
 });
 
+test("repository connection idempotency retention and database statement timeout are validated", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    REPOSITORY_CONNECTION_IDEMPOTENCY_RETENTION_MS: "3600000",
+    DATABASE_STATEMENT_TIMEOUT_MS: "25000",
+  });
+  assert.equal(result.REPOSITORY_CONNECTION_IDEMPOTENCY_RETENTION_MS, 3_600_000);
+  assert.equal(result.DATABASE_STATEMENT_TIMEOUT_MS, 25_000);
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    REPOSITORY_CONNECTION_IDEMPOTENCY_RETENTION_MS: "59999",
+  }));
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    DATABASE_STATEMENT_TIMEOUT_MS: "121000",
+  }));
+});
+
 test("startup validation runs when the configuration module loads", () => {
   assert.equal(Object.isFrozen(env), true);
 
