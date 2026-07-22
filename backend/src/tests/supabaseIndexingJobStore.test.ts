@@ -437,6 +437,7 @@ test("creates a queued job through the database-owned create RPC", async () => {
       input_max_attempts: 3,
       input_request_id: null,
       input_traceparent: null,
+      input_max_concurrent_per_user: 2,
     },
   });
 });

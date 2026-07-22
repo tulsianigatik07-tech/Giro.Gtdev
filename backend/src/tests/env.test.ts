@@ -447,6 +447,32 @@ test("rate limit configuration accepts positive integers", () => {
   }));
 });
 
+test("repository resource quotas are bounded and internally consistent", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    REPOSITORY_QUOTA_MAX_BYTES: "10485760",
+    REPOSITORY_QUOTA_MAX_FILES: "500",
+    REPOSITORY_QUOTA_MAX_DIRECTORY_DEPTH: "20",
+    REPOSITORY_QUOTA_MAX_FILE_BYTES: "1048576",
+    REPOSITORY_QUOTA_MAX_SYMLINKS: "5",
+    REPOSITORY_QUOTA_MAX_BINARY_FILES: "10",
+    REPOSITORY_QUOTA_MAX_INDEXED_TEXT_BYTES: "5242880",
+    REPOSITORY_QUOTA_MAX_ARTIFACT_BYTES: "1048576",
+    REPOSITORY_QUOTA_MAX_INDEXING_DURATION_MS: "60000",
+    REPOSITORY_QUOTA_MAX_CONCURRENT_PER_USER: "3",
+    REPOSITORY_QUOTA_MAX_REPOSITORIES_PER_USER: "50",
+    REPOSITORY_QUOTA_MAX_STORAGE_PER_USER_BYTES: "104857600",
+  });
+  assert.equal(result.REPOSITORY_QUOTA_MAX_FILES, 500);
+  assert.equal(result.REPOSITORY_QUOTA_MAX_CONCURRENT_PER_USER, 3);
+  assert.throws(() => validateEnv({ ...REQUIRED, REPOSITORY_QUOTA_MAX_FILES: "0" }));
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    REPOSITORY_QUOTA_MAX_BYTES: "1048576",
+    REPOSITORY_QUOTA_MAX_FILE_BYTES: "2097152",
+  }));
+});
+
 test("shutdown timeout is bounded", () => {
   assert.equal(
     validateEnv({ ...REQUIRED, SHUTDOWN_TIMEOUT_MS: "1000" })

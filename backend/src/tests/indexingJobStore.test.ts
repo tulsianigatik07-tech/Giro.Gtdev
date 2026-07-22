@@ -69,6 +69,7 @@ test("create job assigns deterministic ID, sequence, and created order", async (
 });
 
 test("retrieve, list, repository listing, and latest repository job are deterministic", async () => {
+  store = new MemoryIndexingJobStore({ maxConcurrentPerUser: 10 });
   const first = await store.createJob(input("zeta/web"));
   const second = await store.createJob(input("acme/api"));
   const third = await store.createJob(input("acme/demo"));
