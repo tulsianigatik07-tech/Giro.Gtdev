@@ -62,6 +62,10 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.SESSION_LIST_DEFAULT_PAGE_SIZE, 50);
   assert.equal(result.SESSION_LIST_MAX_PAGE_SIZE, 200);
   assert.equal(result.SESSION_TURN_IDEMPOTENCY_RETENTION_MS, 86_400_000);
+  assert.equal(result.REPOSITORY_HISTORY_DEFAULT_PAGE_SIZE, 100);
+  assert.equal(result.REPOSITORY_HISTORY_MAX_PAGE_SIZE, 500);
+  assert.equal(result.REPOSITORY_HISTORY_MAX_RECORDS_PER_TYPE, 500);
+  assert.equal(result.REPOSITORY_HISTORY_MAX_AGE_MS, 7_776_000_000);
   assert.equal(Object.isFrozen(result), true);
 });
 
