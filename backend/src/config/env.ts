@@ -140,6 +140,18 @@ const EnvSchema = z
     RETRIEVAL_CACHE_MAX_ENTRIES: z.coerce.number().int().min(1).max(10_000).default(500),
     REPOSITORY_ARTIFACT_RETENTION_COUNT: z.coerce.number().int().min(1).max(100).default(3),
     REPOSITORY_CHECKOUT_RETENTION_COUNT: z.coerce.number().int().min(1).max(100).default(3),
+    REPOSITORY_QUOTA_MAX_BYTES: z.coerce.number().int().min(1_048_576).max(1_099_511_627_776).default(1_073_741_824),
+    REPOSITORY_QUOTA_MAX_FILES: z.coerce.number().int().min(1).max(10_000_000).default(100_000),
+    REPOSITORY_QUOTA_MAX_DIRECTORY_DEPTH: z.coerce.number().int().min(1).max(1_024).default(64),
+    REPOSITORY_QUOTA_MAX_FILE_BYTES: z.coerce.number().int().min(1).max(1_073_741_824).default(5_242_880),
+    REPOSITORY_QUOTA_MAX_SYMLINKS: z.coerce.number().int().min(0).max(1_000_000).default(1_000),
+    REPOSITORY_QUOTA_MAX_BINARY_FILES: z.coerce.number().int().min(0).max(10_000_000).default(10_000),
+    REPOSITORY_QUOTA_MAX_INDEXED_TEXT_BYTES: z.coerce.number().int().min(1).max(1_099_511_627_776).default(268_435_456),
+    REPOSITORY_QUOTA_MAX_ARTIFACT_BYTES: z.coerce.number().int().min(1_024).max(1_073_741_824).default(67_108_864),
+    REPOSITORY_QUOTA_MAX_INDEXING_DURATION_MS: z.coerce.number().int().min(1_000).max(86_400_000).default(1_800_000),
+    REPOSITORY_QUOTA_MAX_CONCURRENT_PER_USER: z.coerce.number().int().min(1).max(1_000).default(2),
+    REPOSITORY_QUOTA_MAX_REPOSITORIES_PER_USER: z.coerce.number().int().min(1).max(1_000_000).default(100),
+    REPOSITORY_QUOTA_MAX_STORAGE_PER_USER_BYTES: z.coerce.number().int().min(1_048_576).max(9_007_199_254_740_991).default(10_737_418_240),
     RETRIEVAL_STITCH_LINE_GAP: z.coerce.number().int().min(0).max(1_000).default(0),
     QUERY_EXPANSION_MAX_TERMS: z.coerce.number().int().min(0).max(50).default(8),
     QUERY_EXPANSION_SCORE_PENALTY: z.coerce.number().min(0.1).max(1).default(0.85),
@@ -228,6 +240,12 @@ const EnvSchema = z
     }
     if (value.INDEXING_WORKER_RETRY_BASE_MS > value.INDEXING_WORKER_RETRY_MAX_MS) {
       context.addIssue({ code: "custom", path: ["INDEXING_WORKER_RETRY_MAX_MS"], message: "Maximum retry delay must be at least the base retry delay." });
+    }
+    if (value.REPOSITORY_QUOTA_MAX_FILE_BYTES > value.REPOSITORY_QUOTA_MAX_BYTES) {
+      context.addIssue({ code: "custom", path: ["REPOSITORY_QUOTA_MAX_FILE_BYTES"], message: "File quota cannot exceed repository quota." });
+    }
+    if (value.REPOSITORY_QUOTA_MAX_INDEXED_TEXT_BYTES > value.REPOSITORY_QUOTA_MAX_BYTES) {
+      context.addIssue({ code: "custom", path: ["REPOSITORY_QUOTA_MAX_INDEXED_TEXT_BYTES"], message: "Indexed text quota cannot exceed repository quota." });
     }
     if (!value.SUPABASE_SERVICE_ROLE_KEY && !value.SUPABASE_ANON_KEY) {
       context.addIssue({
