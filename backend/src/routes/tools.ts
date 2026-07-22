@@ -7,7 +7,8 @@ import { findSymbol } from "../services/tools/findSymbol.js";
 import { buildFileTree } from "../services/tools/fileTree.js";
 import { RepositoryIdSchema } from "../validation/repositorySchemas.js";
 import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
-import { isRepositoryPathSecurityError, validateRepositoryCheckout } from "../services/security/repositoryPaths.js";
+import { isRepositoryPathSecurityError } from "../services/security/repositoryPaths.js";
+import { validatePublishedRepositoryCheckout } from "../services/repository/ownershipGuard.js";
 import { logger } from "../lib/logger.js";
 
 const toolsRouter = new Hono<{ Variables: { requestId: string } }>();
@@ -28,7 +29,7 @@ function toolFailure(c: Parameters<typeof authorizeRepositoryRequest>[0], error:
 async function authorizedCheckout(c: Parameters<typeof authorizeRepositoryRequest>[0], repositoryId: string, operation: string) {
   const access = await authorizeRepositoryRequest(c, repositoryId, operation);
   if (!access.ok) return access;
-  return { ok: true as const, checkout: await validateRepositoryCheckout(access.repository.repositoryId, { mustExist: true }) };
+  return { ok: true as const, checkout: await validatePublishedRepositoryCheckout(access.repository) };
 }
 
 toolsRouter.post("/read-file", async (c) => {

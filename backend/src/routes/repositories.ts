@@ -37,7 +37,7 @@ import { buildRepositoryIntelligencePresentation } from "../services/repository/
 import {
   setRepositoryOwner,
 } from "../services/repository/ownershipStore.js";
-import { authorizeRepositoryConnection } from "../services/repository/ownershipGuard.js";
+import { authorizeRepositoryConnection, validatePublishedRepositoryCheckout } from "../services/repository/ownershipGuard.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
@@ -52,7 +52,7 @@ import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.
 import { deleteRepositoryRetrievalData } from "../services/embeddings/store.js";
 import { env } from "../config/env.js";
 import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
-import { isRepositoryPathSecurityError, removeRepositoryCheckout, validateRepositoryCheckout } from "../services/security/repositoryPaths.js";
+import { isRepositoryPathSecurityError, removeRepositoryCheckout } from "../services/security/repositoryPaths.js";
 import { repositoryStore } from "../services/repository/store/runtimeRepositoryStore.js";
 import { currentTraceContext, formatTraceparent } from "../observability/tracing.js";
 
@@ -197,7 +197,7 @@ repositoriesRoute.post("/context", async (c) => {
   if (!ctxAccess.ok) return ctxAccess.response;
   let clonePath;
   try {
-    clonePath = await validateRepositoryCheckout(ctxAccess.repository.repositoryId, { mustExist: true });
+    clonePath = await validatePublishedRepositoryCheckout(ctxAccess.repository);
   } catch {
     return fail(
       c,
@@ -256,7 +256,7 @@ repositoriesRoute.get("/:id/summary", async (c) => {
   if (!sumAccess.ok) return sumAccess.response;
   let clonePath;
   try {
-    clonePath = await validateRepositoryCheckout(sumAccess.repository.repositoryId, { mustExist: true });
+    clonePath = await validatePublishedRepositoryCheckout(sumAccess.repository);
   } catch {
     return fail(
       c,
@@ -267,12 +267,16 @@ repositoriesRoute.get("/:id/summary", async (c) => {
 
   try {
     if (!refresh) {
-      const cached = await loadSummary(repository);
+      const cached = await loadSummary(repository, {
+        repositoryRevision: sumAccess.repository.indexedRevision ?? undefined,
+      });
       if (cached) return ok(c, { ...cached, cached: true });
     }
 
     const summary = await buildRepositorySummary(clonePath, repository);
-    await saveSummary(summary);
+    await saveSummary(summary, {
+      repositoryRevision: sumAccess.repository.indexedRevision ?? undefined,
+    });
     return ok(c, { ...summary, cached: false });
   } catch (err) {
     logger.error("repos_summary_failed", {
@@ -297,7 +301,7 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
   if (!access.ok) return access.response;
   let clonePath;
   try {
-    clonePath = await validateRepositoryCheckout(access.repository.repositoryId, { mustExist: true });
+    clonePath = await validatePublishedRepositoryCheckout(access.repository);
   } catch {
     return fail(
       c,
@@ -367,7 +371,7 @@ repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
   if (!depAccess.ok) return depAccess.response;
 
   try {
-    await validateRepositoryCheckout(depAccess.repository.repositoryId, { mustExist: true });
+    await validatePublishedRepositoryCheckout(depAccess.repository);
     const result = await analyzeRepoDependencies(depAccess.repository);
     return ok(c, result);
   } catch (err) {
@@ -436,7 +440,7 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
   if (!srchAccess.ok) return srchAccess.response;
 
   try {
-    await validateRepositoryCheckout(srchAccess.repository.repositoryId, { mustExist: true });
+    await validatePublishedRepositoryCheckout(srchAccess.repository);
     const result = await searchRepositoryFiles({
       query: parsedQuery.data,
       owner: srchAccess.repository.owner,

@@ -28,7 +28,7 @@ import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.
 import { getRepositoryIndexMetadata } from "../services/repository/indexingService.js";
 import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
 import { authorizeSessionRepository } from "../services/sessions/authorizedSessionRepository.js";
-import { validateRepositoryCheckout } from "../services/security/repositoryPaths.js";
+import { validatePublishedRepositoryCheckout } from "../services/repository/ownershipGuard.js";
 
 const LegacyCitationSchema = z
   .object({
@@ -310,7 +310,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
       }, 409);
     }
     try {
-      await validateRepositoryCheckout(access.repository.repositoryId, { mustExist: true });
+      await validatePublishedRepositoryCheckout(access.repository);
     } catch {
       return fail(c, {
         code: "repository_unavailable",

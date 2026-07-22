@@ -1,6 +1,13 @@
 import { logger } from "../../lib/logger.js";
 import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
-import { repositoryCheckoutKey, repositoryCheckoutPath, type RepositoryCheckoutKey, type TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
+import {
+  RepositoryPathSecurityError,
+  repositoryCheckoutKey,
+  repositoryCheckoutPath,
+  validateRepositoryCheckout,
+  type RepositoryCheckoutKey,
+  type TrustedRepositoryCheckoutPath,
+} from "../security/repositoryPaths.js";
 import { normalizeRepositoryId, type RepositoryIdentity } from "../security/repositoryIdentity.js";
 import { repositoryStore as runtimeRepositoryStore } from "./store/runtimeRepositoryStore.js";
 import type { RepositoryRecord, RepositoryStore, RepositoryStoreStatus } from "./store/repositoryStore.js";
@@ -29,6 +36,19 @@ export type RepositoryAuthorizationLogContext = Readonly<{
   route?: string;
   operation?: string;
 }>;
+
+/** Resolves only the revision captured by authorization; concurrent publication cannot redirect this read. */
+export async function validatePublishedRepositoryCheckout(
+  repository: AuthorizedRepositoryContext,
+): Promise<TrustedRepositoryCheckoutPath> {
+  if (!repository.indexedRevision) {
+    throw new RepositoryPathSecurityError("unsafe_checkout", "Repository has no published revision.");
+  }
+  return validateRepositoryCheckout(repository.repositoryId, {
+    revision: repository.indexedRevision,
+    mustExist: true,
+  });
+}
 
 function recordMatchesIdentity(record: RepositoryRecord, identity: RepositoryIdentity): boolean {
   return record.repositoryId === identity.repositoryId &&
@@ -94,9 +114,9 @@ export function authorizeRepository(input: {
         owner: record.owner,
         repo: record.repo,
         authenticatedUserId: input.userId,
-        indexedRevision: record.indexedRevision,
+        indexedRevision: record.currentRevision,
         checkoutKey: repositoryCheckoutKey(record.repositoryId),
-        checkoutPath: repositoryCheckoutPath(record.repositoryId),
+        checkoutPath: repositoryCheckoutPath(record.repositoryId, record.currentRevision),
         lifecycleState: record.status,
       }),
     };
@@ -151,9 +171,9 @@ export function authorizeRepositoryConnection(input: {
         owner: record.owner,
         repo: record.repo,
         authenticatedUserId: input.userId,
-        indexedRevision: record.indexedRevision,
+        indexedRevision: record.currentRevision,
         checkoutKey: repositoryCheckoutKey(record.repositoryId),
-        checkoutPath: repositoryCheckoutPath(record.repositoryId),
+        checkoutPath: repositoryCheckoutPath(record.repositoryId, record.currentRevision),
         lifecycleState: record.status,
       }),
     };

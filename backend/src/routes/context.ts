@@ -20,7 +20,7 @@ import { isDeadlineExceeded } from "../runtime/deadline.js";
 import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
-import { validateRepositoryCheckout } from "../services/security/repositoryPaths.js";
+import { validatePublishedRepositoryCheckout } from "../services/repository/ownershipGuard.js";
 
 const BuildBody = z.object({ repositoryId: RepositoryIdSchema });
 
@@ -57,7 +57,7 @@ contextRouter.post("/build", async (c) => {
     return fail(c, { code: "repository_not_ready", message: "Repository indexing is not ready." }, 409);
   }
   try {
-    const checkout = await validateRepositoryCheckout(access.repository.repositoryId, { mustExist: true });
+    const checkout = await validatePublishedRepositoryCheckout(access.repository);
     const data = await buildRepositoryContext(checkout, access.repository.repositoryId, {
       signal: getRequestDeadline(c)?.signal,
       repositoryVersion: access.repository.indexedRevision,
