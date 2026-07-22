@@ -177,6 +177,6 @@ describe("repository cleanup route", () => {
     expect(getRepositoryFileSnapshot(REPO_ID)).toBeNull();
     expect(getRepositorySymbols(REPO_ID)).toEqual([]);
     expect(getFileSymbolMaps(REPO_ID)).toEqual([]);
-    expect(getRepositoryOwner(REPO_ID)).toBe(USER_A.userId);
+    expect(getRepositoryOwner(REPO_ID)).toBeUndefined();
   });
 });

@@ -269,39 +269,12 @@ describe("repository cleanup integration", () => {
     expect(getSessionById("session-a")).toBeNull();
     expect(getSessionById("session-z")).toBeNull();
     expect(getSessionById("session-other")).not.toBeNull();
-    expect(getRepositoryOwner(REPO_ID)).toBe(USER_A.userId);
+    expect(getRepositoryOwner(REPO_ID)).toBeUndefined();
 
     const afterDashboard = await dashboard(token);
 
-    expect(afterDashboard.status).toBe(200);
-    expect(afterDashboard.body.success).toBe(true);
-    expect(afterDashboard.body.data?.metrics).toEqual({
-      files: 0,
-      chunks: 0,
-      symbols: 0,
-      graphNodes: 0,
-      graphEdges: 0,
-    });
-    expect(afterDashboard.body.data?.status).toMatchObject({
-      repository: REPO_ID,
-      health: {
-        repository: REPO_ID,
-        indexed: false,
-        healthy: false,
-        stale: false,
-        status: "missing",
-        lastIndexedAt: null,
-        lastAccessedAt: null,
-      },
-      readiness: {
-        repository: REPO_ID,
-        ready: false,
-        status: "missing",
-        indexedFiles: 0,
-        indexedChunks: 0,
-        lastIndexedAt: null,
-      },
-    });
+    expect(afterDashboard.status).toBe(404);
+    expect(afterDashboard.body.error?.code).toBe("repo_not_connected");
   });
 
   it("is deterministic when cleanup is called twice", async () => {
@@ -324,7 +297,7 @@ describe("repository cleanup integration", () => {
       "symbolRecords:src/a.ts:1:1:function:alpha",
       "symbolRecords:src/z.ts:5:5:function:zeta",
     ]);
-    expectEmptyCleanupReport(second.body.data as RepositoryCleanupReport);
+    expect(second.body.data).toEqual(first.body.data);
     expect(getRepositoryIndexMetadata(OWNER, REPO)).toBeNull();
   });
 
@@ -353,7 +326,7 @@ describe("repository cleanup integration", () => {
     expect(getRepositoryOwner(REPO_ID)).toBe(USER_A.userId);
   });
 
-  it("allows an already cleaned repository when ownership still exists", async () => {
+  it("deletes a connected repository without indexed artifacts", async () => {
     setRepositoryOwner(REPO_ID, USER_A.userId);
     const token = await authHeader(USER_A);
 
@@ -365,17 +338,7 @@ describe("repository cleanup integration", () => {
 
     const afterDashboard = await dashboard(token);
 
-    expect(afterDashboard.status).toBe(200);
-    expect(afterDashboard.body.data?.metrics).toEqual({
-      files: 0,
-      chunks: 0,
-      symbols: 0,
-      graphNodes: 0,
-      graphEdges: 0,
-    });
-    expect(afterDashboard.body.data?.status).toMatchObject({
-      health: { status: "missing" },
-      readiness: { status: "missing" },
-    });
+    expect(afterDashboard.status).toBe(404);
+    expect(afterDashboard.body.error?.code).toBe("repo_not_connected");
   });
 });
