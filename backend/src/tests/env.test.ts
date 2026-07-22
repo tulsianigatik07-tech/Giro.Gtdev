@@ -418,6 +418,9 @@ test("rate limit configuration accepts positive integers", () => {
     RATE_LIMIT_ASK_GIRO_MAX_REQUESTS: "7",
     RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS: "8",
     RATE_LIMIT_INDEXING_MAX_REQUESTS: "9",
+    RATE_LIMIT_AUTH_BURST: "2",
+    RATE_LIMIT_AUTH_WINDOW_MS: "2500",
+    TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
   });
 
   assert.equal(result.RATE_LIMIT_WINDOW_MS, 1500);
@@ -427,9 +430,21 @@ test("rate limit configuration accepts positive integers", () => {
   assert.equal(result.RATE_LIMIT_ASK_GIRO_MAX_REQUESTS, 7);
   assert.equal(result.RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS, 8);
   assert.equal(result.RATE_LIMIT_INDEXING_MAX_REQUESTS, 9);
+  assert.equal(result.RATE_LIMIT_AUTH_BURST, 2);
+  assert.equal(result.RATE_LIMIT_AUTH_WINDOW_MS, 2500);
+  assert.deepEqual(result.TRUSTED_PROXY_CIDRS, ["10.0.0.0/8", "2001:db8::/32"]);
   assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_WINDOW_MS: "0" }));
   assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_MAX_REQUESTS: "1.5" }));
   assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_AUTH_MAX_REQUESTS: "0" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_AUTH_BURST: "-1" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_AUTH_WINDOW_MS: "999" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, TRUSTED_PROXY_CIDRS: "10.0.0.0/99" }));
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    NODE_ENV: "production",
+    JWT_SECRET: "a-production-secret",
+    RATE_LIMIT_BACKEND: "memory",
+  }));
 });
 
 test("shutdown timeout is bounded", () => {

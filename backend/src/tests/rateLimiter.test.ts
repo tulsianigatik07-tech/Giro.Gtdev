@@ -15,7 +15,7 @@ function createTestApp(options: Parameters<typeof rateLimiter>[0]) {
     if (userId) setAuthenticatedUser(c, { userId, email: `${userId}@test.dev` });
     await next();
   });
-  app.use("/limited", rateLimiter(options));
+  app.use("/limited", rateLimiter({ trustedProxyCidrs: ["127.0.0.1/32", "10.0.0.0/8"], ...options }));
   app.get("/limited", (c) => c.json({ success: true }));
   app.get("/health", (c) => c.json({ status: "ok" }));
   return app;
@@ -69,11 +69,11 @@ test("uses the first forwarded IP when no user is authenticated", async () => {
   assert.equal((await app.request("/limited", { headers: { "x-forwarded-for": "203.0.113.2" } })).status, 200);
 });
 
-test("authenticated limits use both IP and user ID", async () => {
+test("authenticated limits use the user bucket independently of IP", async () => {
   const app = createTestApp({ windowMs: 60_000, maxRequests: 1 });
   await app.request("/limited", { headers: { "x-test-user": "user-a", "x-forwarded-for": "203.0.113.1" } });
   assert.equal((await app.request("/limited", { headers: { "x-test-user": "user-a", "x-forwarded-for": "203.0.113.1" } })).status, 429);
-  assert.equal((await app.request("/limited", { headers: { "x-test-user": "user-a", "x-forwarded-for": "203.0.113.2" } })).status, 200);
+  assert.equal((await app.request("/limited", { headers: { "x-test-user": "user-a", "x-forwarded-for": "203.0.113.2" } })).status, 429);
 });
 
 test("authenticated and anonymous requests from the same IP are isolated", async () => {
