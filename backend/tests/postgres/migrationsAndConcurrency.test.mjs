@@ -17,6 +17,7 @@ const availability = await postgresAvailability();
 const skip = availability.available ? false : availability.reason;
 const REVISION_A = "a".repeat(40);
 const REVISION_B = "b".repeat(40);
+const REVISION_C = "c".repeat(40);
 const WORKER_CONTRACT_MIGRATION = "20260802000000_add_worker_functional_readiness.sql";
 const EMBEDDING_INDEX_MIGRATION = "20260803000000_add_embedding_index_versions.sql";
 
@@ -301,14 +302,24 @@ test("artifact publication is atomic, revision-safe, fenced, and GC-safe concurr
     assert.equal(scalar(url, `select count(*) from public.get_repository_artifacts('acme/api','${REVISION_A}')`), "1");
     assert.equal(scalar(url, `select count(*) from public.get_current_repository_artifacts('acme/api')`), "1");
 
+    scalar(url, createJobSql("acme/api"));
+    const third = claimedJob(url, "publisher-3");
+    markRunning(url, third);
+    stageRevision(url, third, REVISION_C);
+    stageEmbeddingIndex(url, third, REVISION_C);
+    assert.equal(publishRevision(url, third, REVISION_C).status, 0);
+    assert.equal(scalar(url, "select indexed_revision from public.repositories where repository_id='acme/api'"), REVISION_C);
+
     const cleanup = "select public.collect_repository_artifacts('acme/api',1)";
     const [cleanupA, cleanupB] = await Promise.all([psqlAsync(url, cleanup), psqlAsync(url, cleanup)]);
     assert.equal(cleanupA.status, 0);
     assert.equal(cleanupB.status, 0);
     assert.equal(Number(cleanupA.stdout.trim()) + Number(cleanupB.stdout.trim()), 1);
+    assert.equal(scalar(url, `select count(*) from public.get_repository_artifacts('acme/api','${REVISION_A}')`), "0");
+    assert.equal(scalar(url, `select count(*) from public.get_repository_artifacts('acme/api','${REVISION_B}')`), "1");
     assert.equal(scalar(url, `select count(*) from public.repository_snapshots
-      where repository_id='acme/api' and revision='${REVISION_B}' and status='published'`), "1");
-    assert.equal(scalar(url, "select count(*) from public.indexing_jobs where status='succeeded'"), "2");
+      where repository_id='acme/api' and revision='${REVISION_C}' and status='published'`), "1");
+    assert.equal(scalar(url, "select count(*) from public.indexing_jobs where status='succeeded'"), "3");
     assert.equal(scalar(url, "select count(*)-count(distinct job_id) from public.indexing_jobs where status='succeeded'"), "0");
   });
 });

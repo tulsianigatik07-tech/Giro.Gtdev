@@ -171,10 +171,17 @@ export async function withDisposableDatabase(availability, callback) {
   const create = runSync("createdb", ["--maintenance-db", availability.adminUrl.href, databaseName]);
   if (create.status !== 0) throw safeError(create, "Disposable PostgreSQL database creation failed");
   const url = databaseUrl(availability.adminUrl, databaseName);
+  let callbackResult;
+  let primaryError;
   try {
     bootstrapSupabaseDatabase(url);
-    return await callback({ url, databaseName });
-  } finally {
+    callbackResult = await callback({ url, databaseName });
+  } catch (error) {
+    primaryError = error;
+  }
+
+  let cleanupError;
+  try {
     if (!databaseName.startsWith(TEST_DATABASE_PREFIX)) throw new Error("Refusing unsafe PostgreSQL cleanup.");
     psql(availability.adminUrl, `
       select pg_terminate_backend(pid) from pg_stat_activity
@@ -182,7 +189,22 @@ export async function withDisposableDatabase(availability, callback) {
     `, { allowFailure: true });
     const drop = runSync("dropdb", ["--if-exists", "--maintenance-db", availability.adminUrl.href, databaseName]);
     if (drop.status !== 0) throw safeError(drop, "Disposable PostgreSQL database cleanup failed");
+  } catch (error) {
+    cleanupError = error;
   }
+
+  if (primaryError) {
+    if (!(primaryError instanceof Error)) {
+      primaryError = new Error(String(primaryError));
+    }
+    if (cleanupError) {
+      primaryError.cleanupError = cleanupError;
+      primaryError.message += `\nSecondary cleanup failure: ${cleanupError.message}`;
+    }
+    throw primaryError;
+  }
+  if (cleanupError) throw cleanupError;
+  return callbackResult;
 }
 
 export function scalar(url, sql) {

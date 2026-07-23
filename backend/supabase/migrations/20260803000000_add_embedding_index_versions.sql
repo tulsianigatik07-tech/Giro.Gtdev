@@ -629,6 +629,11 @@ begin
   join pg_catalog.pg_namespace namespace on namespace.oid = vector_type.typnamespace
   where extension.extname = 'vector';
 
+  execute pg_catalog.format(
+    'grant usage on schema %I to service_role',
+    vector_schema
+  );
+
   for existing_function in
     select proc.oid, pg_catalog.pg_get_function_identity_arguments(proc.oid) identity_arguments
     from pg_catalog.pg_proc proc
@@ -975,7 +980,9 @@ begin
     join pg_catalog.pg_namespace namespace on namespace.oid = proc.pronamespace
     where namespace.nspname = 'public'
       and proc.proname = contract.name
-      and pg_catalog.oidvectortypes(proc.proargtypes) = contract.identity_arguments;
+      and replace(
+        pg_catalog.oidvectortypes(proc.proargtypes), ', ', ','
+      ) = contract.identity_arguments;
 
     if function_oid is null then
       failures := array_append(failures, contract.name || ':missing_or_wrong_signature');

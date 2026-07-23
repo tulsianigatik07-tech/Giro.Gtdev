@@ -131,7 +131,9 @@ begin
     join pg_catalog.pg_namespace namespace on namespace.oid = proc.pronamespace
     where namespace.nspname = 'public'
       and proc.proname = contract.name
-      and pg_catalog.oidvectortypes(proc.proargtypes) = contract.identity_arguments;
+      and replace(
+        pg_catalog.oidvectortypes(proc.proargtypes), ', ', ','
+      ) = contract.identity_arguments;
 
     if function_oid is null then
       failures := array_append(failures, contract.name || ':missing_or_wrong_signature');
