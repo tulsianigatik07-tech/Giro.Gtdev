@@ -134,6 +134,13 @@ export class MetricsRegistry {
   private symbolGraphEdges = 0;
   private symbolExpansions = 0;
   private symbolExpansionBudgetDrops = 0;
+  private graphParsedFiles = 0;
+  private graphParserFailures = 0;
+  private graphUnresolvedImports = 0;
+  private graphPublicationFailures = 0;
+  private graphExpansionUsage = 0;
+  private graphExpandedCandidates = 0;
+  private graphRetrievalDurationMs = 0;
   private repositorySummaries = 0;
   private repositorySummaryGenerationMs = 0;
   private repositorySummaryCacheHits = 0;
@@ -415,6 +422,34 @@ export class MetricsRegistry {
     this.symbolExpansionBudgetDrops += Math.max(0, Math.trunc(count));
   }
 
+  incrementGraphParsedFiles(count = 1): void {
+    this.graphParsedFiles += Math.max(0, Math.trunc(count));
+  }
+
+  incrementGraphParserFailures(count = 1): void {
+    this.graphParserFailures += Math.max(0, Math.trunc(count));
+  }
+
+  incrementGraphUnresolvedImports(count = 1): void {
+    this.graphUnresolvedImports += Math.max(0, Math.trunc(count));
+  }
+
+  incrementGraphPublicationFailures(count = 1): void {
+    this.graphPublicationFailures += Math.max(0, Math.trunc(count));
+  }
+
+  incrementGraphExpansionUsage(count = 1): void {
+    this.graphExpansionUsage += Math.max(0, Math.trunc(count));
+  }
+
+  incrementGraphExpandedCandidates(count = 1): void {
+    this.graphExpandedCandidates += Math.max(0, Math.trunc(count));
+  }
+
+  observeGraphRetrievalDurationMs(milliseconds: number): void {
+    this.graphRetrievalDurationMs = Math.min(60_000, Math.max(0, milliseconds));
+  }
+
   incrementRepositorySummary(): void {
     this.repositorySummaries += 1;
   }
@@ -688,6 +723,27 @@ export class MetricsRegistry {
       "# HELP giro_symbol_expansion_budget_drops_total Symbol graph expansions dropped by context budget.",
       "# TYPE giro_symbol_expansion_budget_drops_total counter",
       `giro_symbol_expansion_budget_drops_total ${this.symbolExpansionBudgetDrops}`,
+      "# HELP giro_repository_graph_parsed_files_total TypeScript and JavaScript files parsed into durable graphs.",
+      "# TYPE giro_repository_graph_parsed_files_total counter",
+      `giro_repository_graph_parsed_files_total ${this.graphParsedFiles}`,
+      "# HELP giro_repository_graph_parser_failures_total Files with parser diagnostics.",
+      "# TYPE giro_repository_graph_parser_failures_total counter",
+      `giro_repository_graph_parser_failures_total ${this.graphParserFailures}`,
+      "# HELP giro_repository_graph_unresolved_imports_total Imports without a repository-local target.",
+      "# TYPE giro_repository_graph_unresolved_imports_total counter",
+      `giro_repository_graph_unresolved_imports_total ${this.graphUnresolvedImports}`,
+      "# HELP giro_repository_graph_publication_failures_total Durable graph publication failures.",
+      "# TYPE giro_repository_graph_publication_failures_total counter",
+      `giro_repository_graph_publication_failures_total ${this.graphPublicationFailures}`,
+      "# HELP giro_repository_graph_expansion_usage_total Retrievals that used graph expansion.",
+      "# TYPE giro_repository_graph_expansion_usage_total counter",
+      `giro_repository_graph_expansion_usage_total ${this.graphExpansionUsage}`,
+      "# HELP giro_repository_graph_expanded_candidates_total Candidates introduced by graph traversal.",
+      "# TYPE giro_repository_graph_expanded_candidates_total counter",
+      `giro_repository_graph_expanded_candidates_total ${this.graphExpandedCandidates}`,
+      "# HELP giro_repository_graph_retrieval_duration_ms Last graph traversal duration in milliseconds.",
+      "# TYPE giro_repository_graph_retrieval_duration_ms gauge",
+      `giro_repository_graph_retrieval_duration_ms ${this.graphRetrievalDurationMs}`,
       "# HELP giro_repository_summaries_total Repository architecture summaries generated.",
       "# TYPE giro_repository_summaries_total counter",
       `giro_repository_summaries_total ${this.repositorySummaries}`,

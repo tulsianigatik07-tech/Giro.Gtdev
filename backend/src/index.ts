@@ -30,6 +30,7 @@ import {
   validateHybridRetrievalV2Config,
 } from "./services/retrieval/hybridV2/config.js";
 import { runtimeCrossEncoder } from "./services/retrieval/hybridV2/crossEncoder.js";
+import { runtimeRepositoryGraphStore } from "./services/repositoryGraph/graphStore.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -138,6 +139,23 @@ try {
   logger.error("embedding_index_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "embedding_index_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryGraphStore.verify();
+  const cleanedVersionCount = await runtimeRepositoryGraphStore.recover();
+  logger.info("repository_graph_contract_verified", {
+    source: "backend_startup",
+    parserVersion: "typescript-compiler-v1",
+    cleanedVersionCount,
+  });
+} catch {
+  logger.error("repository_graph_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_graph_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

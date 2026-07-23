@@ -30,6 +30,7 @@ function emptySignals(): HybridRetrievalSignals {
     dependencyGraphImportance: 0,
     freshness: 0,
     revisionMatch: 0,
+    graphRelationship: 0,
   };
 }
 
@@ -76,6 +77,8 @@ export function mergeRetrievalCandidates(
       Math.max(candidate.signals.symbolMatch, score);
     if (input.source === "path") candidate.signals.pathSimilarity =
       Math.max(candidate.signals.pathSimilarity, score);
+    if (input.source === "graph") candidate.signals.graphRelationship =
+      Math.max(candidate.signals.graphRelationship ?? 0, score);
     if (!input.isExpanded) candidate.expansionMultiplier = 1;
     if (
       score > candidate.result.score ||
@@ -103,7 +106,10 @@ export function mergeRetrievalCandidates(
     }
     for (const source of candidate.sources) existing.sources.add(source);
     for (const key of Object.keys(existing.signals) as Array<keyof HybridRetrievalSignals>) {
-      existing.signals[key] = Math.max(existing.signals[key], candidate.signals[key]);
+      existing.signals[key] = Math.max(
+        existing.signals[key] ?? 0,
+        candidate.signals[key] ?? 0,
+      );
     }
     diagnostics.discardedCandidates.push({
       key: candidateKey(candidate),

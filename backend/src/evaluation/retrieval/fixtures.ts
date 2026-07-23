@@ -223,17 +223,32 @@ export function generateOfflineCandidates(
 export function fixtureArtifacts(
   fixture: RepositoryFixture,
 ): PublishedRepositoryArtifacts {
+  const graphVersion = `fixture:${fixture.repositoryId}:${fixture.repositoryRevision}`;
   const nodes = fixture.files.flatMap((file) => file.chunks.flatMap((chunk) =>
-    chunk.symbols.map((symbol, index) => ({
-      symbolId: `${chunk.chunkId}:${symbol}`,
+    chunk.symbols.map((symbol, index) => {
+      const nodeId = `${chunk.chunkId}:${symbol}`;
+      return {
+      nodeId,
+      symbolId: nodeId,
+      graphVersion,
       repositoryId: fixture.repositoryId,
+      repositoryRevision: fixture.repositoryRevision,
       name: symbol,
+      qualifiedName: symbol,
       kind: "exported_member" as const,
       language: file.language,
       file: file.filePath,
       line: chunk.startLine + index,
+      endLine: chunk.startLine + index,
+      column: 1,
+      endColumn: 1,
+      exported: true,
+      defaultExport: false,
+      parserVersion: "fixture-v1",
+      metadata: {},
       repositoryVersion: fixture.repositoryRevision,
-    }))));
+    };
+    })));
   const summaryItems = fixture.files
     .filter((file) => !file.generated && !file.vendor)
     .slice(0, 3)
@@ -243,10 +258,32 @@ export function fixtureArtifacts(
     repositoryId: fixture.repositoryId,
     repositoryRevision: fixture.repositoryRevision,
     graph: {
+      graphVersion,
       repositoryId: fixture.repositoryId,
+      repositoryRevision: fixture.repositoryRevision,
       repositoryVersion: fixture.repositoryRevision,
+      parserVersion: "fixture-v1",
+      status: "published",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      publishedAt: "2026-01-01T00:00:00.000Z",
       nodes,
       edges: [],
+      diagnostics: {
+        parsedFileCount: fixture.files.length,
+        parserFailureCount: 0,
+        unresolvedImportCount: 0,
+        importCount: 0,
+        unresolvedFileRatio: 0,
+        parserFailureRatio: 0,
+        orphanSymbolCount: 0,
+        duplicateNodeIdCount: 0,
+        duplicateEdgeIdCount: 0,
+        missingEndpointCount: 0,
+        impossibleSelfEdgeCount: 0,
+        graphBytes: 0,
+        durationMs: 0,
+        failures: [],
+      },
     },
     summary: {
       repositoryId: fixture.repositoryId,

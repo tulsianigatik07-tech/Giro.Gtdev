@@ -1,7 +1,12 @@
 import type { PublishedRepositoryArtifacts } from "../../repository/artifacts/repositoryArtifactStore.js";
 import type { RetrievalResult } from "../types.js";
 
-export type HybridRetrievalSource = "lexical" | "semantic" | "symbol" | "path";
+import type {
+  RepositoryGraphTraversalWeights,
+} from "../../repositoryGraph/graphTraversal.js";
+import type { RepositorySymbolGraph } from "../../repositoryGraph/graphTypes.js";
+
+export type HybridRetrievalSource = "lexical" | "semantic" | "symbol" | "path" | "graph";
 
 export interface HybridRetrievalSignals {
   semanticSimilarity: number;
@@ -13,6 +18,7 @@ export interface HybridRetrievalSignals {
   dependencyGraphImportance: number;
   freshness: number;
   revisionMatch: number;
+  graphRelationship?: number;
 }
 
 export interface StructuralSignals {
@@ -42,6 +48,8 @@ export interface SourceCandidate {
   source: HybridRetrievalSource;
   result: RetrievalResult;
   isExpanded?: boolean;
+  graphDistance?: number;
+  graphEdgeKind?: string;
 }
 
 export interface DiscardedCandidate {
@@ -69,6 +77,14 @@ export interface HybridRetrievalDiagnostics {
   diversityDecisions: Array<{ key: string; decision: "selected" | "discarded"; reason?: string }>;
   discardedCandidates: DiscardedCandidate[];
   tokenUsage: { used: number; maximum: number };
+  graph: {
+    used: boolean;
+    graphVersion: string | null;
+    expandedCandidates: number;
+    traversalDepth: number;
+    durationMs: number;
+    weights: RepositoryGraphTraversalWeights;
+  };
 }
 
 export interface HybridRetrievalWeights {
@@ -81,6 +97,7 @@ export interface HybridRetrievalWeights {
   dependencyGraphImportance: number;
   freshness: number;
   revisionMatch: number;
+  graphRelationship?: number;
 }
 
 export interface HybridRetrievalV2Config {
@@ -93,6 +110,12 @@ export interface HybridRetrievalV2Config {
   rerankerWeight: number;
   rerankerProvider: "deterministic" | "openai";
   rerankerModel: string;
+  graphTraversal?: {
+    enabled: boolean;
+    maxDepth: number;
+    maxCandidates: number;
+    weights: RepositoryGraphTraversalWeights;
+  };
 }
 
 export interface HybridRetrievalPipelineInput {
@@ -103,6 +126,7 @@ export interface HybridRetrievalPipelineInput {
   artifacts: PublishedRepositoryArtifacts | null;
   limit: number;
   expansionMultiplier?: number;
+  graph?: RepositorySymbolGraph | null;
 }
 
 export function candidateKey(candidate: Pick<HybridRetrievalCandidate, "result">): string {

@@ -12,7 +12,11 @@ export type RepositoryQuotaReason =
   | "indexing_duration"
   | "concurrent_indexing"
   | "indexed_repositories"
-  | "user_storage";
+  | "user_storage"
+  | "graph_nodes"
+  | "graph_edges"
+  | "graph_duration"
+  | "graph_bytes";
 
 export interface RepositoryQuotas {
   maxRepositoryBytes: number;
@@ -94,6 +98,10 @@ export function repositoryQuotaErrorFromMessage(message: string | undefined): Re
     concurrent_indexing: runtimeRepositoryQuotas.maxConcurrentIndexingPerUser,
     indexed_repositories: runtimeRepositoryQuotas.maxIndexedRepositoriesPerUser,
     user_storage: runtimeRepositoryQuotas.maxStorageBytesPerUser,
+    graph_nodes: env.REPOSITORY_GRAPH_MAX_NODES,
+    graph_edges: env.REPOSITORY_GRAPH_MAX_EDGES,
+    graph_duration: env.REPOSITORY_GRAPH_MAX_DURATION_MS,
+    graph_bytes: env.REPOSITORY_GRAPH_MAX_BYTES,
   };
   const limit = limits[reason];
   return limit === undefined ? null : new RepositoryQuotaError(reason, limit, limit + 1);

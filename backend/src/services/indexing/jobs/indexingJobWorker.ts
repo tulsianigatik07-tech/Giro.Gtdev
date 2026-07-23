@@ -69,6 +69,16 @@ import {
   type EmbeddingIndexStore,
 } from "../../embeddings/indexStore.js";
 import { runtimeEmbeddingIndexConfiguration } from "../../embeddings/indexVersion.js";
+import { parseRepositoryAst } from "../../repositoryGraph/astParser.js";
+import {
+  buildAstRepositoryGraph,
+  deterministicGraphVersion,
+} from "../../repositoryGraph/graphBuilder.js";
+import {
+  runtimeRepositoryGraphStore,
+  type RepositoryGraphStore,
+} from "../../repositoryGraph/graphStore.js";
+import { REPOSITORY_GRAPH_PARSER_VERSION } from "../../repositoryGraph/graphTypes.js";
 
 export interface IndexingJobProgressPublisher {
   publish(job: IndexingJob): void | Promise<void>;
@@ -93,6 +103,7 @@ export interface IndexingPipelineInput {
   snapshotStore?: RepositorySnapshotStore;
   artifactStore?: RepositoryArtifactStore;
   embeddingIndexStore?: EmbeddingIndexStore;
+  graphStore?: RepositoryGraphStore;
   quotas?: RepositoryQuotas;
 }
 
@@ -363,6 +374,7 @@ export async function executeRepositoryIndexingPipeline(
   const snapshotStore = input.snapshotStore ?? runtimeRepositorySnapshotStore;
   const artifactStore = input.artifactStore ?? runtimeRepositoryArtifactStore;
   const embeddingIndexStore = input.embeddingIndexStore ?? runtimeEmbeddingIndexStore;
+  const graphStore = input.graphStore ?? runtimeRepositoryGraphStore;
   const quotas = input.quotas ?? runtimeRepositoryQuotas;
 
   await reportStage({ stage: "clone", progress: 10 });
@@ -397,7 +409,23 @@ export async function executeRepositoryIndexingPipeline(
   const staged = await snapshotStore.begin(identity, input.signal);
   const embeddingConfiguration = runtimeEmbeddingIndexConfiguration(repoId, revision);
   const embeddingStaged = await embeddingIndexStore.begin(identity, embeddingConfiguration, input.signal);
-  if (staged.alreadyPublished && staged.counts && embeddingStaged.alreadyPublished) {
+  const graphVersion = deterministicGraphVersion(
+    repoId,
+    revision,
+    REPOSITORY_GRAPH_PARSER_VERSION,
+  );
+  const graphStaged = await graphStore.begin(
+    identity,
+    graphVersion,
+    REPOSITORY_GRAPH_PARSER_VERSION,
+    input.signal,
+  );
+  if (
+    staged.alreadyPublished &&
+    staged.counts &&
+    embeddingStaged.alreadyPublished &&
+    graphStaged.alreadyPublished
+  ) {
     const indexOptions = {
       indexMode: "incremental" as const,
       changedFileCount: 0,
@@ -417,6 +445,16 @@ export async function executeRepositoryIndexingPipeline(
 
   try {
     if (staged.alreadyPublished && staged.counts) {
+      let backfilledGraph: Awaited<ReturnType<typeof buildStageValidateRepositoryGraph>> | null = null;
+      if (!graphStaged.alreadyPublished) {
+        backfilledGraph = await buildStageValidateRepositoryGraph({
+          clonePath,
+          identity,
+          graphStore,
+          graphVersion,
+          signal: input.signal,
+        });
+      }
       await reportStage({ stage: "chunk", progress: 80 });
       input.signal?.throwIfAborted();
       await reportStage({ stage: "embed", progress: 90 });
@@ -438,7 +476,12 @@ export async function executeRepositoryIndexingPipeline(
         context.totalChunks,
         input.signal,
       );
-      const counts = { ...staged.counts, chunkCount: context.totalChunks };
+      const counts = {
+        ...staged.counts,
+        chunkCount: context.totalChunks,
+        graphNodeCount: backfilledGraph?.nodes.length ?? staged.counts.graphNodeCount,
+        graphEdgeCount: backfilledGraph?.edges.length ?? staged.counts.graphEdgeCount,
+      };
       const indexOptions = {
         indexMode: "full" as const,
         changedFileCount: staged.counts.fileCount,
@@ -453,6 +496,7 @@ export async function executeRepositoryIndexingPipeline(
         maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
         maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
       }, input.signal);
+      await graphStore.publish(identity, graphVersion, input.signal);
       return { counts, indexOptions, publicationHandled: true };
     }
     return await buildAndPublishRepositorySnapshot({
@@ -465,6 +509,8 @@ export async function executeRepositoryIndexingPipeline(
       artifactStore,
       embeddingIndexStore,
       embeddingConfiguration,
+      graphStore,
+      graphVersion,
     });
   } catch (error) {
     try {
@@ -474,6 +520,20 @@ export async function executeRepositoryIndexingPipeline(
         repositoryId: repoId,
         revision,
         embeddingVersion: embeddingConfiguration.embeddingVersion,
+        jobId: job.jobId,
+      });
+    }
+    try {
+      await graphStore.discard(identity, graphVersion, {
+        code: "graph_publication_failed",
+        message: sanitizedMessage(errorMessage(error)),
+      });
+      runtimeMetrics.incrementGraphPublicationFailures();
+    } catch {
+      logger.error("repository_graph_rollback_failed", {
+        repositoryId: repoId,
+        revision,
+        graphVersion,
         jobId: job.jobId,
       });
     }
@@ -499,6 +559,54 @@ export async function executeRepositoryIndexingPipeline(
   }
 }
 
+async function buildStageValidateRepositoryGraph(input: {
+  clonePath: TrustedRepositoryCheckoutPath;
+  identity: Parameters<RepositoryGraphStore["begin"]>[0];
+  graphStore: RepositoryGraphStore;
+  graphVersion: string;
+  signal?: AbortSignal;
+}) {
+  const startedAt = performance.now();
+  const parsedFiles = await parseRepositoryAst(input.clonePath, {
+    signal: input.signal,
+    maxFileBytes: runtimeRepositoryQuotas.maxFileBytes,
+  });
+  const graph = buildAstRepositoryGraph({
+    repositoryId: input.identity.repositoryId,
+    repositoryRevision: input.identity.revision,
+    parserVersion: REPOSITORY_GRAPH_PARSER_VERSION,
+    parsedFiles,
+    durationMs: performance.now() - startedAt,
+  });
+  if (graph.graphVersion !== input.graphVersion) {
+    throw new Error("Repository graph version mismatch.");
+  }
+  runtimeMetrics.incrementGraphParsedFiles(graph.diagnostics.parsedFileCount);
+  runtimeMetrics.incrementGraphParserFailures(graph.diagnostics.parserFailureCount);
+  runtimeMetrics.incrementGraphUnresolvedImports(graph.diagnostics.unresolvedImportCount);
+  runtimeMetrics.setSymbolGraphSize(graph.nodes.length, graph.edges.length);
+  await input.graphStore.stage(input.identity, graph, input.signal);
+  await input.graphStore.validate(
+    input.identity,
+    input.graphVersion,
+    undefined,
+    input.signal,
+  );
+  logger.info("repository_graph_validated", {
+    repositoryId: input.identity.repositoryId,
+    repositoryRevision: input.identity.revision,
+    graphVersion: graph.graphVersion,
+    parserVersion: graph.parserVersion,
+    parsedFiles: graph.diagnostics.parsedFileCount,
+    parserFailures: graph.diagnostics.parserFailureCount,
+    unresolvedImports: graph.diagnostics.unresolvedImportCount,
+    nodes: graph.nodes.length,
+    edges: graph.edges.length,
+    durationMs: Math.round(graph.diagnostics.durationMs),
+  });
+  return graph;
+}
+
 async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & {
   clonePath: TrustedRepositoryCheckoutPath;
   revision: string;
@@ -507,6 +615,8 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   artifactStore: RepositoryArtifactStore;
   embeddingIndexStore: EmbeddingIndexStore;
   embeddingConfiguration: ReturnType<typeof runtimeEmbeddingIndexConfiguration>;
+  graphStore: RepositoryGraphStore;
+  graphVersion: string;
 }): Promise<IndexingPipelineResult> {
   const {
     job,
@@ -518,6 +628,8 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     artifactStore,
     embeddingIndexStore,
     embeddingConfiguration,
+    graphStore,
+    graphVersion,
   } = input;
   const owner = job.repositoryOwner;
   const repo = job.repositoryName;
@@ -551,7 +663,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     insights: detectInsights(builtGraph.nodes, builtGraph.edges),
   };
   const repositoryVersion = revision;
-  const symbolGraph = buildRepositorySymbolGraph({
+  const legacySymbolGraph = buildRepositorySymbolGraph({
     repositoryId: repoId,
     repositoryVersion,
     symbolMaps,
@@ -560,8 +672,8 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   graphLogger.info("symbol_graph_built", {
     repositoryId: repoId,
     repositoryVersion,
-    nodes: symbolGraph.nodes.length,
-    edges: symbolGraph.edges.length,
+    nodes: legacySymbolGraph.nodes.length,
+    edges: legacySymbolGraph.edges.length,
   });
   const summary = buildRepositoryArchitectureSummary({
     repositoryId: repoId,
@@ -623,7 +735,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
 
   const snapshotTimestamp = new Date().toISOString();
   await artifactStore.stage(identity, {
-    graph: symbolGraph,
+    graph: legacySymbolGraph,
     summary,
     graphSource: symbolMaps,
     symbolIndex: symbolRecordsFromFileMaps(symbolMaps),
@@ -637,6 +749,15 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
       })),
     },
   }, quotas.maxArtifactBytes, input.signal);
+  const durableGraph = await buildStageValidateRepositoryGraph({
+    clonePath,
+    identity,
+    graphStore,
+    graphVersion,
+    signal: input.signal,
+  });
+  counts.graphNodeCount = durableGraph.nodes.length;
+  counts.graphEdgeCount = durableGraph.edges.length;
   input.signal?.throwIfAborted();
   await sealRepositoryCheckout(clonePath);
   await snapshotStore.publish({
@@ -649,6 +770,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
     maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
   }, input.signal);
+  await graphStore.publish(identity, graphVersion, input.signal);
   try {
     await refreshPreviousCheckoutReadLease(repoId);
   } catch (error: unknown) {
@@ -676,7 +798,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
       message: error instanceof Error ? error.message : "unknown",
     });
   }
-  runtimeMetrics.setSymbolGraphSize(symbolGraph.nodes.length, symbolGraph.edges.length);
+  runtimeMetrics.setSymbolGraphSize(durableGraph.nodes.length, durableGraph.edges.length);
 
   return {
     counts,

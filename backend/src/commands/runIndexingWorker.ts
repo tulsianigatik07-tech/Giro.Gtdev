@@ -23,6 +23,7 @@ import {
   createBackendShutdown,
   installShutdownSignalHandlers,
 } from "../runtime/backendShutdown.js";
+import { runtimeRepositoryGraphStore } from "../services/repositoryGraph/graphStore.js";
 
 export function buildContinuousWorkerConfig() {
   const workerId = env.INDEXING_WORKER_ID ?? "development-worker";
@@ -50,6 +51,12 @@ export function buildContinuousWorkerConfig() {
 export async function runIndexingWorker(): Promise<0 | 1> {
   const config = buildContinuousWorkerConfig();
   const stateStore = new SupabaseIndexingWorkerStateStore(supabase);
+  await runtimeRepositoryGraphStore.verify();
+  const recoveredGraphBuilds = await runtimeRepositoryGraphStore.recover();
+  stderrLogger.info("indexing_worker_graph_contract_validated", {
+    workerId: config.workerId,
+    recoveredGraphBuilds,
+  });
   await validateIndexingWorkerStartup({
     config,
     stateStore,

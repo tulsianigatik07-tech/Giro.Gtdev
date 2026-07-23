@@ -26,6 +26,9 @@ importers:
       simple-git:
         specifier: ^3.36.0
         version: 3.36.0
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -36,9 +39,6 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.22.3
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@22.19.19)(vite@8.0.16(@types/node@22.19.19)(esbuild@0.28.0)(tsx@4.22.3))

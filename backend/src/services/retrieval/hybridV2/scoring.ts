@@ -19,6 +19,7 @@ export function scoreRetrievalCandidates(
       candidate.signals.dependencyGraphImportance * weights.dependencyGraphImportance +
       candidate.signals.freshness * weights.freshness +
       candidate.signals.revisionMatch * weights.revisionMatch
+      + (candidate.signals.graphRelationship ?? 0) * (weights.graphRelationship ?? 0)
     ) * candidate.expansionMultiplier;
     candidate.finalScore = candidate.baseScore;
   }
@@ -52,7 +53,10 @@ export function applyRerankerScores(
           candidate.signals.pathSimilarity,
         ),
         symbol: candidate.signals.symbolMatch,
-        graph: candidate.signals.dependencyGraphImportance,
+        graph: Math.max(
+          candidate.signals.dependencyGraphImportance,
+          candidate.signals.graphRelationship ?? 0,
+        ),
       },
     };
   }

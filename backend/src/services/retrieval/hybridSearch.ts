@@ -24,6 +24,10 @@ import { recordRuntimeRankingCacheHit } from "./ranking/runtimeWeightedRanker.js
 import { executeHybridRetrievalV2 } from "./hybridV2/pipeline.js";
 import { runtimeHybridRetrievalV2Config } from "./hybridV2/config.js";
 import type { HybridRetrievalDiagnostics, SourceCandidate } from "./hybridV2/types.js";
+import {
+  runtimeRepositoryGraphStore,
+} from "../repositoryGraph/graphStore.js";
+import type { RepositorySymbolGraph } from "../repositoryGraph/graphTypes.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -49,6 +53,7 @@ export interface ExecuteHybridSearchOptions {
   queryExpansion?: QueryExpansionResult;
   artifacts?: PublishedRepositoryArtifacts | null;
   diagnosticsSink?: (diagnostics: HybridRetrievalDiagnostics) => void;
+  graph?: RepositorySymbolGraph | null;
 }
 
 export function applyQueryExpansionPenalty(
@@ -78,6 +83,22 @@ export async function executeHybridSearch(
   const artifacts = options.artifacts ?? (options.repositoryVersion
     ? await runtimeRepositoryArtifactStore.load(repository, options.repositoryVersion)
     : null);
+  let publishedGraph = options.graph ?? null;
+  if (options.graph === undefined && options.repositoryVersion) {
+    try {
+      publishedGraph = await runtimeRepositoryGraphStore.loadPublished(
+        repository,
+        options.repositoryVersion,
+        options.signal,
+      );
+    } catch (error) {
+      logger.warn("repository_graph_retrieval_fallback", {
+        repository,
+        repositoryRevision: options.repositoryVersion,
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
   const expansion = options.queryExpansion ?? expandRuntimeQuery({
     repositoryId: repository,
     repositoryVersion: options.repositoryVersion ?? "unversioned",
@@ -230,6 +251,7 @@ export async function executeHybridSearch(
     artifacts,
     limit: effectiveLimit,
     expansionMultiplier: expansion.expandedScoreMultiplier,
+    graph: publishedGraph,
   }, {
     signal: options.signal,
   });

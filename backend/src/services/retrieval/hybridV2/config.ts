@@ -27,6 +27,8 @@ export function validateHybridRetrievalV2Config(
     maxSymbols: config.maxSymbols,
     maxTokens: config.maxTokens,
     maxPerFile: config.maxPerFile,
+    graphMaxDepth: config.graphTraversal?.maxDepth ?? 1,
+    graphMaxCandidates: config.graphTraversal?.maxCandidates ?? 1,
   })) {
     if (!Number.isInteger(value) || value <= 0) {
       throw new Error(`Retrieval ${name} must be a positive integer.`);
@@ -38,6 +40,10 @@ export function validateHybridRetrievalV2Config(
     throw new Error("Reranker weight must be between zero and one.");
   }
   if (!config.rerankerModel.trim()) throw new Error("Reranker model is required.");
+  const graphWeights = Object.values(config.graphTraversal?.weights ?? {});
+  if (graphWeights.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
+    throw new Error("Graph retrieval weights must be finite and between zero and one.");
+  }
 }
 
 export const runtimeHybridRetrievalV2Config: HybridRetrievalV2Config = Object.freeze({
@@ -51,6 +57,7 @@ export const runtimeHybridRetrievalV2Config: HybridRetrievalV2Config = Object.fr
     dependencyGraphImportance: env.RETRIEVAL_V2_DEPENDENCY_IMPORTANCE_WEIGHT,
     freshness: env.RETRIEVAL_V2_FRESHNESS_WEIGHT,
     revisionMatch: env.RETRIEVAL_V2_REVISION_MATCH_WEIGHT,
+    graphRelationship: 0.10,
   }),
   maxChunks: env.RETRIEVAL_V2_MAX_CHUNKS,
   maxFiles: env.RETRIEVAL_V2_MAX_FILES,
@@ -60,6 +67,21 @@ export const runtimeHybridRetrievalV2Config: HybridRetrievalV2Config = Object.fr
   rerankerWeight: env.RETRIEVAL_RERANKER_WEIGHT,
   rerankerProvider: env.RETRIEVAL_RERANKER_PROVIDER,
   rerankerModel: env.RETRIEVAL_RERANKER_MODEL,
+  graphTraversal: {
+    enabled: true,
+    maxDepth: env.REPOSITORY_GRAPH_TRAVERSAL_DEPTH,
+    maxCandidates: env.REPOSITORY_GRAPH_MAX_EXPANDED_CANDIDATES,
+    weights: {
+      directRelationship: env.RETRIEVAL_GRAPH_DIRECT_WEIGHT,
+      callEdge: env.RETRIEVAL_GRAPH_CALL_WEIGHT,
+      importEdge: env.RETRIEVAL_GRAPH_IMPORT_WEIGHT,
+      inheritance: env.RETRIEVAL_GRAPH_INHERITANCE_WEIGHT,
+      implementation: env.RETRIEVAL_GRAPH_IMPLEMENTATION_WEIGHT,
+      referenceCount: env.RETRIEVAL_GRAPH_REFERENCE_WEIGHT,
+      centrality: env.RETRIEVAL_GRAPH_CENTRALITY_WEIGHT,
+      distancePenalty: env.RETRIEVAL_GRAPH_DISTANCE_PENALTY,
+    },
+  },
 });
 
 validateHybridRetrievalV2Config(runtimeHybridRetrievalV2Config);
