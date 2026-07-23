@@ -78,6 +78,7 @@ test("snapshot adapter scopes summary, publication, and rollback to one revision
   } as never);
   await store.publish({
     ...IDENTITY,
+    embeddingVersion: "embedding-index-test",
     counts: { chunkCount: 2, fileCount: 1, symbolCount: 3, graphNodeCount: 3, graphEdgeCount: 1, summaryAvailable: true },
     indexOptions: { indexMode: "full", changedFileCount: 1, indexedRevision: REVISION_B },
   });

@@ -237,6 +237,7 @@ test("snapshot staging, summary, publication, and discard carry the exact token"
   await store.saveSummary(identity, { repositoryId: INPUT.repositoryId } as never);
   await rejectsConflict(() => store.publish({
     ...identity,
+    embeddingVersion: "embedding-index-test",
     counts: {
       chunkCount: 1, fileCount: 1, symbolCount: 1,
       graphNodeCount: 1, graphEdgeCount: 0, summaryAvailable: true,

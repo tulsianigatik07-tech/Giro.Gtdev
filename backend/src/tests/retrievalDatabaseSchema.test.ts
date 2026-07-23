@@ -7,6 +7,7 @@ import { semanticSearch } from "../services/embeddings/search.js";
 import { deleteRepositoryRetrievalData, storeChunkEmbedding } from "../services/embeddings/store.js";
 import { keywordSearch } from "../services/retrieval/keywordSearch.js";
 import { loadSummary, saveSummary } from "../services/intelligence/summaryStore.js";
+import { runtimeEmbeddingIndexConfiguration } from "../services/embeddings/indexVersion.js";
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDirectory = path.resolve(testDirectory, "../../supabase/migrations");
@@ -167,6 +168,7 @@ test("semantic adapter sends the repository and revision in the authoritative RP
     query_embedding: Array.from({ length: 1536 }, () => 0),
     match_count: 5,
     input_repository_revision: "job-1:1",
+    input_embedding_version: runtimeEmbeddingIndexConfiguration("acme/api", "job-1:1").embeddingVersion,
   });
   assert.deepEqual(results.map((result) => result.repository), ["acme/api"]);
 });
@@ -191,6 +193,7 @@ test("chunk adapter persists deterministic snapshot fields and cleanup uses one 
     repository: "acme/api", repositoryRevision: "job-1:1", filePath: "src/api.ts",
     language: "typescript", chunkIndex: 0, content: "export const route = true;",
     summary: null, startLine: 1, endLine: 1, embedding: Array.from({ length: 1536 }, () => 0), tokenCount: 7,
+    embeddingVersion: "embedding-index-test", chunkId: "src/api.ts:1-1", chunkHash: "chunk-hash",
   };
   await storeChunkEmbedding(input, { databaseClient: databaseClient as never });
   const firstId = persisted?.id;
@@ -224,6 +227,7 @@ test("keyword adapter scopes candidates by repository and revision before local 
   assert.deepEqual(filters, [
     ["repository", "acme/api"],
     ["repository_revision", "job-1:1"],
+    ["embedding_version", runtimeEmbeddingIndexConfiguration("acme/api", "job-1:1").embeddingVersion],
   ]);
   assert.deepEqual(results.map((result) => result.repository), ["acme/api"]);
 });
