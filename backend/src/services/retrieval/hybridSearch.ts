@@ -5,6 +5,7 @@ import { semanticSearch } from "../embeddings/search.js";
 import { runtimeRepositoryArtifactStore } from "../repository/artifacts/repositoryArtifactStore.js";
 import type { PublishedRepositoryArtifacts } from "../repository/artifacts/repositoryArtifactStore.js";
 import { keywordSearch } from "./keywordSearch.js";
+import { pathSearch } from "./pathSearch.js";
 import { symbolSearch } from "./symbolSearch.js";
 import type {
   HybridSearchRequest,
@@ -19,12 +20,10 @@ import { buildCitations, type CitationCandidate } from "./citations.js";
 import { stitchRuntimeChunks } from "./stitching/runtimeChunkStitcher.js";
 import { expandRuntimeQuery } from "./queryExpansion/runtimeQueryExpansion.js";
 import type { QueryExpansionResult } from "./queryExpansion/queryExpansionTypes.js";
-import {
-  rankRuntimeHybridCandidates,
-  recordRuntimeRankingCacheHit,
-  runtimeRankingWeights,
-  type RuntimeRankingCandidate,
-} from "./ranking/runtimeWeightedRanker.js";
+import { recordRuntimeRankingCacheHit } from "./ranking/runtimeWeightedRanker.js";
+import { executeHybridRetrievalV2 } from "./hybridV2/pipeline.js";
+import { runtimeHybridRetrievalV2Config } from "./hybridV2/config.js";
+import type { HybridRetrievalDiagnostics, SourceCandidate } from "./hybridV2/types.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -49,6 +48,7 @@ export interface ExecuteHybridSearchOptions {
   repositoryVersion?: string;
   queryExpansion?: QueryExpansionResult;
   artifacts?: PublishedRepositoryArtifacts | null;
+  diagnosticsSink?: (diagnostics: HybridRetrievalDiagnostics) => void;
 }
 
 export function applyQueryExpansionPenalty(
@@ -90,13 +90,16 @@ export async function executeHybridSearch(
     semanticSettled,
     keywordSettled,
     symbolSettled,
+    pathSettled,
     expandedSemanticSettled,
     expandedKeywordSettled,
     expandedSymbolSettled,
+    expandedPathSettled,
   ] = await Promise.allSettled([
     semanticSearch(query, repository, fetchLimit, options),
     keywordSearch(query, owner, repo, fetchLimit, options),
     symbolSearch(query, owner, repo, fetchLimit, { repositoryVersion: options.repositoryVersion }),
+    pathSearch(query, owner, repo, fetchLimit, options),
     expandedQuery
       ? semanticSearch(expandedQuery, repository, fetchLimit, options)
       : Promise.resolve([]),
@@ -105,6 +108,9 @@ export async function executeHybridSearch(
       : Promise.resolve([]),
     expandedQuery
       ? symbolSearch(expandedQuery, owner, repo, fetchLimit, { repositoryVersion: options.repositoryVersion })
+      : Promise.resolve([]),
+    expandedQuery
+      ? pathSearch(expandedQuery, owner, repo, fetchLimit, options)
       : Promise.resolve([]),
   ]);
 
@@ -115,6 +121,8 @@ export async function executeHybridSearch(
     keywordSettled,
     expandedSemanticSettled,
     expandedKeywordSettled,
+    pathSettled,
+    expandedPathSettled,
   ]) {
     if (
       settled.status === "rejected" &&
@@ -149,6 +157,7 @@ export async function executeHybridSearch(
 
   const symbol =
     symbolSettled.status === "fulfilled" ? symbolSettled.value : [];
+  const path = pathSettled.status === "fulfilled" ? pathSettled.value : [];
 
   const expandedSemantic: RetrievalResult[] = expandedSemanticSettled.status === "fulfilled"
     ? expandedSemanticSettled.value
@@ -172,6 +181,9 @@ export async function executeHybridSearch(
   const expandedSymbol = expandedSymbolSettled.status === "fulfilled"
     ? expandedSymbolSettled.value
     : [];
+  const expandedPath = expandedPathSettled.status === "fulfilled"
+    ? expandedPathSettled.value
+    : [];
 
   let graphNodes: Map<string, number> | null = null;
 
@@ -187,13 +199,15 @@ export async function executeHybridSearch(
     });
   }
 
-  const combined: RuntimeRankingCandidate[] = [
-    ...semantic.map((result) => ({ result, isExpanded: false })),
-    ...keyword.map((result) => ({ result, isExpanded: false })),
-    ...symbol.map((result) => ({ result, isExpanded: false })),
-    ...expandedSemantic.map((result) => ({ result, isExpanded: true })),
-    ...expandedKeyword.map((result) => ({ result, isExpanded: true })),
-    ...expandedSymbol.map((result) => ({ result, isExpanded: true })),
+  const combined: SourceCandidate[] = [
+    ...semantic.map((result) => ({ source: "semantic" as const, result, isExpanded: false })),
+    ...keyword.map((result) => ({ source: "lexical" as const, result, isExpanded: false })),
+    ...symbol.map((result) => ({ source: "symbol" as const, result, isExpanded: false })),
+    ...path.map((result) => ({ source: "path" as const, result, isExpanded: false })),
+    ...expandedSemantic.map((result) => ({ source: "semantic" as const, result, isExpanded: true })),
+    ...expandedKeyword.map((result) => ({ source: "lexical" as const, result, isExpanded: true })),
+    ...expandedSymbol.map((result) => ({ source: "symbol" as const, result, isExpanded: true })),
+    ...expandedPath.map((result) => ({ source: "path" as const, result, isExpanded: true })),
   ];
 
   const graphBoosted = graphNodes
@@ -204,32 +218,43 @@ export async function executeHybridSearch(
       ).size
     : 0;
 
-  const ranking = rankRuntimeHybridCandidates({
+  const primaryKeys = new Set(combined
+    .filter((candidate) => !candidate.isExpanded)
+    .map((candidate) => candidate.result.chunkId ??
+      `${candidate.result.filePath}\u0000${candidate.result.startLine}\u0000${candidate.result.endLine}`));
+  const ranking = await executeHybridRetrievalV2({
+    query,
     repositoryId: repository,
-    repositoryVersion: options.repositoryVersion ?? "unversioned",
+    repositoryRevision: options.repositoryVersion ?? "unversioned",
     candidates: combined,
-    graphNodes,
-    expandedScoreMultiplier: expansion.expandedScoreMultiplier,
-    limit: combined.length,
     artifacts,
+    limit: effectiveLimit,
+    expansionMultiplier: expansion.expandedScoreMultiplier,
+  }, {
+    signal: options.signal,
   });
-  const rankedPool = ranking.ranked;
-  const primaryChunkCount = Math.min(effectiveLimit, rankedPool.length);
-  const stitchingInputs = rankedPool.map((rankedCandidate) => ({
-    repositoryId: repository,
-    filePath: rankedCandidate.result.filePath,
-    repositoryVersion: options.repositoryVersion ?? "unversioned",
-    retrievalOperation: "hybrid",
-    content: rankedCandidate.result.content,
-    startLine: rankedCandidate.result.startLine,
-    endLine: rankedCandidate.result.endLine,
-    score: rankedCandidate.result.score,
-    symbol: rankedCandidate.result.symbol,
-    citations: [] as CitationCandidate[],
-    result: rankedCandidate.result,
-    primaryQueryMatch: rankedCandidate.trace.expansionPenalty === 0,
-    queryExpansionMatch: rankedCandidate.trace.expansionPenalty > 0,
-  }));
+  options.diagnosticsSink?.(ranking.diagnostics);
+  const rankedPool = ranking.results;
+  const primaryChunkCount = rankedPool.length;
+  const stitchingInputs = rankedPool.map((result) => {
+    const key = result.chunkId ??
+      `${result.filePath}\u0000${result.startLine}\u0000${result.endLine}`;
+    return {
+      repositoryId: repository,
+      filePath: result.filePath,
+      repositoryVersion: options.repositoryVersion ?? "unversioned",
+      retrievalOperation: "hybrid",
+      content: result.content,
+      startLine: result.startLine,
+      endLine: result.endLine,
+      score: result.score,
+      symbol: result.symbol,
+      citations: [] as CitationCandidate[],
+      result,
+      primaryQueryMatch: primaryKeys.has(key),
+      queryExpansionMatch: !primaryKeys.has(key),
+    };
+  });
   const stitched = stitchRuntimeChunks(stitchingInputs, { primaryChunkCount });
   const results = stitched.chunks.map((block) => {
     const primary = block.primaryChunk as (typeof stitchingInputs)[number];
@@ -326,7 +351,7 @@ export async function hybridSearch(
           terms: expansion.terms.map((term) => term.term),
           scoreMultiplier: expansion.expandedScoreMultiplier,
         },
-        rankingWeights: runtimeRankingWeights,
+        retrievalV2: runtimeHybridRetrievalV2Config,
       },
       repositoryVersion,
     },

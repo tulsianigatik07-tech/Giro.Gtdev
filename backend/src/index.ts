@@ -25,6 +25,11 @@ import { runtimeRepositoryConnectionStore } from "./services/repository/connecti
 import { sessionStore } from "./services/sessions/store.js";
 import { repositoryHistoryStore } from "./services/repository/history/runtimeRepositoryHistoryStore.js";
 import { runtimeEmbeddingIndexStore } from "./services/embeddings/indexStore.js";
+import {
+  runtimeHybridRetrievalV2Config,
+  validateHybridRetrievalV2Config,
+} from "./services/retrieval/hybridV2/config.js";
+import { runtimeCrossEncoder } from "./services/retrieval/hybridV2/crossEncoder.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -133,6 +138,23 @@ try {
   logger.error("embedding_index_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "embedding_index_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  validateHybridRetrievalV2Config(runtimeHybridRetrievalV2Config);
+  await runtimeCrossEncoder.verify();
+  logger.info("hybrid_retrieval_v2_contract_verified", {
+    source: "backend_startup",
+    rerankerProvider: runtimeCrossEncoder.name,
+    maximumTokenBudget: runtimeHybridRetrievalV2Config.maxTokens,
+  });
+} catch {
+  logger.error("hybrid_retrieval_v2_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "retrieval_configuration_or_reranker_unavailable",
   });
   await flushLogs();
   process.exit(1);
