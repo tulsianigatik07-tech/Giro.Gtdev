@@ -54,6 +54,16 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.RANK_STITCH_BONUS, 0.04);
   assert.equal(result.RANK_DIVERSITY_BONUS, 0.04);
   assert.equal(result.RANK_DUPLICATE_PENALTY, 0.08);
+  assert.equal(result.RETRIEVAL_V2_SEMANTIC_WEIGHT, 0.30);
+  assert.equal(result.RETRIEVAL_V2_LEXICAL_WEIGHT, 0.18);
+  assert.equal(result.RETRIEVAL_V2_MAX_CHUNKS, 20);
+  assert.equal(result.RETRIEVAL_V2_MAX_FILES, 12);
+  assert.equal(result.RETRIEVAL_V2_MAX_SYMBOLS, 12);
+  assert.equal(result.RETRIEVAL_V2_MAX_TOKENS, 8_000);
+  assert.equal(result.RETRIEVAL_V2_MAX_PER_FILE, 2);
+  assert.equal(result.RETRIEVAL_RERANKER_PROVIDER, "deterministic");
+  assert.equal(result.RETRIEVAL_RERANKER_MODEL, "gpt-4.1-mini");
+  assert.equal(result.RETRIEVAL_RERANKER_WEIGHT, 0.25);
   assert.equal(result.RETRIEVAL_CONFIDENCE_HIGH_THRESHOLD, 0.8);
   assert.equal(result.RETRIEVAL_CONFIDENCE_MEDIUM_THRESHOLD, 0.6);
   assert.equal(result.RETRIEVAL_CONFIDENCE_LOW_THRESHOLD, 0.35);
@@ -151,10 +161,15 @@ test("invalid enum values are rejected", () => {
       ...REQUIRED,
       NODE_ENV: "staging",
       EMBEDDINGS_PROVIDER: "vector-cloud",
+      RETRIEVAL_RERANKER_PROVIDER: "reranker-cloud",
     }),
     (error: unknown) => {
       assert.ok(error instanceof EnvironmentValidationError);
-      assert.deepEqual(Object.keys(error.issues), ["EMBEDDINGS_PROVIDER", "NODE_ENV"]);
+      assert.deepEqual(Object.keys(error.issues), [
+        "EMBEDDINGS_PROVIDER",
+        "NODE_ENV",
+        "RETRIEVAL_RERANKER_PROVIDER",
+      ]);
       return true;
     },
   );
