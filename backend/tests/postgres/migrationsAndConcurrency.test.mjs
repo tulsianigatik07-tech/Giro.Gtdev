@@ -17,6 +17,8 @@ const availability = await postgresAvailability();
 const skip = availability.available ? false : availability.reason;
 const REVISION_A = "a".repeat(40);
 const REVISION_B = "b".repeat(40);
+const WORKER_CONTRACT_MIGRATION = "20260802000000_add_worker_functional_readiness.sql";
+const EMBEDDING_INDEX_MIGRATION = "20260803000000_add_embedding_index_versions.sql";
 
 async function migratedDatabase(callback) {
   return withDisposableDatabase(availability, async ({ url }) => {
@@ -59,72 +61,153 @@ function stageRevision(url, claim, revision) {
   )`);
 }
 
+function stageEmbeddingIndex(url, claim, revision) {
+  const embeddingVersion = `test-${revision}`;
+  assert.equal(scalar(url, `select already_published from public.begin_embedding_index_version(
+    'acme/api', '${revision}', 'mock', 'deterministic-test', 1536,
+    '${embeddingVersion}', 'test-v1', '${claim.jobId}', '${claim.workerId}',
+    '${claim.claimToken}'
+  )`), "f");
+  assert.equal(scalar(url, `select is_valid from public.validate_embedding_index_version(
+    'acme/api', '${revision}', '${embeddingVersion}', 0, '${claim.jobId}',
+    '${claim.workerId}', '${claim.claimToken}'
+  )`), "t");
+  return embeddingVersion;
+}
+
 function publishRevision(url, claim, revision, chunkCount = 0, options = {}) {
+  const embeddingVersion = options.embeddingVersion ?? `test-${revision}`;
   return psql(url, `select public.publish_repository_snapshot(
     'acme/api', '${revision}', 'main', '${claim.jobId}', '${claim.workerId}',
-    '${options.claimToken ?? claim.claimToken}', ${chunkCount}, 0, 0, 0, 0, true, 'full', 0
+    '${options.claimToken ?? claim.claimToken}', ${chunkCount}, 0, 0, 0, 0, true,
+    '${embeddingVersion}', 'full', 0, 'user-1', 0, 10, 1000000
   )`, { allowFailure: options.allowFailure });
 }
 
 test("full migration chain installs fresh, upgrades from previous, and verifies repeatably", { skip }, async () => {
   const files = await migrationFiles();
   assert.ok(files.length > 1);
+  const workerMigrationIndex = files.indexOf(WORKER_CONTRACT_MIGRATION);
+  assert.ok(workerMigrationIndex > 0, `${WORKER_CONTRACT_MIGRATION} must have a predecessor`);
+  assert.ok(files.includes(EMBEDDING_INDEX_MIGRATION), `${EMBEDDING_INDEX_MIGRATION} must be installed`);
 
   await withDisposableDatabase(availability, async ({ url }) => {
     assert.deepEqual(await applyMigrations(url), files);
     assert.deepEqual(await applyMigrations(url), []);
     assert.equal(Number(scalar(url, "select count(*) from public.giro_schema_migrations")), files.length);
+    assert.equal(scalar(url, "select max(version) from public.giro_schema_migrations"), files.at(-1));
   });
 
   await withDisposableDatabase(availability, async ({ url }) => {
-    const previous = files.slice(0, -1);
-    const latest = files.at(-1);
-    assert.deepEqual(await applyMigrations(url, { files: previous }), previous);
+    const beforeWorkerContract = files.slice(0, workerMigrationIndex);
+    const laterMigrations = files.slice(workerMigrationIndex + 1);
+    assert.deepEqual(
+      await applyMigrations(url, { files: beforeWorkerContract }),
+      beforeWorkerContract,
+    );
     assert.equal(scalar(url, "select exists(select 1 from information_schema.columns where table_schema='public' and table_name='indexing_workers' and column_name='functional_ready')"), "f");
-    assert.deepEqual(await applyMigrations(url, { files: [latest] }), [latest]);
+    assert.deepEqual(
+      await applyMigrations(url, { files: [WORKER_CONTRACT_MIGRATION] }),
+      [WORKER_CONTRACT_MIGRATION],
+    );
     assert.equal(scalar(url, "select exists(select 1 from information_schema.columns where table_schema='public' and table_name='indexing_workers' and column_name='functional_ready')"), "t");
+    assert.equal(scalar(url, "select public.validate_indexing_worker_contract()->>'contract_valid'"), "true");
+    assert.deepEqual(await applyMigrations(url, { files: laterMigrations }), laterMigrations);
+    assert.equal(scalar(url, "select exists(select 1 from information_schema.columns where table_schema='public' and table_name='indexing_workers' and column_name='functional_ready')"), "t");
+    assert.equal(scalar(url, "select public.validate_indexing_worker_contract()->>'contract_valid'"), "true");
     assert.deepEqual(await applyMigrations(url), []);
   });
 });
 
 test("real schema contains required production objects, grants, RLS, and constraints", { skip }, async () => {
   await migratedDatabase(async (url) => {
+    const files = await migrationFiles();
     const tables = Number(scalar(url, `select count(*) from information_schema.tables
       where table_schema='public' and table_name in (
         'repositories','indexing_jobs','indexing_workers','sessions','session_messages',
-        'repository_chunks','repository_summaries','repository_snapshots','repository_artifacts'
+        'repository_chunks','repository_summaries','repository_snapshots','repository_artifacts',
+        'embedding_index_versions','embedding_index_validations','embedding_index_publications'
       )`));
-    assert.equal(tables, 9);
+    assert.equal(tables, 12);
 
     for (const [catalog, expected] of [
       ["select count(*) from information_schema.columns where table_schema='public' and table_name='repositories' and column_name in ('repository_version','indexed_revision')", 2],
       ["select count(*) from information_schema.columns where table_schema='public' and table_name='indexing_jobs' and column_name in ('claim_token','lease_expires_at','traceparent','recovery_count')", 4],
-      ["select count(*) from pg_indexes where schemaname='public' and indexname in ('repositories_owner_name_idx','indexing_jobs_claim_token_uidx','repository_artifacts_revision_idx')", 3],
-      ["select count(*) from pg_constraint where connamespace='public'::regnamespace and conname in ('repositories_version_positive','indexing_jobs_claim_token_consistent','repository_artifacts_snapshot_fk')", 3],
-      ["select count(*) from pg_trigger where not tgisinternal and tgname in ('repositories_enforce_version_increment','indexing_jobs_lifecycle_trigger','indexing_jobs_clear_terminal_lease','session_messages_touch_session')", 4],
-      ["select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('claim_next_indexing_job','recover_stale_indexing_jobs','publish_repository_snapshot','stage_repository_artifacts','collect_repository_artifacts')", 5],
+      ["select count(*) from information_schema.columns where table_schema='public' and table_name='repository_chunks' and column_name in ('embedding_version','chunk_id','chunk_hash')", 3],
+      [`select count(*) from pg_indexes where schemaname='public' and indexname in (
+        'repositories_owner_name_idx','indexing_jobs_claim_token_uidx','repository_artifacts_revision_idx',
+        'embedding_index_versions_repository_status_idx','embedding_index_versions_cleanup_idx',
+        'embedding_index_publications_revision_idx','repository_chunks_embedding_chunk_uidx',
+        'repository_chunks_embedding_position_uidx','repository_chunks_embedding_version_idx',
+        'repository_chunks_cleanup_idx'
+      )`, 10],
+      [`select count(*) from pg_constraint where connamespace='public'::regnamespace and conname in (
+        'repositories_version_positive','indexing_jobs_claim_token_consistent','repository_artifacts_snapshot_fk',
+        'embedding_index_versions_status_valid','embedding_index_versions_publication_timestamp',
+        'embedding_index_validations_result_consistent','embedding_index_publications_version_identity_fkey',
+        'repository_chunks_embedding_version_identity_fkey','repository_chunks_chunk_metadata_present'
+      )`, 9],
+      [`select count(*) from pg_trigger where not tgisinternal and tgname in (
+        'repositories_enforce_version_increment','indexing_jobs_lifecycle_trigger',
+        'indexing_jobs_clear_terminal_lease','session_messages_touch_session',
+        'embedding_index_versions_immutable_identity_trigger','repository_chunks_immutable_version_trigger'
+      )`, 6],
+      [`select count(*) from unnest(array[
+        'public.claim_next_indexing_job(text,integer)',
+        'public.recover_stale_indexing_jobs(timestamp with time zone,integer,timestamp with time zone)',
+        'public.create_indexing_job(text,text,text,text,text,text,integer,text,text,integer)',
+        'public.publish_repository_snapshot(text,text,text,text,text,text,integer,integer,integer,integer,integer,boolean,text,text,integer,text,bigint,integer,bigint)',
+        'public.stage_repository_artifacts(text,text,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb,bigint)',
+        'public.collect_repository_artifacts(text,integer)',
+        'public.begin_embedding_index_version(text,text,text,text,integer,text,text,text,text,text)',
+        'public.validate_embedding_index_version(text,text,text,integer,text,text,text)',
+        'public.verify_embedding_index_contract()'
+      ]) signature where to_regprocedure(signature) is not null`, 9],
     ]) assert.equal(Number(scalar(url, catalog)), expected, catalog);
 
     assert.equal(scalar(url, `select bool_and(relrowsecurity) from pg_class
       where relnamespace='public'::regnamespace and relname in
-      ('repositories','indexing_jobs','indexing_workers','repository_snapshots','repository_artifacts')`), "t");
+      ('repositories','indexing_jobs','indexing_workers','repository_snapshots','repository_artifacts',
+       'embedding_index_versions','embedding_index_validations','embedding_index_publications')`), "t");
     assert.equal(scalar(url, `select count(*) from pg_policies where schemaname='public'
-      and tablename in ('repositories','indexing_jobs','indexing_workers','repository_snapshots','repository_artifacts')`), "0");
+      and tablename in ('repositories','indexing_jobs','indexing_workers','repository_snapshots',
+        'repository_artifacts','embedding_index_versions','embedding_index_validations',
+        'embedding_index_publications')`), "0");
     assert.equal(scalar(url, `select
       has_table_privilege('service_role','public.repository_artifacts','select')::int || ':' ||
       has_table_privilege('anon','public.repository_artifacts','select')::int || ':' ||
+      has_table_privilege('service_role','public.embedding_index_versions','select')::int || ':' ||
+      has_table_privilege('anon','public.embedding_index_versions','select')::int || ':' ||
       has_function_privilege('service_role','public.collect_repository_artifacts(text,integer)','execute')::int || ':' ||
-      has_function_privilege('anon','public.collect_repository_artifacts(text,integer)','execute')::int`), "1:0:1:0");
-    assert.equal(scalar(url, `select
-      (public.validate_indexing_worker_contract()->>'contract_valid') || ':' ||
-      (public.validate_indexing_worker_contract()->>'migration_version')`),
-      "true:20260802000000_add_worker_functional_readiness.sql");
+      has_function_privilege('anon','public.collect_repository_artifacts(text,integer)','execute')::int || ':' ||
+      has_function_privilege(
+        'service_role',
+        'public.publish_repository_snapshot(text,text,text,text,text,text,integer,integer,integer,integer,integer,boolean,text,text,integer,text,bigint,integer,bigint)',
+        'execute'
+      )::int || ':' ||
+      has_function_privilege(
+        'service_role',
+        'public.publish_repository_snapshot(text,text,text,text,text,text,integer,integer,integer,integer,integer,boolean,text,integer,text,bigint,integer,bigint)',
+        'execute'
+      )::int`), "1:0:1:0:1:0:1:0");
+    const workerContract = JSON.parse(scalar(url, "select public.validate_indexing_worker_contract()"));
+    assert.equal(workerContract.contract_valid, true);
+    assert.equal(workerContract.migration_version, WORKER_CONTRACT_MIGRATION);
+    assert.equal(workerContract.required_contract_migration, WORKER_CONTRACT_MIGRATION);
+    assert.equal(
+      scalar(url, "select max(version) from public.giro_schema_migrations"),
+      files.at(-1),
+    );
+    assert.equal(scalar(url, "select valid from public.verify_embedding_index_contract()"), "t");
 
     assert.equal(psql(url, `set role service_role;
       select count(*) from public.repository_artifacts;
+      select count(*) from public.embedding_index_versions;
       select public.collect_repository_artifacts('missing/repo', 1);
-      select public.validate_indexing_worker_contract()`).status, 0);
+      select public.validate_indexing_worker_contract();
+      select public.verify_embedding_index_contract()`).status, 0);
     assert.notEqual(psql(url, "set role anon; select count(*) from public.repository_artifacts", { allowFailure: true }).status, 0);
+    assert.notEqual(psql(url, "set role anon; select count(*) from public.embedding_index_versions", { allowFailure: true }).status, 0);
     assert.notEqual(psql(url, "set role anon; select count(*) from public.indexing_jobs", { allowFailure: true }).status, 0);
     assert.notEqual(psql(url, "set role authenticated; select public.collect_repository_artifacts('missing/repo', 1)", { allowFailure: true }).status, 0);
     assert.notEqual(psql(url, "set role authenticated; select count(*) from public.claim_next_indexing_job('unauthorized', 60000)", { allowFailure: true }).status, 0);
@@ -192,6 +275,7 @@ test("artifact publication is atomic, revision-safe, fenced, and GC-safe concurr
     const first = claimedJob(url, "publisher-1");
     markRunning(url, first);
     stageRevision(url, first, REVISION_A);
+    stageEmbeddingIndex(url, first, REVISION_A);
     assert.equal(publishRevision(url, first, REVISION_A).status, 0);
     assert.equal(scalar(url, "select indexed_revision from public.repositories where repository_id='acme/api'"), REVISION_A);
 
@@ -199,9 +283,10 @@ test("artifact publication is atomic, revision-safe, fenced, and GC-safe concurr
     const second = claimedJob(url, "publisher-2");
     markRunning(url, second);
     stageRevision(url, second, REVISION_B);
+    stageEmbeddingIndex(url, second, REVISION_B);
     const failed = publishRevision(url, second, REVISION_B, 1, { allowFailure: true });
     assert.notEqual(failed.status, 0);
-    assert.match(failed.stderr, /chunk count does not match/i);
+    assert.match(failed.stderr, /validated embedding index is required/i);
     assert.equal(scalar(url, "select indexed_revision from public.repositories where repository_id='acme/api'"), REVISION_A);
     assert.equal(scalar(url, `select status from public.repository_snapshots
       where repository_id='acme/api' and revision='${REVISION_B}'`), "building");

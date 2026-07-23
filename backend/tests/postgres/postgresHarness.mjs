@@ -202,6 +202,6 @@ export function createJobSql(repositoryId, ownerUserId = "user-1") {
   const [owner, name] = repositoryId.split("/");
   return `select job_id from public.create_indexing_job(
     '${repositoryId}', '${ownerUserId}', '${owner}', '${name}',
-    'https://github.com/${repositoryId}.git', 'main', 3, null, null
+    'https://github.com/${repositoryId}.git', 'main', 3, null::text, null::text, 2
   )`;
 }
