@@ -3,11 +3,13 @@
 import { readSourceFiles } from "./fileReader.js";
 import { chunkSourceFile } from "./chunker.js";
 import { generateEmbedding } from "../embeddings/embedder.js";
-import { storeChunkEmbedding } from "../embeddings/store.js";
-import { supabase } from "../../lib/supabase.js";
+import {
+  runtimeEmbeddingIndexStore,
+  type EmbeddingIndexStore,
+} from "../embeddings/indexStore.js";
+import { runtimeEmbeddingIndexConfiguration } from "../embeddings/indexVersion.js";
+import { createHash } from "node:crypto";
 import type { ContextBuildResult } from "./types.js";
-import { env } from "../../config/env.js";
-import { createDeadline } from "../../runtime/deadline.js";
 import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
 import type { CircuitBreaker } from "../../runtime/circuitBreaker.js";
 import type { TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
@@ -22,6 +24,8 @@ export async function buildRepositoryContext(
     metrics?: RetryMetrics;
     embeddingCircuitBreaker?: CircuitBreaker;
     repositoryVersion?: string;
+    embeddingVersion?: string;
+    embeddingIndexStore?: EmbeddingIndexStore;
   } = {},
 ): Promise<ContextBuildResult> {
   if (!options.repositoryVersion?.trim()) {
@@ -29,36 +33,23 @@ export async function buildRepositoryContext(
   }
   const files = await readSourceFiles(clonePath);
   const chunks = files.flatMap((file) => chunkSourceFile(file));
+  const embeddingIndexStore = options.embeddingIndexStore ?? runtimeEmbeddingIndexStore;
+  const embeddingVersion = options.embeddingVersion ??
+    runtimeEmbeddingIndexConfiguration(repository, options.repositoryVersion).embeddingVersion;
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     if (!chunk) continue;
-
-    const databaseDeadline = createDeadline(env.DATABASE_REQUEST_TIMEOUT_MS, { parentSignal: options.signal });
-    let existing: unknown;
-    try {
-      const response = await supabase
-        .from("repository_chunks")
-        .select("id")
-        .eq("repository", repository)
-        .eq("repository_revision", options.repositoryVersion)
-        .eq("file_path", chunk.filePath)
-        .eq("chunk_index", i)
-        .abortSignal(databaseDeadline.signal)
-        .maybeSingle();
-      if (databaseDeadline.signal.aborted) throw databaseDeadline.signal.reason;
-      existing = response.data;
-    } finally {
-      databaseDeadline.dispose();
-    }
-
-    if (existing) continue;
+    const chunkHash = createHash("sha256")
+      .update([chunk.filePath, chunk.chunkId, chunk.content].join("\u0000"))
+      .digest("hex");
+    if (await embeddingIndexStore.hasChunk(embeddingVersion, chunk.chunkId, options.signal)) continue;
 
     const embedding = await generateEmbedding(chunk.content, {
       ...options,
       circuitBreaker: options.embeddingCircuitBreaker,
     });
-    await storeChunkEmbedding({
+    await embeddingIndexStore.storeChunk({
       repository,
       filePath: chunk.filePath,
       language: chunk.language,
@@ -69,8 +60,11 @@ export async function buildRepositoryContext(
       endLine: chunk.endLine,
       embedding,
       repositoryRevision: options.repositoryVersion,
+      embeddingVersion,
+      chunkId: chunk.chunkId,
+      chunkHash,
       tokenCount: chunk.tokenEstimate,
-    }, options);
+    }, options.signal);
   }
 
   return {

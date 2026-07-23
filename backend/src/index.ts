@@ -24,6 +24,7 @@ import { repositoryStore } from "./services/repository/store/runtimeRepositorySt
 import { runtimeRepositoryConnectionStore } from "./services/repository/connection/runtimeRepositoryConnectionStore.js";
 import { sessionStore } from "./services/sessions/store.js";
 import { repositoryHistoryStore } from "./services/repository/history/runtimeRepositoryHistoryStore.js";
+import { runtimeEmbeddingIndexStore } from "./services/embeddings/indexStore.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -116,6 +117,22 @@ try {
   logger.error("indexing_recovery_failed", {
     source: "backend_startup",
     reasonCode: "durable_recovery_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeEmbeddingIndexStore.verify();
+  const cleanedVersionCount = await runtimeEmbeddingIndexStore.recover();
+  logger.info("embedding_index_contract_verified", {
+    source: "backend_startup",
+    cleanedVersionCount,
+  });
+} catch {
+  logger.error("embedding_index_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "embedding_index_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

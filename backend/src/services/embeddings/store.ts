@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { supabase } from "../../lib/supabase.js";
 import { env } from "../../config/env.js";
 import { createDeadline } from "../../runtime/deadline.js";
 
-interface StoreInput {
+export interface StoreEmbeddingInput {
   repository: string;
   filePath: string;
   language: string;
@@ -12,27 +13,33 @@ interface StoreInput {
   startLine: number;
   endLine: number;
   embedding: number[];
-  repositoryRevision?: string;
+  repositoryRevision: string;
+  embeddingVersion: string;
+  chunkId: string;
+  chunkHash: string;
   tokenCount?: number;
 }
 
-function stableChunkId(input: StoreInput, revision: string): string {
+function stableChunkId(input: StoreEmbeddingInput, revision: string): string {
   return createHash("sha256").update([
-    input.repository, revision, input.filePath, input.chunkIndex, input.content,
+    input.repository, revision, input.embeddingVersion, input.chunkId,
   ].join("\u0000")).digest("hex");
 }
 
 export async function storeChunkEmbedding(
-  input: StoreInput,
+  input: StoreEmbeddingInput,
   options: { signal?: AbortSignal; databaseClient?: typeof supabase } = {},
 ): Promise<void> {
   const deadline = createDeadline(env.DATABASE_REQUEST_TIMEOUT_MS, { parentSignal: options.signal });
   try {
-    const repositoryRevision = input.repositoryRevision ?? "unversioned";
+    const repositoryRevision = input.repositoryRevision;
     const { error } = await (options.databaseClient ?? supabase).from("repository_chunks").upsert({
       id: stableChunkId(input, repositoryRevision),
       repository: input.repository,
       repository_revision: repositoryRevision,
+      embedding_version: input.embeddingVersion,
+      chunk_id: input.chunkId,
+      chunk_hash: input.chunkHash,
       file_path: input.filePath,
       language: input.language,
       chunk_index: input.chunkIndex,
@@ -46,7 +53,7 @@ export async function storeChunkEmbedding(
       embedding: input.embedding,
       metadata: {},
       updated_at: new Date().toISOString(),
-    }, { onConflict: "repository,repository_revision,file_path,chunk_index" })
+    }, { onConflict: "embedding_version,chunk_id", ignoreDuplicates: true })
       .abortSignal(deadline.signal);
 
     if (deadline.signal.aborted) throw deadline.signal.reason;
@@ -67,4 +74,3 @@ export async function deleteRepositoryRetrievalData(
   });
   if (error) throw new Error("Failed to remove repository retrieval data.");
 }
-import { createHash } from "node:crypto";

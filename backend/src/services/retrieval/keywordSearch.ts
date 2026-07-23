@@ -10,6 +10,7 @@ import type { RetryRuntimeOptions } from "../../runtime/retry.js";
 import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
 import { isDependencyUnavailable, type CircuitBreaker } from "../../runtime/circuitBreaker.js";
 import { buildCitations, type Citation } from "./citations.js";
+import { runtimeEmbeddingIndexConfiguration } from "../embeddings/indexVersion.js";
 
 export interface KeywordSearchOptions {
   signal?: AbortSignal;
@@ -43,6 +44,7 @@ export async function keywordSearch(
     throw new Error("Published repository revision is required for keyword search.");
   }
   const repository = `${owner}/${repo}`;
+  const embeddingVersion = runtimeEmbeddingIndexConfiguration(repository, options.repositoryVersion).embeddingVersion;
   const tokens = query
     .toLowerCase()
     .split(/\s+/)
@@ -61,10 +63,11 @@ export async function keywordSearch(
     const { data, error } = await retryDatabaseRead(
       () => {
         let databaseQuery = (options.databaseClient ?? supabase)
-          .from("repository_chunks")
+          .from("published_repository_chunks")
           .select("id,repository,file_path,language,content,start_line,end_line")
           .eq("repository", repository);
         databaseQuery = databaseQuery.eq("repository_revision", options.repositoryVersion);
+        databaseQuery = databaseQuery.eq("embedding_version", embeddingVersion);
         return databaseQuery.or(orFilter).limit(limit * 3).abortSignal(deadline.signal);
       },
       {

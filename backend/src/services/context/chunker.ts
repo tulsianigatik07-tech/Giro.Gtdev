@@ -5,6 +5,7 @@ import type { CodeChunk, SourceFile } from "./types.js";
 export const CHUNK_SIZE = 120; // target lines per chunk
 export const CHUNK_OVERLAP = 20; // overlap lines between chunks
 export const SMALL_FILE_THRESHOLD = 160; // <= this -> single chunk
+export const CHUNKING_STRATEGY_VERSION = "line-window-120-overlap-20-v1";
 
 function makeChunk(file: SourceFile, start: number, end: number): CodeChunk {
   const chunkLines = file.content.split("\n").slice(start, end);

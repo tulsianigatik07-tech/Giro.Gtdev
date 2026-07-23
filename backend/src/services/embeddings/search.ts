@@ -8,6 +8,7 @@ import type { RetryRuntimeOptions } from "../../runtime/retry.js";
 import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
 import { isDependencyUnavailable, type CircuitBreaker } from "../../runtime/circuitBreaker.js";
 import { buildCitations, type Citation } from "../retrieval/citations.js";
+import { runtimeEmbeddingIndexConfiguration } from "./indexVersion.js";
 
 export interface SemanticSearchOptions {
   signal?: AbortSignal;
@@ -30,6 +31,7 @@ export async function semanticSearch(
     throw new Error("Published repository revision is required for semantic search.");
   }
   const embedding = await (options.generateQueryEmbedding ?? generateEmbedding)(query, options);
+  const embeddingConfiguration = runtimeEmbeddingIndexConfiguration(repository, options.repositoryVersion);
   const deadline = createDeadline(env.DATABASE_REQUEST_TIMEOUT_MS, { parentSignal: options.signal });
 
   try {
@@ -39,6 +41,7 @@ export async function semanticSearch(
         query_embedding: embedding,
         match_count: limit,
         input_repository_revision: options.repositoryVersion,
+        input_embedding_version: embeddingConfiguration.embeddingVersion,
       }).abortSignal(deadline.signal),
       {
         deadline,

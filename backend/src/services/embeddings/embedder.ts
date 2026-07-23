@@ -15,6 +15,7 @@ const openai =
     : null;
 
 export const EMBEDDING_MODEL = "text-embedding-3-small";
+export const EMBEDDING_DIMENSION = 1536;
 export const MAX_EMBEDDING_CHARS = 8000;
 
 export function normalizeEmbeddingProviderError(error: unknown, signal?: AbortSignal): Error {
@@ -102,8 +103,12 @@ export async function generateEmbedding(
 
   if (env.EMBEDDINGS_PROVIDER === "mock") {
     if (options.signal?.aborted) throw options.signal.reason;
-    return generateMockEmbedding(normalized);
+    const vector = generateMockEmbedding(normalized);
+    if (vector.length !== EMBEDDING_DIMENSION) throw new Error("Embedding dimension mismatch.");
+    return vector;
   }
 
-  return requestOpenAIEmbedding(normalized, options);
+  const vector = await requestOpenAIEmbedding(normalized, options);
+  if (vector.length !== EMBEDDING_DIMENSION) throw new Error("Embedding dimension mismatch.");
+  return vector;
 }

@@ -64,6 +64,11 @@ import {
   runtimeRepositoryQuotas,
   type RepositoryQuotas,
 } from "../../repository/quotas/repositoryQuota.js";
+import {
+  runtimeEmbeddingIndexStore,
+  type EmbeddingIndexStore,
+} from "../../embeddings/indexStore.js";
+import { runtimeEmbeddingIndexConfiguration } from "../../embeddings/indexVersion.js";
 
 export interface IndexingJobProgressPublisher {
   publish(job: IndexingJob): void | Promise<void>;
@@ -87,6 +92,7 @@ export interface IndexingPipelineInput {
   circuitBreakers?: DependencyCircuitBreakers;
   snapshotStore?: RepositorySnapshotStore;
   artifactStore?: RepositoryArtifactStore;
+  embeddingIndexStore?: EmbeddingIndexStore;
   quotas?: RepositoryQuotas;
 }
 
@@ -356,6 +362,7 @@ export async function executeRepositoryIndexingPipeline(
   const repoId = job.repositoryId;
   const snapshotStore = input.snapshotStore ?? runtimeRepositorySnapshotStore;
   const artifactStore = input.artifactStore ?? runtimeRepositoryArtifactStore;
+  const embeddingIndexStore = input.embeddingIndexStore ?? runtimeEmbeddingIndexStore;
   const quotas = input.quotas ?? runtimeRepositoryQuotas;
 
   await reportStage({ stage: "clone", progress: 10 });
@@ -388,7 +395,9 @@ export async function executeRepositoryIndexingPipeline(
   };
   input.signal?.throwIfAborted();
   const staged = await snapshotStore.begin(identity, input.signal);
-  if (staged.alreadyPublished && staged.counts) {
+  const embeddingConfiguration = runtimeEmbeddingIndexConfiguration(repoId, revision);
+  const embeddingStaged = await embeddingIndexStore.begin(identity, embeddingConfiguration, input.signal);
+  if (staged.alreadyPublished && staged.counts && embeddingStaged.alreadyPublished) {
     const indexOptions = {
       indexMode: "incremental" as const,
       changedFileCount: 0,
@@ -397,6 +406,7 @@ export async function executeRepositoryIndexingPipeline(
     await snapshotStore.publish({
       ...identity,
       counts: staged.counts,
+      embeddingVersion: embeddingConfiguration.embeddingVersion,
       indexOptions,
       ownerUserId: job.ownerUserId,
       maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
@@ -406,6 +416,45 @@ export async function executeRepositoryIndexingPipeline(
   }
 
   try {
+    if (staged.alreadyPublished && staged.counts) {
+      await reportStage({ stage: "chunk", progress: 80 });
+      input.signal?.throwIfAborted();
+      await reportStage({ stage: "embed", progress: 90 });
+      const context = await buildRepositoryContext(clonePath, repoId, {
+        signal: input.signal,
+        requestId: job.createdByRequestId ?? undefined,
+        logger: input.retryLogger,
+        metrics: input.retryMetrics,
+        embeddingCircuitBreaker: input.circuitBreakers?.embedding,
+        repositoryVersion: revision,
+        embeddingVersion: embeddingConfiguration.embeddingVersion,
+        embeddingIndexStore,
+      });
+      await reportStage({ stage: "finalize", progress: 95 });
+      input.signal?.throwIfAborted();
+      await embeddingIndexStore.validate(
+        identity,
+        embeddingConfiguration.embeddingVersion,
+        context.totalChunks,
+        input.signal,
+      );
+      const counts = { ...staged.counts, chunkCount: context.totalChunks };
+      const indexOptions = {
+        indexMode: "full" as const,
+        changedFileCount: staged.counts.fileCount,
+        indexedRevision: revision,
+      };
+      await snapshotStore.publish({
+        ...identity,
+        counts,
+        embeddingVersion: embeddingConfiguration.embeddingVersion,
+        indexOptions,
+        ownerUserId: job.ownerUserId,
+        maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
+        maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
+      }, input.signal);
+      return { counts, indexOptions, publicationHandled: true };
+    }
     return await buildAndPublishRepositorySnapshot({
       ...input,
       job,
@@ -414,8 +463,20 @@ export async function executeRepositoryIndexingPipeline(
       identity,
       snapshotStore,
       artifactStore,
+      embeddingIndexStore,
+      embeddingConfiguration,
     });
   } catch (error) {
+    try {
+      await embeddingIndexStore.discard(identity, embeddingConfiguration.embeddingVersion);
+    } catch {
+      logger.error("embedding_index_rollback_failed", {
+        repositoryId: repoId,
+        revision,
+        embeddingVersion: embeddingConfiguration.embeddingVersion,
+        jobId: job.jobId,
+      });
+    }
     try {
       await snapshotStore.discard(identity);
     } catch {
@@ -444,8 +505,20 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   identity: Parameters<RepositorySnapshotStore["begin"]>[0];
   snapshotStore: RepositorySnapshotStore;
   artifactStore: RepositoryArtifactStore;
+  embeddingIndexStore: EmbeddingIndexStore;
+  embeddingConfiguration: ReturnType<typeof runtimeEmbeddingIndexConfiguration>;
 }): Promise<IndexingPipelineResult> {
-  const { job, reportStage, clonePath, revision, identity, snapshotStore, artifactStore } = input;
+  const {
+    job,
+    reportStage,
+    clonePath,
+    revision,
+    identity,
+    snapshotStore,
+    artifactStore,
+    embeddingIndexStore,
+    embeddingConfiguration,
+  } = input;
   const owner = job.repositoryOwner;
   const repo = job.repositoryName;
   const repoId = job.repositoryId;
@@ -522,10 +595,18 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     metrics: input.retryMetrics,
     embeddingCircuitBreaker: input.circuitBreakers?.embedding,
     repositoryVersion,
+    embeddingVersion: embeddingConfiguration.embeddingVersion,
+    embeddingIndexStore,
   });
 
   await reportStage({ stage: "finalize", progress: 95 });
   input.signal?.throwIfAborted();
+  await embeddingIndexStore.validate(
+    identity,
+    embeddingConfiguration.embeddingVersion,
+    context.totalChunks,
+    input.signal,
+  );
   const counts = {
       chunkCount: context.totalChunks,
       fileCount: stats.totalFiles,
@@ -561,6 +642,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   await snapshotStore.publish({
     ...identity,
     counts,
+    embeddingVersion: embeddingConfiguration.embeddingVersion,
     indexOptions,
     ownerUserId: job.ownerUserId,
     repositoryStorageBytes: stats.repositoryBytes ?? stats.indexedTextBytes ?? 0,
