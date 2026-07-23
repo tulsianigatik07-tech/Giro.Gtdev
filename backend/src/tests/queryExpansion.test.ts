@@ -261,19 +261,43 @@ test("runtime expansion reads current indexed metadata without rescanning files"
       endLine: 1,
     }]);
     saveRepositorySymbolGraph({
+      graphVersion: "graph-job-1",
       repositoryId,
+      repositoryRevision: "job-1:1",
       repositoryVersion: "job-1:1",
+      parserVersion: "test-v1",
+      status: "published",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      publishedAt: "2026-01-01T00:00:00.000Z",
       nodes: [{
+        nodeId: "login",
         symbolId: "login",
+        graphVersion: "graph-job-1",
         repositoryId,
+        repositoryRevision: "job-1:1",
         name: "login",
+        qualifiedName: "login",
         kind: "function",
         language: "typescript",
         file: "src/auth/login.ts",
         line: 1,
+        endLine: 1,
+        column: 1,
+        endColumn: 1,
+        exported: true,
+        defaultExport: false,
+        parserVersion: "test-v1",
+        metadata: {},
         repositoryVersion: "job-1:1",
       }],
       edges: [],
+      diagnostics: {
+        parsedFileCount: 1, parserFailureCount: 0, unresolvedImportCount: 0,
+        importCount: 0, unresolvedFileRatio: 0, parserFailureRatio: 0,
+        orphanSymbolCount: 0, duplicateNodeIdCount: 0, duplicateEdgeIdCount: 0,
+        missingEndpointCount: 0, impossibleSelfEdgeCount: 0, graphBytes: 0,
+        durationMs: 0, failures: [],
+      },
     });
 
     const current = getRuntimeQueryExpansionMetadata(

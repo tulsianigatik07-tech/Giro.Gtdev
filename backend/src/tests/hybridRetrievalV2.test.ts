@@ -289,7 +289,7 @@ test("structural scoring only accepts artifacts for the requested published revi
     fileSnapshot: { files: [], updatedAt: "2026-01-01T00:00:00.000Z" },
     symbolIndex: [],
     graphSource: [],
-  } as PublishedRepositoryArtifacts;
+  } as unknown as PublishedRepositoryArtifacts;
   const output = await pipeline([source("semantic", "a")], CONFIG, new DeterministicNoopCrossEncoder(), artifacts);
   assert.equal(output.results[0]?.signals.graph, 0);
 });
