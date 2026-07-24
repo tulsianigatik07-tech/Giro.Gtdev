@@ -32,6 +32,7 @@ import {
 import { runtimeCrossEncoder } from "./services/retrieval/hybridV2/crossEncoder.js";
 import { runtimeRepositoryGraphStore } from "./services/repositoryGraph/graphStore.js";
 import { runtimeRepositoryIntelligenceStore } from "./services/repositoryIntelligence/store.js";
+import { runtimeRepositoryPlanningStore } from "./services/repositoryPlanning/store.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -174,6 +175,23 @@ try {
   logger.error("repository_intelligence_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_intelligence_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryPlanningStore.verify();
+  const recoveredPlanCount = await runtimeRepositoryPlanningStore.recover();
+  logger.info("repository_planning_contract_verified", {
+    source: "backend_startup",
+    plannerVersion: "repository-planner-v1",
+    recoveredPlanCount,
+  });
+} catch {
+  logger.error("repository_planning_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_planning_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

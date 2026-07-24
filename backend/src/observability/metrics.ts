@@ -151,6 +151,12 @@ export class MetricsRegistry {
   private intelligenceHotspots = 0;
   private retrievalIntelligenceUsage = 0;
   private intelligencePublicationFailures = 0;
+  private repositoryPlanningDurationMs = 0;
+  private repositoryPlanningPhases = 0;
+  private repositoryPlanningDependencies = 0;
+  private repositoryPlanningRiskScore = 0;
+  private repositoryPlannerFailures = 0;
+  private repositoryPlanningRetrievalContribution = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -491,6 +497,24 @@ export class MetricsRegistry {
     this.intelligencePublicationFailures += Math.max(0, Math.trunc(count));
   }
 
+  recordRepositoryPlanning(input: {
+    durationMs: number;
+    phaseCount: number;
+    dependencyCount: number;
+    riskScore: number;
+    retrievalContribution: number;
+  }): void {
+    this.repositoryPlanningDurationMs += Math.max(0, input.durationMs);
+    this.repositoryPlanningPhases += Math.max(0, Math.trunc(input.phaseCount));
+    this.repositoryPlanningDependencies += Math.max(0, Math.trunc(input.dependencyCount));
+    this.repositoryPlanningRiskScore += Math.max(0, Math.min(1, input.riskScore));
+    this.repositoryPlanningRetrievalContribution += Math.max(0, Math.trunc(input.retrievalContribution));
+  }
+
+  incrementRepositoryPlannerFailures(count = 1): void {
+    this.repositoryPlannerFailures += Math.max(0, Math.trunc(count));
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -789,6 +813,12 @@ export class MetricsRegistry {
       `giro_repository_intelligence_hotspots_total ${this.intelligenceHotspots}`,
       `giro_retrieval_intelligence_usage_total ${this.retrievalIntelligenceUsage}`,
       `giro_repository_intelligence_publication_failures_total ${this.intelligencePublicationFailures}`,
+      `giro_repository_planning_duration_ms_total ${this.repositoryPlanningDurationMs}`,
+      `giro_repository_planning_phases_total ${this.repositoryPlanningPhases}`,
+      `giro_repository_planning_dependencies_total ${this.repositoryPlanningDependencies}`,
+      `giro_repository_planning_risk_score_total ${this.repositoryPlanningRiskScore}`,
+      `giro_repository_planner_failures_total ${this.repositoryPlannerFailures}`,
+      `giro_repository_planning_retrieval_contribution_total ${this.repositoryPlanningRetrievalContribution}`,
     );
     return `${lines.join("\n")}\n`;
   }

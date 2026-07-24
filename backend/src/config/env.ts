@@ -164,6 +164,8 @@ const EnvSchema = z
     REPOSITORY_INTELLIGENCE_MAX_BYTES: z.coerce.number().int().min(1_024).max(1_073_741_824).default(67_108_864),
     REPOSITORY_INTELLIGENCE_MAX_DURATION_MS: z.coerce.number().int().min(100).max(86_400_000).default(600_000),
     REPOSITORY_INTELLIGENCE_RETENTION_COUNT: z.coerce.number().int().min(2).max(100).default(3),
+    REPOSITORY_PLAN_MAX_DURATION_MS: z.coerce.number().int().min(10).max(86_400_000).default(120_000),
+    REPOSITORY_PLAN_RETENTION_COUNT: z.coerce.number().int().min(2).max(100).default(10),
     REPOSITORY_GRAPH_TRAVERSAL_DEPTH: z.coerce.number().int().min(1).max(10).default(2),
     REPOSITORY_GRAPH_MAX_EXPANDED_CANDIDATES: z.coerce.number().int().min(1).max(1_000).default(50),
     RETRIEVAL_GRAPH_DIRECT_WEIGHT: z.coerce.number().min(0).max(1).default(0.25),
