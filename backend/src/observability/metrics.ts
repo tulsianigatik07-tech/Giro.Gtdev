@@ -157,6 +157,18 @@ export class MetricsRegistry {
   private repositoryPlanningRiskScore = 0;
   private repositoryPlannerFailures = 0;
   private repositoryPlanningRetrievalContribution = 0;
+  private executionRunsCreated = 0;
+  private executionApprovals = 0;
+  private executionActiveRuns = 0;
+  private executionReadyUnits = 0;
+  private executionBlockedUnits = 0;
+  private executionRunningUnits = 0;
+  private executionLeaseRecoveries = 0;
+  private executionRetries = 0;
+  private executionFailures = 0;
+  private executionReviewLatencyMs = 0;
+  private executionRunDurationMs = 0;
+  private executionCriticalPathDurationMs = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -515,6 +527,34 @@ export class MetricsRegistry {
     this.repositoryPlannerFailures += Math.max(0, Math.trunc(count));
   }
 
+  recordRepositoryExecution(input: {
+    created?: number;
+    approvals?: number;
+    activeRuns?: number;
+    readyUnits?: number;
+    blockedUnits?: number;
+    runningUnits?: number;
+    leaseRecoveries?: number;
+    retries?: number;
+    failures?: number;
+    reviewLatencyMs?: number;
+    runDurationMs?: number;
+    criticalPathDurationMs?: number;
+  }): void {
+    this.executionRunsCreated += Math.max(0, Math.trunc(input.created ?? 0));
+    this.executionApprovals += Math.max(0, Math.trunc(input.approvals ?? 0));
+    this.executionActiveRuns = Math.max(0, Math.trunc(input.activeRuns ?? this.executionActiveRuns));
+    this.executionReadyUnits = Math.max(0, Math.trunc(input.readyUnits ?? this.executionReadyUnits));
+    this.executionBlockedUnits = Math.max(0, Math.trunc(input.blockedUnits ?? this.executionBlockedUnits));
+    this.executionRunningUnits = Math.max(0, Math.trunc(input.runningUnits ?? this.executionRunningUnits));
+    this.executionLeaseRecoveries += Math.max(0, Math.trunc(input.leaseRecoveries ?? 0));
+    this.executionRetries += Math.max(0, Math.trunc(input.retries ?? 0));
+    this.executionFailures += Math.max(0, Math.trunc(input.failures ?? 0));
+    this.executionReviewLatencyMs += Math.max(0, input.reviewLatencyMs ?? 0);
+    this.executionRunDurationMs += Math.max(0, input.runDurationMs ?? 0);
+    this.executionCriticalPathDurationMs += Math.max(0, input.criticalPathDurationMs ?? 0);
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -819,6 +859,18 @@ export class MetricsRegistry {
       `giro_repository_planning_risk_score_total ${this.repositoryPlanningRiskScore}`,
       `giro_repository_planner_failures_total ${this.repositoryPlannerFailures}`,
       `giro_repository_planning_retrieval_contribution_total ${this.repositoryPlanningRetrievalContribution}`,
+      `giro_repository_execution_runs_created_total ${this.executionRunsCreated}`,
+      `giro_repository_execution_approvals_total ${this.executionApprovals}`,
+      `giro_repository_execution_active_runs ${this.executionActiveRuns}`,
+      `giro_repository_execution_ready_units ${this.executionReadyUnits}`,
+      `giro_repository_execution_blocked_units ${this.executionBlockedUnits}`,
+      `giro_repository_execution_running_units ${this.executionRunningUnits}`,
+      `giro_repository_execution_lease_recoveries_total ${this.executionLeaseRecoveries}`,
+      `giro_repository_execution_retries_total ${this.executionRetries}`,
+      `giro_repository_execution_failures_total ${this.executionFailures}`,
+      `giro_repository_execution_review_latency_ms_total ${this.executionReviewLatencyMs}`,
+      `giro_repository_execution_run_duration_ms_total ${this.executionRunDurationMs}`,
+      `giro_repository_execution_critical_path_duration_ms_total ${this.executionCriticalPathDurationMs}`,
     );
     return `${lines.join("\n")}\n`;
   }

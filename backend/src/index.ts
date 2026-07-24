@@ -33,6 +33,7 @@ import { runtimeCrossEncoder } from "./services/retrieval/hybridV2/crossEncoder.
 import { runtimeRepositoryGraphStore } from "./services/repositoryGraph/graphStore.js";
 import { runtimeRepositoryIntelligenceStore } from "./services/repositoryIntelligence/store.js";
 import { runtimeRepositoryPlanningStore } from "./services/repositoryPlanning/store.js";
+import { runtimeRepositoryExecutionStore } from "./services/repositoryExecution/store.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -192,6 +193,24 @@ try {
   logger.error("repository_planning_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_planning_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryExecutionStore.verify();
+  const recoveredLeaseCount = await runtimeRepositoryExecutionStore.recover();
+  logger.info("repository_execution_contract_verified", {
+    source: "backend_startup",
+    orchestratorVersion: "repository-execution-v1",
+    guardedExecutionEnabled: env.GUARDED_EXECUTION_ENABLED,
+    recoveredLeaseCount,
+  });
+} catch {
+  logger.error("repository_execution_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_execution_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
