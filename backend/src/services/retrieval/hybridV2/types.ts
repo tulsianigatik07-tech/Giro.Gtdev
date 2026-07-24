@@ -5,6 +5,7 @@ import type {
   RepositoryGraphTraversalWeights,
 } from "../../repositoryGraph/graphTraversal.js";
 import type { RepositorySymbolGraph } from "../../repositoryGraph/graphTypes.js";
+import type { RepositoryIntelligenceRecord } from "../../repositoryIntelligence/types.js";
 
 export type HybridRetrievalSource = "lexical" | "semantic" | "symbol" | "path" | "graph";
 
@@ -127,6 +128,7 @@ export interface HybridRetrievalPipelineInput {
   limit: number;
   expansionMultiplier?: number;
   graph?: RepositorySymbolGraph | null;
+  intelligence?: RepositoryIntelligenceRecord | null;
 }
 
 export function candidateKey(candidate: Pick<HybridRetrievalCandidate, "result">): string {

@@ -1,4 +1,6 @@
 import { buildRepositoryConnectFailureError } from "../../repository/cloneFailureClassifier.js";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { cloneRepo } from "../../repository/clone.js";
 import { scanRepo } from "../../repository/scanner.js";
 import { analyzeRepository } from "../../repository/analyzer.js";
@@ -61,6 +63,8 @@ import { BranchNameSchema } from "../../../validation/repositorySchemas.js";
 import {
   isRepositoryQuotaError,
   RepositoryQuotaError,
+  assertRepositoryQuota,
+  serializedArtifactBytes,
   runtimeRepositoryQuotas,
   type RepositoryQuotas,
 } from "../../repository/quotas/repositoryQuota.js";
@@ -79,6 +83,13 @@ import {
   type RepositoryGraphStore,
 } from "../../repositoryGraph/graphStore.js";
 import { REPOSITORY_GRAPH_PARSER_VERSION } from "../../repositoryGraph/graphTypes.js";
+import {
+  runtimeRepositoryIntelligenceStore,
+  type RepositoryIntelligenceStore,
+} from "../../repositoryIntelligence/store.js";
+import { analyzeRepositoryIntelligence } from "../../repositoryIntelligence/analyzer.js";
+import { deterministicIntelligenceVersion } from "../../repositoryIntelligence/version.js";
+import { REPOSITORY_INTELLIGENCE_ANALYSIS_VERSION } from "../../repositoryIntelligence/types.js";
 
 export interface IndexingJobProgressPublisher {
   publish(job: IndexingJob): void | Promise<void>;
@@ -104,6 +115,7 @@ export interface IndexingPipelineInput {
   artifactStore?: RepositoryArtifactStore;
   embeddingIndexStore?: EmbeddingIndexStore;
   graphStore?: RepositoryGraphStore;
+  intelligenceStore?: RepositoryIntelligenceStore;
   quotas?: RepositoryQuotas;
 }
 
@@ -375,6 +387,7 @@ export async function executeRepositoryIndexingPipeline(
   const artifactStore = input.artifactStore ?? runtimeRepositoryArtifactStore;
   const embeddingIndexStore = input.embeddingIndexStore ?? runtimeEmbeddingIndexStore;
   const graphStore = input.graphStore ?? runtimeRepositoryGraphStore;
+  const intelligenceStore = input.intelligenceStore ?? runtimeRepositoryIntelligenceStore;
   const quotas = input.quotas ?? runtimeRepositoryQuotas;
 
   await reportStage({ stage: "clone", progress: 10 });
@@ -420,11 +433,25 @@ export async function executeRepositoryIndexingPipeline(
     REPOSITORY_GRAPH_PARSER_VERSION,
     input.signal,
   );
+  const intelligenceVersion = deterministicIntelligenceVersion({
+    repositoryRevision: revision,
+    graphVersion,
+    embeddingVersion: embeddingConfiguration.embeddingVersion,
+    parserVersion: REPOSITORY_GRAPH_PARSER_VERSION,
+  });
+  const intelligenceStaged = await intelligenceStore.begin(identity, {
+    intelligenceVersion,
+    graphVersion,
+    embeddingVersion: embeddingConfiguration.embeddingVersion,
+    parserVersion: REPOSITORY_GRAPH_PARSER_VERSION,
+    analysisVersion: REPOSITORY_INTELLIGENCE_ANALYSIS_VERSION,
+  }, input.signal);
   if (
     staged.alreadyPublished &&
     staged.counts &&
     embeddingStaged.alreadyPublished &&
-    graphStaged.alreadyPublished
+    graphStaged.alreadyPublished &&
+    intelligenceStaged.alreadyPublished
   ) {
     const indexOptions = {
       indexMode: "incremental" as const,
@@ -435,6 +462,7 @@ export async function executeRepositoryIndexingPipeline(
       ...identity,
       counts: staged.counts,
       embeddingVersion: embeddingConfiguration.embeddingVersion,
+      intelligenceVersion,
       indexOptions,
       ownerUserId: job.ownerUserId,
       maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
@@ -452,6 +480,22 @@ export async function executeRepositoryIndexingPipeline(
           identity,
           graphStore,
           graphVersion,
+          signal: input.signal,
+        });
+      }
+      const scan = await scanRepo(clonePath, quotas, input.signal);
+      const graphForIntelligence = backfilledGraph ??
+        await graphStore.loadPublished(repoId, revision, input.signal);
+      if (!graphForIntelligence) throw new Error("Repository graph is required for intelligence generation.");
+      if (!intelligenceStaged.alreadyPublished) {
+        await buildStageValidateRepositoryIntelligence({
+          identity,
+          clonePath,
+          intelligenceStore,
+          graph: graphForIntelligence,
+          embeddingVersion: embeddingConfiguration.embeddingVersion,
+          files: scan.files,
+          changedFiles: scan.files.map((file) => file.filePath),
           signal: input.signal,
         });
       }
@@ -491,12 +535,14 @@ export async function executeRepositoryIndexingPipeline(
         ...identity,
         counts,
         embeddingVersion: embeddingConfiguration.embeddingVersion,
+        intelligenceVersion,
         indexOptions,
         ownerUserId: job.ownerUserId,
         maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
         maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
       }, input.signal);
       await graphStore.publish(identity, graphVersion, input.signal);
+      await intelligenceStore.publish(identity, intelligenceVersion, input.signal);
       return { counts, indexOptions, publicationHandled: true };
     }
     return await buildAndPublishRepositorySnapshot({
@@ -511,6 +557,8 @@ export async function executeRepositoryIndexingPipeline(
       embeddingConfiguration,
       graphStore,
       graphVersion,
+      intelligenceStore,
+      intelligenceVersion,
     });
   } catch (error) {
     try {
@@ -520,6 +568,20 @@ export async function executeRepositoryIndexingPipeline(
         repositoryId: repoId,
         revision,
         embeddingVersion: embeddingConfiguration.embeddingVersion,
+        jobId: job.jobId,
+      });
+    }
+    try {
+      await intelligenceStore.fail(identity, intelligenceVersion, [{
+        code: "intelligence_publication_failed",
+        message: sanitizedMessage(errorMessage(error)),
+      }], input.signal);
+      runtimeMetrics.incrementIntelligencePublicationFailures();
+    } catch {
+      logger.error("repository_intelligence_rollback_failed", {
+        repositoryId: repoId,
+        revision,
+        intelligenceVersion,
         jobId: job.jobId,
       });
     }
@@ -557,6 +619,78 @@ export async function executeRepositoryIndexingPipeline(
     }
     throw error;
   }
+}
+
+async function buildStageValidateRepositoryIntelligence(input: {
+  identity: Parameters<RepositoryIntelligenceStore["begin"]>[0];
+  clonePath: TrustedRepositoryCheckoutPath;
+  intelligenceStore: RepositoryIntelligenceStore;
+  graph: Awaited<ReturnType<typeof buildStageValidateRepositoryGraph>>;
+  embeddingVersion: string;
+  files: ReadonlyArray<{ filePath: string; size: number; content?: string }>;
+  changedFiles: readonly string[];
+  signal?: AbortSignal;
+}) {
+  const startedAt = performance.now();
+  const files = [];
+  for (const file of input.files) {
+    input.signal?.throwIfAborted();
+    let content: string | undefined;
+    try {
+      content = await readFile(resolve(input.clonePath, file.filePath), "utf8");
+    } catch {
+      content = undefined;
+    }
+    files.push({ ...file, ...(content === undefined ? {} : { content }) });
+  }
+  const previous = await input.intelligenceStore.loadPublished(input.identity.repositoryId, undefined, input.signal);
+  const snapshot = analyzeRepositoryIntelligence({
+    repositoryId: input.identity.repositoryId,
+    repositoryRevision: input.identity.revision,
+    graphVersion: input.graph.graphVersion,
+    embeddingVersion: input.embeddingVersion,
+    parserVersion: input.graph.parserVersion,
+    nodes: input.graph.nodes,
+    edges: input.graph.edges,
+    files,
+    previous,
+    changedFiles: input.changedFiles,
+  });
+  assertRepositoryQuota(
+    "artifact_size",
+    serializedArtifactBytes(snapshot),
+    env.REPOSITORY_INTELLIGENCE_MAX_BYTES,
+  );
+  assertRepositoryQuota(
+    "indexing_duration",
+    performance.now() - startedAt,
+    env.REPOSITORY_INTELLIGENCE_MAX_DURATION_MS,
+  );
+  input.signal?.throwIfAborted();
+  await input.intelligenceStore.stage(input.identity, snapshot, input.signal);
+  await input.intelligenceStore.validate(
+    input.identity,
+    snapshot.intelligenceVersion,
+    input.signal,
+  );
+  const durationMs = performance.now() - startedAt;
+  runtimeMetrics.recordRepositoryIntelligenceAnalysis({
+    durationMs,
+    generatedSubsystems: snapshot.metrics.generatedSubsystems,
+    dependencyEdges: snapshot.metrics.dependencyEdgesAnalyzed,
+    qualityFindings: snapshot.metrics.qualityFindings,
+    hotspots: snapshot.metrics.hotspots,
+  });
+  logger.info("repository_intelligence_validated", {
+    repositoryId: snapshot.repositoryId,
+    repositoryRevision: snapshot.repositoryRevision,
+    intelligenceVersion: snapshot.intelligenceVersion,
+    graphVersion: snapshot.graphVersion,
+    embeddingVersion: snapshot.embeddingVersion,
+    subsystems: snapshot.metrics.generatedSubsystems,
+    durationMs: Math.round(durationMs),
+  });
+  return snapshot;
 }
 
 async function buildStageValidateRepositoryGraph(input: {
@@ -617,6 +751,8 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   embeddingConfiguration: ReturnType<typeof runtimeEmbeddingIndexConfiguration>;
   graphStore: RepositoryGraphStore;
   graphVersion: string;
+  intelligenceStore: RepositoryIntelligenceStore;
+  intelligenceVersion: string;
 }): Promise<IndexingPipelineResult> {
   const {
     job,
@@ -630,6 +766,8 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     embeddingConfiguration,
     graphStore,
     graphVersion,
+    intelligenceStore,
+    intelligenceVersion,
   } = input;
   const owner = job.repositoryOwner;
   const repo = job.repositoryName;
@@ -756,6 +894,16 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     graphVersion,
     signal: input.signal,
   });
+  await buildStageValidateRepositoryIntelligence({
+    identity,
+    clonePath,
+    intelligenceStore,
+    graph: durableGraph,
+    embeddingVersion: embeddingConfiguration.embeddingVersion,
+    files: stats.files,
+    changedFiles: [...indexingPlan.addedFiles, ...indexingPlan.removedFiles],
+    signal: input.signal,
+  });
   counts.graphNodeCount = durableGraph.nodes.length;
   counts.graphEdgeCount = durableGraph.edges.length;
   input.signal?.throwIfAborted();
@@ -764,6 +912,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     ...identity,
     counts,
     embeddingVersion: embeddingConfiguration.embeddingVersion,
+    intelligenceVersion,
     indexOptions,
     ownerUserId: job.ownerUserId,
     repositoryStorageBytes: stats.repositoryBytes ?? stats.indexedTextBytes ?? 0,
@@ -771,6 +920,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
   }, input.signal);
   await graphStore.publish(identity, graphVersion, input.signal);
+  await intelligenceStore.publish(identity, intelligenceVersion, input.signal);
   try {
     await refreshPreviousCheckoutReadLease(repoId);
   } catch (error: unknown) {
@@ -784,6 +934,15 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     await artifactStore.collect(repoId);
   } catch (error: unknown) {
     logger.warn("repository_artifact_gc_failed", {
+      repositoryId: repoId,
+      revision,
+      message: error instanceof Error ? error.message : "unknown",
+    });
+  }
+  try {
+    await intelligenceStore.collect(repoId);
+  } catch (error: unknown) {
+    logger.warn("repository_intelligence_gc_failed", {
       repositoryId: repoId,
       revision,
       message: error instanceof Error ? error.message : "unknown",

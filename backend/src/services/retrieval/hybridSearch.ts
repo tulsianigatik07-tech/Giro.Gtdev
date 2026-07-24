@@ -28,6 +28,10 @@ import {
   runtimeRepositoryGraphStore,
 } from "../repositoryGraph/graphStore.js";
 import type { RepositorySymbolGraph } from "../repositoryGraph/graphTypes.js";
+import {
+  runtimeRepositoryIntelligenceStore,
+} from "../repositoryIntelligence/store.js";
+import type { RepositoryIntelligenceRecord } from "../repositoryIntelligence/types.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -54,6 +58,7 @@ export interface ExecuteHybridSearchOptions {
   artifacts?: PublishedRepositoryArtifacts | null;
   diagnosticsSink?: (diagnostics: HybridRetrievalDiagnostics) => void;
   graph?: RepositorySymbolGraph | null;
+  intelligence?: RepositoryIntelligenceRecord | null;
 }
 
 export function applyQueryExpansionPenalty(
@@ -84,6 +89,7 @@ export async function executeHybridSearch(
     ? await runtimeRepositoryArtifactStore.load(repository, options.repositoryVersion)
     : null);
   let publishedGraph = options.graph ?? null;
+  let intelligence = options.intelligence ?? null;
   if (options.graph === undefined && options.repositoryVersion) {
     try {
       publishedGraph = await runtimeRepositoryGraphStore.loadPublished(
@@ -93,6 +99,21 @@ export async function executeHybridSearch(
       );
     } catch (error) {
       logger.warn("repository_graph_retrieval_fallback", {
+        repository,
+        repositoryRevision: options.repositoryVersion,
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
+  if (options.intelligence === undefined && options.repositoryVersion) {
+    try {
+      intelligence = await runtimeRepositoryIntelligenceStore.loadPublished(
+        repository,
+        options.repositoryVersion,
+        options.signal,
+      );
+    } catch (error) {
+      logger.warn("repository_intelligence_retrieval_fallback", {
         repository,
         repositoryRevision: options.repositoryVersion,
         message: error instanceof Error ? error.message : "unknown",
@@ -252,6 +273,7 @@ export async function executeHybridSearch(
     limit: effectiveLimit,
     expansionMultiplier: expansion.expandedScoreMultiplier,
     graph: publishedGraph,
+    intelligence,
   }, {
     signal: options.signal,
   });

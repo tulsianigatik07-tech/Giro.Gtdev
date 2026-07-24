@@ -1,5 +1,6 @@
 import type { PublishedRepositoryArtifacts } from "../../repository/artifacts/repositoryArtifactStore.js";
 import type { HybridRetrievalCandidate } from "./types.js";
+import type { RepositoryIntelligenceRecord } from "../../repositoryIntelligence/types.js";
 
 const GENERATED = /(^|\/)(dist|build|coverage|generated|__generated__)(\/|$)|(?:\.generated\.|\.min\.)/iu;
 const VENDOR = /(^|\/)(node_modules|vendor|third_party|deps)(\/|$)/iu;
@@ -24,6 +25,7 @@ export function computeStructuralSignals(
   candidates: readonly HybridRetrievalCandidate[],
   artifacts: PublishedRepositoryArtifacts | null,
   repositoryRevision: string,
+  intelligence: RepositoryIntelligenceRecord | null = null,
 ): HybridRetrievalCandidate[] {
   const incoming = new Map<string, number>();
   const outgoing = new Map<string, number>();
@@ -62,6 +64,14 @@ export function computeStructuralSignals(
     Math.max(max, (incoming.get(file) ?? 0) + (outgoing.get(file) ?? 0)), 0);
   const important = artifacts ? importantPaths(artifacts) : new Set<string>();
   const central = new Set(artifacts?.summary.dependencyOverview.centralModules ?? []);
+  const intelligenceHints = intelligence?.repositoryRevision === repositoryRevision
+    ? new Set([
+        ...intelligence.symbols.entrypoints,
+        ...intelligence.architecture.hotspots.map((item) => item.path),
+        ...intelligence.codeOrganization.mostImportedFiles.map((item) => item.path),
+        ...intelligence.symbols.publicApis.map((item) => item.file),
+      ])
+    : new Set<string>();
 
   return candidates.map((candidate) => {
     const path = candidate.result.filePath;
@@ -86,7 +96,8 @@ export function computeStructuralSignals(
     };
     candidate.signals.fileImportance =
       (candidate.structural.repositoryDepth + exportedPublicSymbols + referenceCount + fileCentrality) / 4;
-    candidate.signals.repositoryImportance = important.has(path) || central.has(path) ? 1 : 0;
+    candidate.signals.repositoryImportance =
+      important.has(path) || central.has(path) || intelligenceHints.has(path) ? 1 : 0;
     candidate.signals.dependencyGraphImportance = dependencyImportance;
     candidate.signals.freshness = candidate.structural.recentlyIndexedRevision;
     candidate.signals.revisionMatch =

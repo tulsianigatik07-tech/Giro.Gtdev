@@ -22,6 +22,7 @@ export interface BeginRepositorySnapshotResult {
 export interface PublishRepositorySnapshotInput extends RepositorySnapshotIdentity {
   counts: IndexedCounts;
   embeddingVersion: string;
+  intelligenceVersion?: string;
   indexOptions?: SetRepositoryIndexedOptions;
   ownerUserId?: string;
   repositoryStorageBytes?: number;
@@ -139,6 +140,7 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
       input_graph_edge_count: input.counts.graphEdgeCount,
       input_summary_available: input.counts.summaryAvailable,
       input_embedding_version: input.embeddingVersion,
+      input_intelligence_version: input.intelligenceVersion ?? null,
       input_index_mode: input.indexOptions?.indexMode ?? "full",
       input_changed_file_count: input.indexOptions?.changedFileCount ?? input.counts.fileCount,
       ...quotaParameters,

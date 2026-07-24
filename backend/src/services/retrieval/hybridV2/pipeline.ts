@@ -129,7 +129,13 @@ export async function executeHybridRetrievalV2(
       ? input.artifacts
       : null,
     input.repositoryRevision,
+    input.intelligence?.repositoryRevision === input.repositoryRevision
+      ? input.intelligence
+      : null,
   );
+  if (input.intelligence?.repositoryRevision === input.repositoryRevision) {
+    runtimeMetrics.incrementRetrievalIntelligenceUsage();
+  }
   const scored = scoreRetrievalCandidates(structurallyScored, config.weights);
   const rerankerScores = await rerankWithFallback(
     options.crossEncoder ?? runtimeCrossEncoder,

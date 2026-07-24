@@ -31,6 +31,7 @@ import {
 } from "./services/retrieval/hybridV2/config.js";
 import { runtimeCrossEncoder } from "./services/retrieval/hybridV2/crossEncoder.js";
 import { runtimeRepositoryGraphStore } from "./services/repositoryGraph/graphStore.js";
+import { runtimeRepositoryIntelligenceStore } from "./services/repositoryIntelligence/store.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -156,6 +157,23 @@ try {
   logger.error("repository_graph_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_graph_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryIntelligenceStore.verify();
+  const cleanedVersionCount = await runtimeRepositoryIntelligenceStore.recover();
+  logger.info("repository_intelligence_contract_verified", {
+    source: "backend_startup",
+    analysisVersion: "repository-intelligence-v1",
+    cleanedVersionCount,
+  });
+} catch {
+  logger.error("repository_intelligence_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_intelligence_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

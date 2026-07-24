@@ -144,6 +144,13 @@ export class MetricsRegistry {
   private repositorySummaries = 0;
   private repositorySummaryGenerationMs = 0;
   private repositorySummaryCacheHits = 0;
+  private intelligenceAnalysisDurationMs = 0;
+  private intelligenceGeneratedSubsystems = 0;
+  private intelligenceDependencyEdges = 0;
+  private intelligenceQualityFindings = 0;
+  private intelligenceHotspots = 0;
+  private retrievalIntelligenceUsage = 0;
+  private intelligencePublicationFailures = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -462,6 +469,28 @@ export class MetricsRegistry {
     this.repositorySummaryCacheHits += 1;
   }
 
+  recordRepositoryIntelligenceAnalysis(input: {
+    durationMs: number;
+    generatedSubsystems: number;
+    dependencyEdges: number;
+    qualityFindings: number;
+    hotspots: number;
+  }): void {
+    this.intelligenceAnalysisDurationMs += Math.max(0, input.durationMs);
+    this.intelligenceGeneratedSubsystems += Math.max(0, Math.trunc(input.generatedSubsystems));
+    this.intelligenceDependencyEdges += Math.max(0, Math.trunc(input.dependencyEdges));
+    this.intelligenceQualityFindings += Math.max(0, Math.trunc(input.qualityFindings));
+    this.intelligenceHotspots += Math.max(0, Math.trunc(input.hotspots));
+  }
+
+  incrementRetrievalIntelligenceUsage(count = 1): void {
+    this.retrievalIntelligenceUsage += Math.max(0, Math.trunc(count));
+  }
+
+  incrementIntelligencePublicationFailures(count = 1): void {
+    this.intelligencePublicationFailures += Math.max(0, Math.trunc(count));
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -753,6 +782,13 @@ export class MetricsRegistry {
       "# HELP giro_repository_summary_cache_hits_total Repository architecture summary cache hits.",
       "# TYPE giro_repository_summary_cache_hits_total counter",
       `giro_repository_summary_cache_hits_total ${this.repositorySummaryCacheHits}`,
+      `giro_repository_intelligence_analysis_duration_ms_total ${this.intelligenceAnalysisDurationMs}`,
+      `giro_repository_intelligence_generated_subsystems_total ${this.intelligenceGeneratedSubsystems}`,
+      `giro_repository_intelligence_dependency_edges_total ${this.intelligenceDependencyEdges}`,
+      `giro_repository_intelligence_quality_findings_total ${this.intelligenceQualityFindings}`,
+      `giro_repository_intelligence_hotspots_total ${this.intelligenceHotspots}`,
+      `giro_retrieval_intelligence_usage_total ${this.retrievalIntelligenceUsage}`,
+      `giro_repository_intelligence_publication_failures_total ${this.intelligencePublicationFailures}`,
     );
     return `${lines.join("\n")}\n`;
   }

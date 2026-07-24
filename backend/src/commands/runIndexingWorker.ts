@@ -24,6 +24,7 @@ import {
   installShutdownSignalHandlers,
 } from "../runtime/backendShutdown.js";
 import { runtimeRepositoryGraphStore } from "../services/repositoryGraph/graphStore.js";
+import { runtimeRepositoryIntelligenceStore } from "../services/repositoryIntelligence/store.js";
 
 export function buildContinuousWorkerConfig() {
   const workerId = env.INDEXING_WORKER_ID ?? "development-worker";
@@ -56,6 +57,12 @@ export async function runIndexingWorker(): Promise<0 | 1> {
   stderrLogger.info("indexing_worker_graph_contract_validated", {
     workerId: config.workerId,
     recoveredGraphBuilds,
+  });
+  await runtimeRepositoryIntelligenceStore.verify();
+  const recoveredIntelligenceBuilds = await runtimeRepositoryIntelligenceStore.recover();
+  stderrLogger.info("indexing_worker_intelligence_contract_validated", {
+    workerId: config.workerId,
+    recoveredIntelligenceBuilds,
   });
   await validateIndexingWorkerStartup({
     config,
